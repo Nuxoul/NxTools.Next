@@ -10,6 +10,14 @@ Check ((Get-BootstrapMigrationDecision $key $null $path $null '' $false) -eq 'sk
 Check ((Get-BootstrapMigrationDecision $key $registration $path $null $hash $false) -eq 'required') 'old approved updater needs migration'
 $state=@{ProtocolVersion=1;Sequence=25;ReleaseId=[Guid]::NewGuid().ToString();ManifestSha256='C'*64;BootstrapSha256=$hash}
 Check ((Get-BootstrapMigrationDecision $key $registration $path $state $hash $false) -eq 'skip') 'compatible updater skips elevation'
+$compatibleState=@{}+$state;$compatibleState.Sequence=82
+Check ((Get-BootstrapMigrationDecision $key $registration $path $compatibleState $hash $false 999 82) -eq 'skip') 'Bootstrap compatibility floor ignores ordinary release sequence'
+Check ((Get-BootstrapMigrationDecision $key $registration $path $compatibleState $hash $false 999 83) -eq 'required') 'higher Bootstrap compatibility floor requires maintenance'
+Check ((Get-BootstrapMigrationDecision $key $registration $path $null $hash $false 999 82) -eq 'required') 'Bootstrap compatibility floor requires marker'
+Check ((Get-BootstrapMigrationDecision $key $registration $path $compatibleState $hash $true 999 82) -eq 'required') 'compatible Bootstrap still recovers interrupted maintenance'
+$oldState=@{}+$compatibleState;$oldState.Sequence=81
+Check ((Get-BootstrapMigrationDecision $key $registration $path $oldState $hash $false 999 82) -eq 'required') 'Bootstrap below compatibility floor still migrates'
+Check ((Get-BootstrapMigrationDecision $key $registration $path $compatibleState $hash $false 999 0) -eq 'required') 'legacy sequence decision remains unchanged'
 Check ((Get-BootstrapMigrationDecision $key $registration $path $state $hash $true) -eq 'required') 'interrupted maintenance resumes'
 $legacyAutomatic=@{}+$registration;$legacyAutomatic.Start=2
 Check ((Get-BootstrapMigrationDecision $key $legacyAutomatic $path $state $hash $false) -eq 'required') 'approved automatic updater requires explicit demand-lifetime maintenance'
@@ -21,7 +29,7 @@ Check $rejected 'tampered updater rejects'
 $source=[IO.File]::ReadAllText((Join-Path $root 'installer\nxtools-next.iss'))
 Check ($source.Contains('EnsureBootstrapMigration') -and $source.Contains('-BootstrapMigrationPackage')) 'normal installer owns migration before suspension'
 Check ($source.IndexOf('EnsureBootstrapMigration') -lt $source.IndexOf("Log('installer.upgrade_close.started")) 'migration detection precedes old file mutation'
-Check (!$source.Contains('BootstrapMigrationZip') -and !$source.Contains('NxTools-bootstrap-migration.zip') -and $source.Contains("ExtractTemporaryFiles('{app}\*')") -and $source.Contains('BootstrapMigrationHostSha256')) 'migration reuses normal installer payload without a second archive'
+Check (!$source.Contains('BootstrapMigrationZip') -and !$source.Contains('NxTools-bootstrap-migration.zip') -and $source.Contains("ExtractTemporaryFiles('{app}\*") -and $source.Contains('BootstrapMigrationHostSha256') -and $source.Contains('BootstrapMigrationMinimumSequence')) 'migration reuses normal installer payload without a second archive and passes Bootstrap floor'
 . (Join-Path $root 'installer\close-owned-processes.ps1') -LibraryOnly
 $work=Join-Path $EvidenceRoot ('migration-call-'+[Guid]::NewGuid().ToString('N'));New-Item -ItemType Directory -Path $work|Out-Null
 $exe=Join-Path $work 'NxTools.PlatformHost.exe'
@@ -52,16 +60,22 @@ $bootstrap=Join-Path $updater 'Bootstrap\NxTools.PlatformHost.exe'
 $manifest=Join-Path $FixtureRoot 'manifest.json'
 $diagnostic=Join-Path $FixtureRoot 'detection.jsonl'
 New-Item -ItemType Directory -Path $FixtureRoot -Force|Out-Null
-@{public_key_sha256=('A'*64)}|ConvertTo-Json|Set-Content $manifest -Encoding UTF8
+@{public_key_sha256=('A'*64);release_sequence=999}|ConvertTo-Json|Set-Content $manifest -Encoding UTF8
 if($Mode -ne 'fresh') {
     $global:fixtureRegistration=@{ImagePath='"'+$bootstrap+'" --trusted-update-service';ObjectName='LocalSystem';NxToolsUpdateKeySha256=('A'*64);NxToolsBootstrapSha256=('B'*64)}
 }
-if($Mode -eq 'compatible') {
+if($Mode -in @('compatible','old-bootstrap','missing-marker','journal','tampered','invalid-marker','rotate')) {
     New-Item -ItemType Directory -Path (Split-Path $bootstrap) -Force|Out-Null
     [IO.File]::WriteAllText($bootstrap,'owned fixture, never executed')
     $global:fixtureRegistration.NxToolsBootstrapSha256=(Get-FileHash $bootstrap).Hash
     $global:fixtureRegistration.Start=3
-    @{ProtocolVersion=1;Sequence=54;ReleaseId=[Guid]::NewGuid().ToString();ManifestSha256=('C'*64);BootstrapSha256=$global:fixtureRegistration.NxToolsBootstrapSha256}|ConvertTo-Json|Set-Content (Join-Path $updater 'bootstrap-maintenance-state.json') -Encoding UTF8
+    $sequence=if($Mode -eq 'old-bootstrap'){81}else{82}
+    @{ProtocolVersion=1;Sequence=$sequence;ReleaseId=[Guid]::NewGuid().ToString();ManifestSha256=('C'*64);BootstrapSha256=$global:fixtureRegistration.NxToolsBootstrapSha256}|ConvertTo-Json|Set-Content (Join-Path $updater 'bootstrap-maintenance-state.json') -Encoding UTF8
+    if($Mode -eq 'missing-marker'){Remove-Item (Join-Path $updater 'bootstrap-maintenance-state.json')}
+    if($Mode -eq 'journal'){[IO.File]::WriteAllText((Join-Path $updater 'bootstrap-maintenance.json'),'owned recovery fixture')}
+    if($Mode -eq 'tampered'){$global:fixtureRegistration.NxToolsBootstrapSha256='B'*64}
+    if($Mode -eq 'invalid-marker'){@{ProtocolVersion=1;Sequence=82;ReleaseId=[Guid]::NewGuid().ToString();ManifestSha256=('C'*64);BootstrapSha256=('B'*64)}|ConvertTo-Json|Set-Content (Join-Path $updater 'bootstrap-maintenance-state.json') -Encoding UTF8}
+    if($Mode -eq 'rotate'){$global:fixtureRegistration.NxToolsUpdateKeySha256='D'*64}
 }
 if($Mode -eq 'foreign'){$global:fixtureRegistration.NxToolsUpdateKeySha256='D'*64}
 function Get-ItemProperty { param($LiteralPath,$ErrorAction) return $global:fixtureRegistration }
@@ -70,12 +84,12 @@ function Get-Item {
     if($global:fixtureMode -eq 'denied-root' -and $LiteralPath -eq $global:fixtureUpdater){throw [UnauthorizedAccessException]::new('fixture denied')}
     Microsoft.PowerShell.Management\Get-Item -LiteralPath $LiteralPath -Force:$Force -ErrorAction Stop
 }
-& $Source -ManifestPath $manifest -DiagnosticPath $diagnostic -CorrelationId 'fixture-bootstrap-detection'
+& $Source -ManifestPath $manifest -DiagnosticPath $diagnostic -CorrelationId 'fixture-bootstrap-detection' -MinimumBootstrapMaintenanceSequence 82
 exit $LASTEXITCODE
 '@)
 foreach($shellDirectory in @('System32','SysWOW64')) {
     $nativeShell=Join-Path $env:SystemRoot ($shellDirectory+'\WindowsPowerShell\v1.0\powershell.exe')
-    foreach($case in @(@{Mode='fresh';Exit=0;Reason='not_registered'},@{Mode='missing';Exit=11;Reason='missing_updater_root'},@{Mode='compatible';Exit=0;Reason='compatible'},@{Mode='foreign';Exit=1;Reason='failed'},@{Mode='denied-root';Exit=1;Reason='failed'})) {
+    foreach($case in @(@{Mode='fresh';Exit=0;Reason='not_registered'},@{Mode='missing';Exit=11;Reason='missing_updater_root'},@{Mode='compatible';Exit=0;Reason='compatible'},@{Mode='old-bootstrap';Exit=10;Reason='migration_required'},@{Mode='missing-marker';Exit=10;Reason='migration_required'},@{Mode='journal';Exit=10;Reason='migration_required'},@{Mode='tampered';Exit=1;Reason='failed'},@{Mode='invalid-marker';Exit=1;Reason='failed'},@{Mode='rotate';Exit=12;Reason='trust_rotation_required'},@{Mode='foreign';Exit=1;Reason='failed'},@{Mode='denied-root';Exit=1;Reason='failed'})) {
         $fixtureRoot=Join-Path $entryRoot ($shellDirectory+'-'+$case.Mode)
         $output=& $nativeShell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $entryFixture -Source (Join-Path $root 'installer\bootstrap-migration.ps1') -FixtureRoot $fixtureRoot -Mode $case.Mode 2>&1
         $actualExit=$LASTEXITCODE

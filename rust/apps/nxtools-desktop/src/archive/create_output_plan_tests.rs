@@ -27,6 +27,7 @@ fn request(name: &str, format: ArchiveJobFormat, split: bool) -> ArchiveJobReque
             test_after_create: false,
             name: name.into(),
             volume_bytes: split.then_some(65536),
+            self_extracting: false,
         }),
         modify: None,
         readmission: None,

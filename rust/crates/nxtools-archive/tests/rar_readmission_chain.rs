@@ -218,6 +218,7 @@ fn original_rar_coordinator_requires_cleanup_and_preserves_one_new_admission() {
                         browser: serde_json::from_value(context["browser"].clone())
                             .expect("original source context"),
                         ordinals: vec![if mode == "second_actual" { 1 } else { 0 }],
+                        strip_prefix: None,
                     }),
                 });
             }

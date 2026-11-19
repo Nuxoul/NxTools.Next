@@ -45,13 +45,15 @@ pub(super) fn confirmation(preview: &RawJoinPreview, output: &str) -> impl IntoE
         .gap_3()
         .child(Alert::warning("raw-join-confirm-warning", LIMITATION))
         .child(Label::new(format!(
-            "按所列顺序合并 {} 个文件，共 {} 字节",
+            "将按下列顺序连接 {} 个文件，共 {} 字节",
             preview.parts.len(),
             preview.total_bytes
         )))
         .child(parts(preview, "raw-join-confirm-parts"))
-        .child(div().text_sm().child(format!("新输出：{output}")))
-        .child(Label::new("仅创建新文件，不覆盖、不删除源分卷。"))
+        .child(div().text_sm().child(format!("新输出文件：{output}")))
+        .child(Label::new(
+            "只创建一个新文件；不会覆盖现有文件，也不会删除源文件。",
+        ))
 }
 pub(super) fn terminal_message(terminal: &RawJoinTerminal) -> String {
     if terminal.outcome == "succeeded" {
@@ -87,31 +89,82 @@ impl Render for JoinWindow {
         let locked = self.locked();
         let working = self.working();
         let phase = match self.phase {
-            Phase::Inspecting => "正在发现编号集合…",
-            Phase::Running => "正在按序合并…",
+            Phase::Inspecting => "正在读取同名编号文件…",
+            Phase::Running => "正在连接文件…",
             Phase::Cancelling => "正在取消，等待实际完成…",
-            Phase::Preview | Phase::Confirming => "请核对发现的集合与输出位置",
+            Phase::Preview | Phase::Confirming => "请核对文件列表与输出位置",
             Phase::Terminal => "操作已结束",
             Phase::Disconnected => "平台连接已断开",
-            Phase::Idle => "选择任意编号分卷后发现集合",
+            Phase::Idle => "选择一个编号文件后查看列表",
         };
-        let fields = Form::vertical().with_size(Size::Medium)
-            .child(Field::new().label("源编号分卷")
-                .description("同目录、同 basename、连续 .001 / .002 / …；可选择后续分卷。classic .z01 不适用。")
-                .child(div().flex().gap_2().min_w_0()
-                    .child(div().debug_selector(|| "raw-join-source".into()).flex_1().min_w_0()
-                        .child(Input::new(&self.source).with_size(Size::Medium).disabled(locked)))
-                    .child(Button::new("raw-join-pick-source").debug_selector(|| "raw-join-pick-source".into())
-                        .label("选择…").outline().with_size(Size::Medium).disabled(locked)
-                        .on_click(cx.listener(|this, _, window, cx| this.pick(ArchivePickerPurpose::Files, window, cx))))))
-            .child(Field::new().label("新输出文件")
-                .description("父目录必须已存在。不会覆盖现有文件，也不会删除源分卷。")
-                .child(div().flex().gap_2().min_w_0()
-                    .child(div().debug_selector(|| "raw-join-output".into()).flex_1().min_w_0()
-                        .child(Input::new(&self.output).with_size(Size::Medium).disabled(locked)))
-                    .child(Button::new("raw-join-pick-output").debug_selector(|| "raw-join-pick-output".into())
-                        .label("另存为…").outline().with_size(Size::Medium).disabled(locked)
-                        .on_click(cx.listener(|this, _, window, cx| this.pick(ArchivePickerPurpose::Save, window, cx))))));
+        let fields = Form::vertical()
+            .with_size(Size::Medium)
+            .child(
+                Field::new()
+                    .label("要合并的分卷文件")
+                    .description("选择同一目录中同名的 .001 / .002 / … 文件之一；.z01 不适用。")
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .debug_selector(|| "raw-join-source".into())
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        Input::new(&self.source)
+                                            .with_size(Size::Medium)
+                                            .disabled(locked),
+                                    ),
+                            )
+                            .child(
+                                Button::new("raw-join-pick-source")
+                                    .debug_selector(|| "raw-join-pick-source".into())
+                                    .label("选择…")
+                                    .outline()
+                                    .with_size(Size::Medium)
+                                    .disabled(locked)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.pick(ArchivePickerPurpose::Files, window, cx)
+                                    })),
+                            ),
+                    ),
+            )
+            .child(
+                Field::new()
+                    .label("新输出文件")
+                    .description("父目录必须已存在。不会覆盖现有文件，也不会删除源分卷。")
+                    .child(
+                        div()
+                            .flex()
+                            .gap_2()
+                            .min_w_0()
+                            .child(
+                                div()
+                                    .debug_selector(|| "raw-join-output".into())
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(
+                                        Input::new(&self.output)
+                                            .with_size(Size::Medium)
+                                            .disabled(locked),
+                                    ),
+                            )
+                            .child(
+                                Button::new("raw-join-pick-output")
+                                    .debug_selector(|| "raw-join-pick-output".into())
+                                    .label("另存为…")
+                                    .outline()
+                                    .with_size(Size::Medium)
+                                    .disabled(locked)
+                                    .on_click(cx.listener(|this, _, window, cx| {
+                                        this.pick(ArchivePickerPurpose::Save, window, cx)
+                                    })),
+                            ),
+                    ),
+            );
         div()
             .size_full()
             .min_h_0()
@@ -123,7 +176,7 @@ impl Render for JoinWindow {
             .child(crate::ui::components::titlebar::controlled_titlebar(
                 "raw-join-titlebar",
                 "raw-join-caption-close",
-                "普通编号文件合并",
+                "合并分卷文件（.001）",
                 crate::ui::components::titlebar::CaptionCapabilities::RESIZABLE,
                 cx.listener(|this, _, window, cx| this.close(window, cx)),
             ))
@@ -153,7 +206,7 @@ impl Render for JoinWindow {
                                     .child(fields)
                                     .when_some(self.preview.as_ref(), |body, preview| {
                                         body.child(Label::new(format!(
-                                            "发现 {} 个文件 · {} 字节 · 按下列顺序",
+                                            "文件列表：{} 个文件 · {} 字节 · 将按下列顺序连接",
                                             preview.parts.len(),
                                             preview.total_bytes
                                         )))
@@ -226,7 +279,7 @@ impl Render for JoinWindow {
                                 row.child(
                                     Button::new("raw-join-inspect")
                                         .debug_selector(|| "raw-join-inspect".into())
-                                        .label("发现分卷")
+                                        .label("查看文件列表")
                                         .outline()
                                         .with_size(Size::Medium)
                                         .disabled(locked)
@@ -237,7 +290,7 @@ impl Render for JoinWindow {
                                 .child(
                                     Button::new("raw-join-review")
                                         .debug_selector(|| "raw-join-review".into())
-                                        .label("核对并合并…")
+                                        .label("确认并合并…")
                                         .primary()
                                         .with_size(Size::Medium)
                                         .disabled(self.phase != Phase::Preview || locked)

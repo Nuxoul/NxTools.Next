@@ -37,6 +37,7 @@ fn mount_mode(
     details: bool,
 ) -> (Entity<ArchiveBrowser>, VisualTestContext) {
     cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
     cx.executor().allow_parking();
     let retained = Rc::new(RefCell::new(None));
     let slot = retained.clone();
@@ -1031,14 +1032,15 @@ fn browser_primary_commands_precede_view_and_preserve_edit_scope(cx: &mut TestAp
         })
     });
     draw(&mut surface);
+    assert!(surface.debug_bounds("archive-unlock-drag").is_none());
     assert!(
         surface
             .debug_bounds("archive-view")
             .expect("view last")
             .left()
             > surface
-                .debug_bounds("archive-unlock-drag")
-                .expect("specialized action")
+                .debug_bounds("archive-test")
+                .expect("test action")
                 .left()
     );
 }
@@ -1517,6 +1519,20 @@ fn render_repair_file_cells_use_platform_ui_font_and_readable_sizes(cx: &mut Tes
                 .all(|font| font.as_ref() == crate::ui::typography::UI_FONT_FAMILY),
             "file cells must not fall back to a serif family: {values:?}"
         );
+    });
+    RENDER_REPAIR_FONTS.with(|values| values.borrow_mut().clear());
+    let chosen = crate::ui::typography::TEST_UI_FONT_FAMILY;
+    surface.update(|_, cx| {
+        cx.set_global(crate::ui::typography::InstalledUiFontsFixture(vec![
+            chosen.into(),
+        ]));
+        assert!(crate::theme::set_ui_font_family(chosen, cx));
+    });
+    draw(&mut surface);
+    RENDER_REPAIR_FONTS.with(|values| {
+        let values = values.borrow();
+        assert!(!values.is_empty(), "configured font must be painted");
+        assert!(values.iter().all(|font| font == chosen));
     });
     assert_eq!(bytes(None), "—");
     assert_eq!(bytes(Some(0)), "0 B");

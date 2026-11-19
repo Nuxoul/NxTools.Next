@@ -137,13 +137,14 @@ pub fn query_requests_file_index_with_commands(
 fn environment_variable_search_results(
     variable: environment_variable::ResolvedEnvironmentVariable,
     limit: usize,
-) -> Vec<SearchResult> {
+) -> impl Iterator<Item = SearchResult> {
+    let variable_name = variable.name;
     variable
         .targets
         .into_iter()
         .take(limit)
         .enumerate()
-        .map(|(index, target)| {
+        .map(move |(index, target)| {
             let (action, entry_target, action_label) = match target.kind {
                 environment_variable::EnvironmentVariableTargetKind::Directory => (
                     SearchResultAction::OpenTarget,
@@ -167,14 +168,14 @@ fn environment_variable_search_results(
                 entry: ApplicationEntry {
                     id: format!(
                         "environment-variable:{}:{index}",
-                        variable.name.to_ascii_lowercase()
+                        variable_name.to_ascii_lowercase()
                     ),
                     name: target.value,
                     target: entry_target,
                     source: ApplicationSource::EnvironmentVariable,
                 },
                 action,
-                subtitle: Some(format!("%{}% · {action_label}", variable.name)),
+                subtitle: Some(format!("%{variable_name}% · {action_label}")),
                 score: 1_000 - index as i64,
                 activation_count: 0,
                 last_activated_at_unix_ms: None,
@@ -182,7 +183,6 @@ fn environment_variable_search_results(
                 last_query_activation_at_unix_ms: None,
             }
         })
-        .collect()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -484,8 +484,24 @@ impl FinderCatalog {
         custom_commands: &[nxtools_core::CustomCommandSettings],
         limit: usize,
     ) -> Result<Vec<SearchResult>> {
+        let mut matches = Vec::new();
+        self.visit_search_candidates(query, external_entries, custom_commands, limit, |result| {
+            matches.push(result);
+            true
+        })?;
+        Ok(matches)
+    }
+
+    fn visit_search_candidates(
+        &self,
+        query: &str,
+        external_entries: &[ExternalSearchEntry],
+        custom_commands: &[nxtools_core::CustomCommandSettings],
+        limit: usize,
+        mut visit: impl FnMut(SearchResult) -> bool,
+    ) -> Result<()> {
         if limit == 0 {
-            return Ok(Vec::new());
+            return Ok(());
         }
         let raw_query = query;
         let file_query = FileQuery::parse(raw_query);
@@ -493,10 +509,15 @@ impl FinderCatalog {
         let environment_variable = environment_variable::environment_variable_targets(query);
         let query = normalize(query);
         if query.is_empty() {
-            return Ok(Vec::new());
+            return Ok(());
         }
         if let Some(variable) = environment_variable {
-            return Ok(environment_variable_search_results(variable, limit));
+            for result in environment_variable_search_results(variable, limit) {
+                if !visit(result) {
+                    break;
+                }
+            }
+            return Ok(());
         }
         let command_results = matching_custom_commands(raw_query, custom_commands)
             .into_iter()
@@ -526,45 +547,63 @@ impl FinderCatalog {
                     query_activation_count: usage.query_activation_count,
                     last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
                 })
-            })
-            .collect::<Vec<_>>();
-        let mut matches = command_results;
-        matches.extend(self.entries.iter().zip(&self.match_materials).filter_map(
-            |(entry, material)| {
-                let direct_score = file_query
-                    .score_prepared(&entry.name, &material.folded_name, &entry.target)
-                    .into_iter()
-                    .chain(file_query.score_literal(&material.initialism, &entry.target))
-                    .max();
-                // The pinyin channel only contributes below the direct tiers so a
-                // one-letter query cannot fuzzy-match the initials of an ASCII
-                // name that already matched directly.
-                let textual_score = direct_score
-                    .filter(|score| *score >= 2_000)
-                    .or_else(|| file_query.score_literal(&material.pinyin_initials, &entry.target))
-                    .or_else(|| {
-                        file_query
-                            .score_literal(&entry.name, &entry.target)
-                            .is_none()
-                            .then(|| file_query.score(&entry.name, &entry.target))
-                            .flatten()
-                    })?;
-                let usage = self.usage_for(&entry.id, &query);
-                Some(SearchResult {
-                    entry: entry.clone(),
-                    action: SearchResultAction::OpenTarget,
-                    subtitle: None,
-                    score: textual_score,
-                    activation_count: usage.activation_count,
-                    last_activated_at_unix_ms: usage.last_activated_at_unix_ms,
-                    query_activation_count: usage.query_activation_count,
-                    last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
-                })
-            },
-        ));
+            });
+        for result in command_results {
+            if !visit(result) {
+                return Ok(());
+            }
+        }
+        let applications =
+            self.entries
+                .iter()
+                .zip(&self.match_materials)
+                .filter_map(|(entry, material)| {
+                    let direct_score = file_query
+                        .score_prepared(&entry.name, &material.folded_name, &entry.target)
+                        .into_iter()
+                        .chain(file_query.score_literal(&material.initialism, &entry.target))
+                        .chain(
+                            system_application_aliases(entry)
+                                .iter()
+                                .find(|alias| **alias == query)
+                                .and_then(|alias| file_query.score_literal(alias, &entry.target)),
+                        )
+                        .max();
+                    // The pinyin channel only contributes below the direct tiers so a
+                    // one-letter query cannot fuzzy-match the initials of an ASCII
+                    // name that already matched directly.
+                    let textual_score = direct_score
+                        .filter(|score| *score >= 2_000)
+                        .or_else(|| {
+                            file_query.score_literal(&material.pinyin_initials, &entry.target)
+                        })
+                        .or_else(|| {
+                            file_query
+                                .score_literal(&entry.name, &entry.target)
+                                .is_none()
+                                .then(|| file_query.score(&entry.name, &entry.target))
+                                .flatten()
+                        })?;
+                    let usage = self.usage_for(&entry.id, &query);
+                    Some(SearchResult {
+                        entry: entry.clone(),
+                        action: SearchResultAction::OpenTarget,
+                        subtitle: None,
+                        score: textual_score,
+                        activation_count: usage.activation_count,
+                        last_activated_at_unix_ms: usage.last_activated_at_unix_ms,
+                        query_activation_count: usage.query_activation_count,
+                        last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
+                    })
+                });
+        for result in applications {
+            if !visit(result) {
+                return Ok(());
+            }
+        }
         if let Some(answer) = calculator_answer {
             let expression_id = normalize(&answer.expression);
-            matches.extend(
+            let calculator_results =
                 answer
                     .outputs
                     .into_iter()
@@ -586,10 +625,14 @@ impl FinderCatalog {
                         last_activated_at_unix_ms: None,
                         query_activation_count: 0,
                         last_query_activation_at_unix_ms: None,
-                    }),
-            );
+                    });
+            for result in calculator_results {
+                if !visit(result) {
+                    return Ok(());
+                }
+            }
         }
-        matches.extend(external_entries.iter().filter_map(|entry| {
+        let external = external_entries.iter().filter_map(|entry| {
             let textual_score = file_query.score(&entry.name, &entry.target)?;
             let usage = self.usage_for(&entry.id, &query);
             Some(SearchResult {
@@ -609,8 +652,13 @@ impl FinderCatalog {
                 query_activation_count: usage.query_activation_count,
                 last_query_activation_at_unix_ms: usage.last_query_activation_at_unix_ms,
             })
-        }));
-        Ok(matches)
+        });
+        for result in external {
+            if !visit(result) {
+                return Ok(());
+            }
+        }
+        Ok(())
     }
 
     fn usage_for(&self, entry_id: &str, query: &str) -> UsageStats {
@@ -1052,6 +1100,8 @@ fn system_entries() -> Vec<ApplicationEntry> {
         ("系统配置", "msconfig.exe"),
         ("注册表编辑器", "regedit.exe"),
         ("控制面板", "control.exe"),
+        ("记事本", "notepad.exe"),
+        ("设置", "ms-settings:"),
     ]
     .into_iter()
     .map(|(name, target)| ApplicationEntry {
@@ -1061,6 +1111,17 @@ fn system_entries() -> Vec<ApplicationEntry> {
         source: ApplicationSource::System,
     })
     .collect()
+}
+
+fn system_application_aliases(entry: &ApplicationEntry) -> &'static [&'static str] {
+    if entry.source != ApplicationSource::System {
+        return &[];
+    }
+    match entry.target.as_str() {
+        "notepad.exe" => &["notepad", "windows notepad"],
+        "ms-settings:" => &["settings", "windows settings", "系统设置"],
+        _ => &[],
+    }
 }
 
 fn stable_entry_id(target: &str) -> String {
@@ -1141,7 +1202,8 @@ mod tests {
                 targets,
             },
             10,
-        );
+        )
+        .collect::<Vec<_>>();
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].action, SearchResultAction::OpenTarget);
@@ -1218,6 +1280,32 @@ mod tests {
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].entry.source, ApplicationSource::StartMenu);
         assert!(results[0].entry.target.ends_with("NxTools Launcher.lnk"));
+    }
+
+    #[test]
+    fn windows_notepad_and_settings_are_application_matches_in_both_languages() {
+        let (_directory, catalog) = catalog_with_files(&["记事本2.0.lnk", "设置工具.lnk"]);
+        for (query, name, target) in [
+            ("记事本", "记事本", "notepad.exe"),
+            ("notepad", "记事本", "notepad.exe"),
+            ("设置", "设置", "ms-settings:"),
+            ("windows settings", "设置", "ms-settings:"),
+        ] {
+            let external = [ExternalSearchEntry {
+                id: format!("fixture:{query}"),
+                name: query.into(),
+                target: format!(r"C:\Fixture\{query}.txt"),
+                source: ApplicationSource::IndexedFile,
+            }];
+            let results = catalog
+                .search_with_external(query, &external, 8)
+                .expect("merged results");
+            let first = results.first().expect("system application result");
+            assert_eq!(first.entry.source, ApplicationSource::System, "{query}");
+            assert_eq!(first.entry.name, name);
+            assert_eq!(first.entry.target, target);
+            assert_eq!(first.action, SearchResultAction::OpenTarget);
+        }
     }
 
     #[test]

@@ -1,0 +1,35 @@
+{
+  "id": "native-memory-connection-experiments",
+  "name": "native-memory-connection-experiments",
+  "title": "PlatformHost UIA memory repair and B6 connection experiments",
+  "description": "Repair native OneCommander UIA memory/lifecycle first, then independently measure REF-13/14/15/16; preserve accepted B1-B5 and stop for independent acceptance before B7.",
+  "status": "in_progress",
+  "dev_type": "backend",
+  "scope": "cross-package",
+  "package": null,
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-11-11",
+  "completedAt": null,
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-11-platformhost-uia-memory",
+    "11-11-reference-b6-connection-experiments"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "A code repair delivered; verification is user-owned and not run by the agent. B6 experiments remain unstarted pending A verification; no B7 or whole-batch acceptance is claimed.",
+  "meta": {
+    "active_slice": "A",
+    "a_implementation": "ready_for_user_verification",
+    "a_verification_owner": "user",
+    "a_acceptance": "not_accepted",
+    "b6_timing": "not_started"
+  }
+}

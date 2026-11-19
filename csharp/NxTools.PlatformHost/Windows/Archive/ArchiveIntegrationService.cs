@@ -18,12 +18,14 @@ internal sealed record ArchiveShellIntegrationCommand(
     string[]? Extensions)
 {
     public string DoubleClickAction { get; init; } = "open";
+    public bool SetDefault { get; init; }
     public string MenuLayout { get; init; } = "cascade";
     public string[] MenuCommands { get; init; } = ArchiveIntegrationIntent.RecommendedMenuCommands;
 
     internal ArchiveIntegrationIntent ToIntent() => new(ClassicCascade, OpenWith, Extensions)
     {
         DoubleClickAction = DoubleClickAction,
+        SetDefault = SetDefault,
         MenuLayout = MenuLayout,
         MenuCommands = MenuCommands,
     };
@@ -61,7 +63,8 @@ internal static class ArchiveShellIntegrationStates
 
 /// <summary>
 /// Formal P206 owner: explicit Apply/Revert/Status over the existing pure plan and its
-/// compensation transaction. Only explicit requests mutate Windows, after release approval.
+/// compensation transaction. Apply replaces an earlier applied revision through the same
+/// compare-before-restore uninstall before writing the new plan.
 /// </summary>
 internal sealed class ArchiveIntegrationService
 {
@@ -81,6 +84,7 @@ internal sealed class ArchiveIntegrationService
     private readonly Action _notifyAssociationsChanged;
     private readonly bool _applyEnabled;
     private readonly Func<string, IDisposable>? _approveSelectionHelper;
+    private readonly IArchiveDefaultClaim? _defaultClaim;
 
     internal ArchiveIntegrationService(
         IArchiveIntegrationStore store,
@@ -89,7 +93,8 @@ internal sealed class ArchiveIntegrationService
         Func<string?> executablePath,
         Action notifyAssociationsChanged,
         bool applyEnabled,
-        Func<string, IDisposable>? approveSelectionHelper = null)
+        Func<string, IDisposable>? approveSelectionHelper = null,
+        IArchiveDefaultClaim? defaultClaim = null)
     {
         _store = store;
         _ledger = ledger;
@@ -98,6 +103,7 @@ internal sealed class ArchiveIntegrationService
         _notifyAssociationsChanged = notifyAssociationsChanged;
         _applyEnabled = applyEnabled;
         _approveSelectionHelper = approveSelectionHelper;
+        _defaultClaim = defaultClaim;
     }
 
     internal static ArchiveIntegrationService CreateProduct(IPlatformLog log) =>
@@ -105,15 +111,16 @@ internal sealed class ArchiveIntegrationService
             WindowsPlatformAdapter.ResolveApprovedDesktopExecutablePath,
             WindowsArchiveIntegrationStore.NotifyAssociationsChanged,
             // Original stable-handle release owner authenticates every helper member. No new trust source.
-            executable => IndexerServiceInstaller.OpenArchiveRelease(Path.GetDirectoryName(executable)!));
+            executable => IndexerServiceInstaller.OpenArchiveRelease(Path.GetDirectoryName(executable)!),
+            new WindowsArchiveDefaultClaim());
 
     // Same product policy/composition with injectable effects; fixtures never instantiate native stores.
     internal static ArchiveIntegrationService CreateProduct(
         IPlatformLog log, IArchiveIntegrationStore store, IArchiveIntegrationLedger ledger,
         Func<string?> executablePath, Action notifyAssociationsChanged,
-        Func<string, IDisposable> approveSelectionHelper) =>
+        Func<string, IDisposable> approveSelectionHelper, IArchiveDefaultClaim? defaultClaim = null) =>
         new(store, ledger, log, executablePath, notifyAssociationsChanged,
-            ProductApplyAuthorized, approveSelectionHelper);
+            ProductApplyAuthorized, approveSelectionHelper, defaultClaim);
 
     internal bool ApplyEnabled => _applyEnabled;
 
@@ -164,8 +171,8 @@ internal sealed class ArchiveIntegrationService
                     result = action switch
                     {
                         "status" => Status(command.DesiredRevision),
-                        "apply" => Apply(command, cancellation),
-                        "revert" => Revert(command.DesiredRevision, cancellation),
+                        "apply" => Apply(command, correlationId, cancellation),
+                        "revert" => Revert(command.DesiredRevision, correlationId, cancellation),
                         _ => Failed(command.DesiredRevision, "invalid_action"),
                     };
                 }
@@ -226,7 +233,8 @@ internal sealed class ArchiveIntegrationService
         catch (ArgumentException) { return false; }
     }
 
-    private ArchiveShellIntegrationResult Apply(ArchiveShellIntegrationCommand command, CancellationToken cancellation)
+    private ArchiveShellIntegrationResult Apply(ArchiveShellIntegrationCommand command, Guid correlationId,
+        CancellationToken cancellation)
     {
         if (!_applyEnabled)
             return new(WireVersion, ArchiveShellIntegrationStates.Disabled, command.DesiredRevision, null,
@@ -235,9 +243,6 @@ internal sealed class ArchiveIntegrationService
         ArchiveIntegrationAppliedFacts? existing;
         try { existing = _ledger.Load(); }
         catch (Exception) { return Failed(command.DesiredRevision, "ledger_unreadable"); }
-        if (existing is not null)
-            return new(WireVersion, ArchiveShellIntegrationStates.RevertRequired, command.DesiredRevision,
-                existing.DesiredRevision, existing.Values.Count, 0, 0, 0, "revert_required");
 
         var executable = _executablePath();
         if (string.IsNullOrWhiteSpace(executable))
@@ -265,14 +270,80 @@ internal sealed class ArchiveIntegrationService
                 helperApproval is null ? null : Path.Combine(Path.GetDirectoryName(executable)!, ArchiveSelectionHandlerPlan.HelperExecutableName));
         }
         catch (ArgumentException) { return Failed(command.DesiredRevision, "invalid_intent"); }
-        if (plan.Changes.Count == 0)
+        if (plan.Changes.Count == 0 && existing is null)
             return new(WireVersion, ArchiveShellIntegrationStates.NotApplied, command.DesiredRevision, null,
                 0, 0, 0, 0, null);
 
+        // Every gate passed: the earlier revision is replaced through the exact Revert transaction,
+        // so foreign or user-modified values survive and only this application's values change.
+        var replaced = new ArchiveIntegrationUninstallResult(0, 0, 0);
+        if (existing is not null)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            try { replaced = ArchiveIntegrationTransaction.Uninstall(_store, existing); }
+            catch (Exception)
+            {
+                NotifyChanged();
+                return new(WireVersion, ArchiveShellIntegrationStates.Failed, command.DesiredRevision,
+                    existing.DesiredRevision, existing.Values.Count, 0, 0, 0, "replace_revert_incomplete");
+            }
+            // Extensions the new revision claims again keep the choice; the rest get their original back.
+            RestoreChoices(existing, command.SetDefault ? plan.Extensions : [], correlationId);
+            try { _ledger.Delete(); }
+            catch (Exception)
+            {
+                NotifyChanged();
+                return new(WireVersion, ArchiveShellIntegrationStates.Failed, command.DesiredRevision,
+                    existing.DesiredRevision, existing.Values.Count, replaced.RemovedInstalledValues,
+                    replaced.RestoredPriorValues, replaced.PreservedModifiedValues, "ledger_retire_failed");
+            }
+            Write("info", "archive.shell_integration.replaced", correlationId, new Dictionary<string, object?>
+            {
+                ["previous_revision"] = existing.DesiredRevision,
+                ["removed"] = replaced.RemovedInstalledValues,
+                ["restored"] = replaced.RestoredPriorValues,
+                ["preserved"] = replaced.PreservedModifiedValues,
+            });
+            if (plan.Changes.Count == 0)
+            {
+                NotifyChanged();
+                return new(WireVersion, ArchiveShellIntegrationStates.NotApplied, command.DesiredRevision, null, 0,
+                    replaced.RemovedInstalledValues, replaced.RestoredPriorValues, replaced.PreservedModifiedValues, null);
+            }
+        }
+        ArchiveShellIntegrationResult Fail(string failure)
+        {
+            if (existing is not null) NotifyChanged();
+            return Failed(command.DesiredRevision, failure);
+        }
+
         ArchiveIntegrationAppliedFacts facts;
         try { facts = ArchiveIntegrationTransaction.Apply(_store, plan, cancellation); }
-        catch (AggregateException) { return Failed(command.DesiredRevision, "compensation_incomplete"); }
-        catch (Exception) { return Failed(command.DesiredRevision, "write_failed_compensated"); }
+        catch (AggregateException) { return Fail("compensation_incomplete"); }
+        catch (Exception) { return Fail("write_failed_compensated"); }
+
+        // The original Explorer choice of every claimed extension is recorded with the facts so
+        // Revert can write it back. A replaced revision's record wins over our own current choice.
+        if (command.SetDefault && _defaultClaim is not null)
+        {
+            var priors = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var extension in plan.Extensions)
+            {
+                if (existing?.PriorUserChoices is { } earlier && earlier.TryGetValue(extension, out var original))
+                    priors[extension] = original;
+                else
+                {
+                    // Our own claim is never an original to return to: Revert then removes it.
+                    try
+                    {
+                        var current = _defaultClaim.Current(extension);
+                        priors[extension] = string.Equals(current, ArchiveIntegrationPlan.ProgId, StringComparison.OrdinalIgnoreCase) ? null : current;
+                    }
+                    catch (Exception) { priors[extension] = null; }
+                }
+            }
+            facts = facts with { PriorUserChoices = priors };
+        }
 
         // Observed facts become durable before success is reported. If the ledger cannot be
         // persisted, Revert could not prove ownership later, so the applied values are compensated.
@@ -291,16 +362,78 @@ internal sealed class ArchiveIntegrationService
                 try { _store.Restore(facts.Values[index].Target, facts.Values[index].Prior); }
                 catch (Exception) { compensationFailures++; }
             }
-            return compensationFailures > 0
-                ? Failed(command.DesiredRevision, "ledger_failed_compensation_incomplete")
-                : Failed(command.DesiredRevision, "ledger_failed_compensated");
+            return Fail(compensationFailures > 0 ? "ledger_failed_compensation_incomplete" : "ledger_failed_compensated");
+        }
+
+        // Explorer resolves icons and double-click through the per-user choice, which outranks the
+        // class default. Write a valid choice for the owned ProgID, refresh, then read it back.
+        string? defaultFailure = null;
+        if (command.SetDefault && _defaultClaim is not null)
+        {
+            var unresolved = 0;
+            foreach (var extension in plan.Extensions)
+            {
+                try { _defaultClaim.Set(extension, ArchiveIntegrationPlan.ProgId); }
+                catch (Exception) { unresolved++; }
+            }
+            NotifyChanged();
+            var resolved = plan.Extensions.Count(extension => Resolves(extension));
+            unresolved = Math.Max(unresolved, plan.Extensions.Count - resolved);
+            if (unresolved > 0) defaultFailure = "user_choice_locked";
+            Write(unresolved > 0 ? "warn" : "info", "archive.shell_integration.default_claimed", correlationId, new Dictionary<string, object?>
+            {
+                ["extension_count"] = plan.Extensions.Count,
+                ["resolved"] = resolved,
+                ["unresolved"] = unresolved,
+            });
+            return new(WireVersion, ArchiveShellIntegrationStates.Applied, command.DesiredRevision,
+                facts.DesiredRevision, facts.Values.Count, replaced.RemovedInstalledValues,
+                replaced.RestoredPriorValues, replaced.PreservedModifiedValues, defaultFailure);
         }
         NotifyChanged();
         return new(WireVersion, ArchiveShellIntegrationStates.Applied, command.DesiredRevision,
-            facts.DesiredRevision, facts.Values.Count, 0, 0, 0, null);
+            facts.DesiredRevision, facts.Values.Count, replaced.RemovedInstalledValues,
+            replaced.RestoredPriorValues, replaced.PreservedModifiedValues, defaultFailure);
     }
 
-    private ArchiveShellIntegrationResult Revert(long desiredRevision, CancellationToken cancellation)
+    private bool Resolves(string extension)
+    {
+        try { return _defaultClaim!.Resolves(extension, ArchiveIntegrationPlan.ProgId); }
+        catch (Exception) { return false; }
+    }
+
+    /// <summary>
+    /// Writes back the recorded original Explorer choice of each claimed extension that still
+    /// points at NxTools; a choice the user changed since is left alone.
+    /// </summary>
+    private void RestoreChoices(ArchiveIntegrationAppliedFacts facts, IReadOnlyCollection<string> keep, Guid correlationId)
+    {
+        if (facts.PriorUserChoices is null || _defaultClaim is null) return;
+        int restored = 0, preserved = 0, failed = 0;
+        foreach (var (extension, original) in facts.PriorUserChoices)
+        {
+            if (keep.Contains(extension, StringComparer.OrdinalIgnoreCase)) continue;
+            try
+            {
+                if (!string.Equals(_defaultClaim.Current(extension), ArchiveIntegrationPlan.ProgId, StringComparison.OrdinalIgnoreCase))
+                {
+                    preserved++;
+                    continue;
+                }
+                _defaultClaim.Set(extension, original);
+                restored++;
+            }
+            catch (Exception) { failed++; }
+        }
+        Write(failed > 0 ? "warn" : "info", "archive.shell_integration.default_restored", correlationId, new Dictionary<string, object?>
+        {
+            ["restored"] = restored,
+            ["preserved"] = preserved,
+            ["failed"] = failed,
+        });
+    }
+
+    private ArchiveShellIntegrationResult Revert(long desiredRevision, Guid correlationId, CancellationToken cancellation)
     {
         ArchiveIntegrationAppliedFacts? facts;
         try { facts = _ledger.Load(); }
@@ -321,6 +454,7 @@ internal sealed class ArchiveIntegrationService
             return new(WireVersion, ArchiveShellIntegrationStates.Failed, desiredRevision, facts.DesiredRevision,
                 facts.Values.Count, 0, 0, 0, "revert_incomplete");
         }
+        RestoreChoices(facts, [], correlationId);
         try { _ledger.Delete(); }
         catch (Exception)
         {
@@ -382,7 +516,9 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
                 new ArchiveRegistryValueSnapshot(
                     value.PriorExists,
                     value.Prior is null ? null : FromWire(value.Prior),
-                    value.MissingOwnedKeyPaths ?? []))).ToArray());
+                    value.MissingOwnedKeyPaths ?? []))).ToArray(),
+            document.PriorUserChoices is null ? null
+                : new Dictionary<string, string?>(document.PriorUserChoices, StringComparer.OrdinalIgnoreCase));
     }
 
     public void Save(ArchiveIntegrationAppliedFacts facts)
@@ -394,7 +530,8 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
             ToWire(fact.AppliedValue),
             fact.Prior.Exists,
             fact.Prior.Value is null ? null : ToWire(fact.Prior.Value),
-            fact.Prior.MissingOwnedKeyPaths.ToArray())).ToArray());
+            fact.Prior.MissingOwnedKeyPaths.ToArray())).ToArray(),
+            facts.PriorUserChoices?.ToDictionary(pair => pair.Key, pair => pair.Value));
         var bytes = JsonSerializer.SerializeToUtf8Bytes(document, Protocol.JsonDefaults.Options);
         if (bytes.Length > MaxBytes) throw new InvalidDataException("Archive integration ledger exceeds its bound.");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -445,7 +582,8 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
         return new ArchiveRegistryValue(kind, data);
     }
 
-    private sealed record LedgerDocument(int Version, long DesiredRevision, LedgerFact[]? Values);
+    private sealed record LedgerDocument(int Version, long DesiredRevision, LedgerFact[]? Values,
+        Dictionary<string, string?>? PriorUserChoices = null);
     private sealed record LedgerFact(
         string KeyPath,
         string ValueName,

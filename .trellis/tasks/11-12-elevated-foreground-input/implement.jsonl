@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platformhost/index.md","reason":"owner checklist and links to matching native contracts; elevated foreground input scenario is at the end of native-contracts.md"}
+{"file":".trellis/spec/platformhost/diagnostics.md","reason":"correlation and bounded diagnostics"}
+{"file":".trellis/tasks/11-12-elevated-foreground-input/design.md","reason":"private helper architecture and verified reference lifecycle summary"}
+{"file":".trellis/tasks/11-12-elevated-foreground-input/prd.md","reason":"accepted input, clipboard and native acceptance constraints"}
+{"file":".trellis/tasks/11-12-elevated-foreground-input/outcomes.md","reason":"delivered owners, exact verification and remaining installed acceptance"}

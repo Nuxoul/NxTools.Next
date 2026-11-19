@@ -257,13 +257,10 @@ impl ArchiveVirtualDragCommand {
         {
             return Err(invalid);
         }
-        // Destination location drags one descriptor-only wrapper; extraction runs as an ordinary
-        // job after the receiver reports where that wrapper was created.
+        // Destination location carries one descriptor; a directory descriptor locates a
+        // receiver-created wrapper, while a file descriptor locates its parent via a marker.
         if locate
-            && (items.len() != 1
-                || !items[0].directory
-                || items[0].name.contains('/')
-                || self.authorization_id.is_some())
+            && (items.len() != 1 || items[0].name.contains('/') || self.authorization_id.is_some())
         {
             return Err(invalid);
         }
@@ -728,11 +725,16 @@ mod tests {
             command
         );
         let mut file = command.clone();
-        file.items = Some(vec![tree_command().items.expect("items")[2].clone()]);
-        assert!(file.validate().is_err(), "locate never names a file");
+        file.items.as_mut().expect("items")[0].directory = false;
+        file.items.as_mut().expect("items")[0].size = Some(0);
+        file.items.as_mut().expect("items")[0].entry.ordinal = Some(0);
+        assert!(
+            file.validate().is_ok(),
+            "locate accepts a direct marker file"
+        );
         let mut nested = command.clone();
         nested.items.as_mut().expect("items")[0].name = "root/inner".into();
-        assert!(nested.validate().is_err(), "locate wrapper is one component");
+        assert!(nested.validate().is_err(), "locate marker is one component");
         let mut many = tree_command();
         many.action = "locate".into();
         assert!(many.validate().is_err(), "locate carries no member tree");

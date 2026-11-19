@@ -1,0 +1,8 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Original Rust/GPUI/C# ownership"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Immutable correlation, lifecycle and privacy"}
+{"file":".trellis/spec/shared/verification.md","reason":"One Cargo lane and evidence/native authorization"}
+{"file":".trellis/spec/nxtools-archive/backend/index.md","reason":"Archive owner navigation"}
+{"file":".trellis/spec/nxtools-archive/backend/zip-volumes.md","reason":"Protected volumes and original candidate publication"}
+{"file":".trellis/spec/platformhost/archive-creation.md","reason":"Immutable admission, native sources and publication"}
+{"file":"docs/reference-code/archive-volumes.md","reason":"Behavioral reference and format evidence gaps"}
+{"file":"docs/reference-code/archive-formats.md","reason":"Existing isolated additional readers"}

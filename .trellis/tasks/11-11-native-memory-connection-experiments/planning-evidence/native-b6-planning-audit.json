@@ -1,0 +1,26 @@
+{
+  "observed_at": "2026-11-11T17:55:04.985536+08:00",
+  "planning_artifacts_checked": 15,
+  "manifest_entries": {
+    ".trellis/tasks/11-11-native-memory-connection-experiments/implement.jsonl": 6,
+    ".trellis/tasks/11-11-native-memory-connection-experiments/check.jsonl": 6,
+    ".trellis/tasks/11-11-platformhost-uia-memory/implement.jsonl": 9,
+    ".trellis/tasks/11-11-platformhost-uia-memory/check.jsonl": 7,
+    ".trellis/tasks/11-11-reference-b6-connection-experiments/implement.jsonl": 14,
+    ".trellis/tasks/11-11-reference-b6-connection-experiments/check.jsonl": 9
+  },
+  "existing_tracked_diff_blocks_preserved": 51,
+  "protected_files_equal": 5,
+  "unexpected_new_paths": [],
+  "head_unchanged": true,
+  "branch_unchanged": true,
+  "task_statuses": [
+    "planning",
+    "planning",
+    "planning"
+  ],
+  "product_edits_performed": 0,
+  "native_runs": 0,
+  "b6_timed_runs": 0,
+  "scope": "planning documentation and before-relative tracked/protected-byte audit; not native/product acceptance"
+}

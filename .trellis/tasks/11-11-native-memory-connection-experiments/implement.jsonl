@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Original Rust/C#/GPUI ownership; no replacement manager or transport"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Bounded native lifecycle, persistence before publication and diagnostic privacy"}
+{"file":"docs/reference-improvement-taskbook.md","reason":"Canonical B6 names/order, separate REF decisions and no B7"}
+{"file":".trellis/tasks/11-11-reference-b5-completion-intentions/coordinator-acceptance.md","reason":"Read-only current accepted B5 behavior and evidence boundary"}
+{"file":".trellis/tasks/11-11-platformhost-uia-memory/design.md","reason":"A required native lifecycle/memory prerequisite and fixed sustained criteria"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/design.md","reason":"Four independent original-owner connection experiments after A"}

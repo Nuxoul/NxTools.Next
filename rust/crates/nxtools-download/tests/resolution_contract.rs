@@ -77,6 +77,7 @@ fn request(server: &DeterministicHttpServer, output: &std::path::Path) -> Downlo
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -158,7 +159,12 @@ fn resolution_noop_oracle_and_media_pass_through() {
         .enqueue(input.clone(), RequestOrigin::Ui)
         .expect("enqueue");
     let task = engine.task(id).expect("task").expect("exists").task;
-    assert_eq!(task.request(), &input);
+    let mut expected = input.clone();
+    expected.headers = vec![DownloadRequestHeader {
+        name: "User-Agent".into(),
+        value: nxtools_core::DEFAULT_DOWNLOAD_USER_AGENT.into(),
+    }];
+    assert_eq!(task.request(), &expected);
     assert!(task.resolution().is_none());
     let mut media = input;
     media.file_name = Some("media.ts".into());

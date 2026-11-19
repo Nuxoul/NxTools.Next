@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tracing::info;
 use uuid::Uuid;
 
-use super::{DownloadEngine, DownloadEngineError, download_runtime, now_unix_ms};
+use super::{DownloadEngine, DownloadEngineError, now_unix_ms};
 use crate::resolution::{apply_resolution, validate_identity};
 use crate::{
     DownloadProbe, DownloadProbeResolution, DownloadRequest, DownloadRequestResolver,
@@ -266,7 +266,8 @@ impl DownloadEngine {
                 let invocation = prepared.operation.clone();
                 let worker_resolver = Arc::clone(&resolver);
                 let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-                download_runtime()?.spawn(async move {
+                let inner = Arc::clone(&self.inner);
+                self.inner.spawn_owned_worker(async move {
                     let _slot = slot;
                     let result = {
                         let future = worker_resolver.resolve(&input, &invocation);
@@ -275,6 +276,7 @@ impl DownloadEngine {
                             tokio::select! {
                                 result = &mut future => break result,
                                 () = tokio::time::sleep(Duration::from_millis(10)) => {
+                                    if inner.draining.load(std::sync::atomic::Ordering::SeqCst) { invocation.control.cancel(); }
                                     if let Err(error) = invocation.check() { break Err(error); }
                                 }
                             }
@@ -282,7 +284,7 @@ impl DownloadEngine {
                     };
                     // Drop the invocation future before exposing terminal ownership.
                     let _ = sender.send(result);
-                });
+                })?;
                 // The adapter future is cooperatively nonblocking. Keep admission occupied until
                 // its drop/retirement has completed, rather than spawning unbounded replacements.
                 let result = loop {
@@ -438,7 +440,7 @@ impl DownloadEngine {
     }
 }
 
-fn resolution_resource_fingerprint(
+pub(super) fn resolution_resource_fingerprint(
     request: &DownloadRequest,
 ) -> Result<String, DownloadEngineError> {
     let mut resource = request.clone();
@@ -453,6 +455,7 @@ fn resolution_resource_fingerprint(
     resource.adaptive_segment_policy = None;
     resource.duplicate_strategy = Default::default();
     resource.media = None;
+    resource.source_page = None;
     Ok(crate::storage::request_fingerprint(&resource)?)
 }
 
@@ -471,6 +474,7 @@ mod publication_tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,

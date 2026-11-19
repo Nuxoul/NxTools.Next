@@ -28,8 +28,9 @@ pub use dash::{
     MAX_DASH_REPRESENTATIONS, MAX_DASH_SEGMENTS, MAX_DASH_URL_BYTES,
 };
 pub use engine::{
-    BrowserDownloadDialogRequest, BrowserDownloadDialogSource, DownloadEngine, DownloadEngineError,
-    DownloadEngineTask, DownloadScheduleMoment, WeakDownloadEngine, daily_schedule_window_contains,
+    BrowserDownloadDialogRequest, BrowserDownloadDialogSource, DownloadCompletionSnapshot,
+    DownloadCompletionTask, DownloadEngine, DownloadEngineError, DownloadEngineTask,
+    DownloadScheduleMoment, WeakDownloadEngine, daily_schedule_window_contains,
 };
 pub use ffmpeg_install::{
     FfmpegInstallControl, FfmpegInstallFailure, FfmpegInstallOperation, FfmpegInstallPhase,
@@ -50,16 +51,17 @@ pub use media::{
     resolve_ffmpeg_executable,
 };
 pub use message::{
-    BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission,
+    BrowserBatchSubmissionResult, BrowserBlob, BrowserDownloadSubmission, BrowserHandoffState,
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DashProbe, DashTrackProbe, DownloadAggregateMetrics,
     DownloadBatchAction, DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope,
     DownloadCommandOutcome, DownloadCommandResult, DownloadEvent, DownloadEventEnvelope,
     DownloadEventSequenceError, DownloadEventSequencer, DownloadFault, DownloadFaultCode,
-    DownloadMediaProbe, DownloadProbe, DownloadProgress, DownloadQuery, DownloadQueueAction,
-    DownloadQueuePlacement, DownloadRouteKind, DownloadSegmentProgress, DownloadServerObservation,
-    DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction, DownloadTaskDetail,
-    DownloadTaskSummary, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, HlsProbe,
-    HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
+    DownloadFinishingProgress, DownloadFinishingStage, DownloadMediaProbe,
+    DownloadPausedUrlReplacement, DownloadProbe, DownloadProgress, DownloadQuery,
+    DownloadQueueAction, DownloadQueuePlacement, DownloadRouteKind, DownloadSegmentProgress,
+    DownloadServerObservation, DownloadSnapshot, DownloadSubmitMode, DownloadTaskAction,
+    DownloadTaskDetail, DownloadTaskSummary, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
+    HlsProbe, HlsVariantProbe, MAX_BROWSER_BATCH_ITEMS,
 };
 pub use nxtools_network::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
 pub use organization::{DownloadOrganizationPolicy, DownloadOrganizationPolicyError};
@@ -178,6 +180,13 @@ impl Default for DownloadAdaptiveSegmentPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadSourcePage {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub title: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadRequest {
     pub source_url: String,
     pub save_directory: PathBuf,
@@ -188,6 +197,8 @@ pub struct DownloadRequest {
     pub headers: Vec<DownloadRequestHeader>,
     pub cookie: Option<String>,
     pub referrer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_page: Option<DownloadSourcePage>,
     #[serde(default, skip_serializing_if = "DownloadCertificatePolicy::is_strict")]
     pub certificate_policy: DownloadCertificatePolicy,
     pub connection_limit: Option<u16>,
@@ -392,6 +403,26 @@ pub enum TransferProtocol {
 pub struct ResourceValidator {
     pub etag: Option<String>,
     pub last_modified: Option<String>,
+}
+
+impl ResourceValidator {
+    pub(crate) fn if_range(&self) -> Option<(&'static str, &str)> {
+        if let Some(etag) = self.etag.as_deref().map(str::trim)
+            && etag.starts_with('"')
+            && etag.ends_with('"')
+            && etag.len() >= 2
+            && etag.as_bytes()[1..etag.len() - 1]
+                .iter()
+                .all(|byte| *byte == 0x21 || *byte >= 0x23 && *byte != 0x7f)
+        {
+            return Some(("etag", etag));
+        }
+        self.last_modified
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| chrono::DateTime::parse_from_rfc2822(value).is_ok())
+            .map(|value| ("last_modified", value))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -865,6 +896,8 @@ pub struct DownloadQueue {
     pub default_save_directory: Option<PathBuf>,
     pub schedule: Option<DownloadSchedule>,
     pub is_running: bool,
+    #[serde(default)]
+    pub completion_intention: DownloadCompletionIntention,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1076,6 +1109,29 @@ impl DownloadTransferStatistics {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadCompletionAction {
+    Shutdown,
+    Sleep,
+    Hibernate,
+    ExitApplication,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadCompletionIntention {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<DownloadCompletionAction>,
+    #[serde(default)]
+    pub open_directory: bool,
+}
+
+impl DownloadCompletionIntention {
+    pub fn is_empty(&self) -> bool {
+        self.action.is_none() && !self.open_directory
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DownloadTask {
     id: DownloadTaskId,
@@ -1089,6 +1145,10 @@ pub struct DownloadTask {
     transfer_statistics: Option<DownloadTransferStatistics>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     resolution: Option<DownloadResolutionProvenance>,
+    #[serde(default, skip_serializing_if = "DownloadCompletionIntention::is_empty")]
+    completion_intention: DownloadCompletionIntention,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    completion_attempt: u64,
 }
 
 impl DownloadTask {
@@ -1103,6 +1163,8 @@ impl DownloadTask {
             completed_at_unix_ms: None,
             transfer_statistics: Some(DownloadTransferStatistics::default()),
             resolution: None,
+            completion_intention: DownloadCompletionIntention::default(),
+            completion_attempt: 0,
         }
     }
 
@@ -1126,6 +1188,22 @@ impl DownloadTask {
         Ok(())
     }
 
+    pub const fn completion_intention(&self) -> DownloadCompletionIntention {
+        self.completion_intention
+    }
+
+    pub(crate) fn set_completion_intention(&mut self, intention: DownloadCompletionIntention) {
+        self.completion_intention = intention;
+    }
+
+    pub const fn completion_attempt(&self) -> u64 {
+        self.completion_attempt
+    }
+
+    pub(crate) fn set_completion_attempt(&mut self, attempt: u64) {
+        self.completion_attempt = attempt;
+    }
+
     pub const fn transfer_statistics(&self) -> Option<DownloadTransferStatistics> {
         self.transfer_statistics
     }
@@ -1143,6 +1221,11 @@ impl DownloadTask {
 
     pub fn request(&self) -> &DownloadRequest {
         &self.request
+    }
+
+    pub(crate) fn set_source_url(&mut self, source_url: String, now_unix_ms: i64) {
+        self.request.source_url = source_url;
+        self.updated_at_unix_ms = now_unix_ms;
     }
 
     pub fn resolution(&self) -> Option<&DownloadResolutionProvenance> {
@@ -1223,6 +1306,8 @@ impl DownloadTask {
             completed_at_unix_ms,
             transfer_statistics: None,
             resolution: None,
+            completion_intention: DownloadCompletionIntention::default(),
+            completion_attempt: 0,
         };
         task.validate_invariants()?;
         Ok(task)
@@ -1250,6 +1335,10 @@ impl DownloadTask {
     }
 }
 
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
 impl<'de> Deserialize<'de> for DownloadTask {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -1268,6 +1357,8 @@ impl<'de> Deserialize<'de> for DownloadTask {
         .map_err(D::Error::custom)?;
         task.transfer_statistics = wire.transfer_statistics;
         task.resolution = wire.resolution;
+        task.completion_intention = wire.completion_intention;
+        task.completion_attempt = wire.completion_attempt;
         Ok(task)
     }
 }
@@ -1285,6 +1376,10 @@ struct DownloadTaskWire {
     transfer_statistics: Option<DownloadTransferStatistics>,
     #[serde(default)]
     resolution: Option<DownloadResolutionProvenance>,
+    #[serde(default)]
+    completion_intention: DownloadCompletionIntention,
+    #[serde(default)]
+    completion_attempt: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]

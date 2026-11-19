@@ -24,6 +24,7 @@ fn request() -> DownloadRequest {
         }],
         cookie: None,
         referrer: Some("https://example.test/".to_owned()),
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(4),
         speed_limit_bytes_per_second: None,
@@ -155,7 +156,10 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
     };
     let value = serde_json::to_value(envelope).expect("serialize command");
 
-    assert_eq!(value["protocol_version"], json!(8));
+    assert_eq!(
+        value["protocol_version"],
+        json!(DOWNLOAD_COMMAND_PROTOCOL_VERSION)
+    );
     assert_eq!(value["request_id"], json!(request_id));
     assert_eq!(value["origin"], json!("cli"));
     assert_eq!(value["command"], json!("submit"));
@@ -163,6 +167,33 @@ fn every_command_carries_a_correlation_id_origin_and_version() {
     assert_eq!(
         value["data"]["request"]["source_url"],
         json!("https://example.test/file.bin")
+    );
+}
+
+#[test]
+fn source_page_is_optional_without_changing_legacy_request_bytes() {
+    let legacy = request();
+    let legacy_bytes = serde_json::to_vec(&legacy).expect("serialize legacy request");
+    let legacy_value: serde_json::Value =
+        serde_json::from_slice(&legacy_bytes).expect("legacy JSON");
+    assert!(legacy_value.get("source_page").is_none());
+    let decoded: DownloadRequest =
+        serde_json::from_slice(&legacy_bytes).expect("decode old request");
+    assert_eq!(decoded.source_page, None);
+    assert_eq!(
+        serde_json::to_vec(&decoded).expect("re-encode old receipt"),
+        legacy_bytes
+    );
+    let mut with_page = decoded;
+    with_page.source_page = Some(nxtools_download::DownloadSourcePage {
+        url: "https://page.example.test/chapter".into(),
+        title: "章节".into(),
+    });
+    let encoded = serde_json::to_vec(&with_page).expect("serialize page");
+    assert_ne!(encoded, legacy_bytes);
+    assert_eq!(
+        serde_json::from_slice::<DownloadRequest>(&encoded).expect("page roundtrip"),
+        with_page
     );
 }
 
@@ -344,6 +375,7 @@ fn snapshot_contains_queues_and_uses_the_frozen_metrics_name() {
             default_save_directory: None,
             schedule: None,
             is_running: true,
+            completion_intention: Default::default(),
         }],
         aggregate_metrics: DownloadAggregateMetrics::default(),
         task_details: Vec::new(),
@@ -400,4 +432,31 @@ fn event_sequencer_produces_strictly_increasing_values() {
     assert_eq!(first.sequence, 41);
     assert_eq!(second.sequence, 42);
     assert!(second.sequence > first.sequence);
+}
+
+#[test]
+fn paused_url_replacement_requires_and_round_trips_attempt_revision() {
+    let command =
+        DownloadCommand::ReplacePausedUrl(nxtools_download::DownloadPausedUrlReplacement {
+            task_id: DownloadTaskId::new(),
+            operation_id: Uuid::new_v4(),
+            generation: 7,
+            expected_revision: 2,
+            expected_source_url: "https://example.test/old".into(),
+            source_url: "https://example.test/new".into(),
+        });
+    let mut value = serde_json::to_value(&command).expect("original command serialization");
+    assert_eq!(value["data"]["expected_revision"], json!(2));
+    assert_eq!(
+        serde_json::from_value::<DownloadCommand>(value.clone()).expect("revision roundtrip"),
+        command
+    );
+    value["data"]
+        .as_object_mut()
+        .expect("replacement fields")
+        .remove("expected_revision");
+    assert!(
+        serde_json::from_value::<DownloadCommand>(value).is_err(),
+        "old replacement cannot omit freshness"
+    );
 }

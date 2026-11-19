@@ -18,7 +18,7 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
     private readonly Func<bool> escape;
     private readonly ArchiveOleLoop loop;
     // Destination location owner; tests supply an owned temp root and watch roots.
-    internal Func<Guid,string,ArchiveDropLocator> CreateLocator { get; init; }=(operation,wrapper)=>ArchiveDropLocator.Create(operation,wrapper);
+    internal Func<Guid,string,bool,ArchiveDropLocator> CreateLocator { get; init; }=(operation,wrapper,direct)=>direct?ArchiveDropLocator.CreateDirect(operation,wrapper):ArchiveDropLocator.Create(operation,wrapper);
     internal Func<IReadOnlyList<string>> LocateProbeFolders { get; init; }=()=>ArchiveDropLocator.ProbeFolders(ArchiveDropLocator.ExplorerFolders());
     // A receiver's own merge/overwrite confirmation can hold the copy; an unaccepted drop gets a short window.
     internal TimeSpan LocateWindow { get; init; }=TimeSpan.FromSeconds(60);
@@ -196,11 +196,12 @@ internal sealed class ArchiveVirtualDragSession : IAsyncDisposable
     {
         WindowsCommandResult result=new(false,"drop_locate_failed");var initialized=false;ArchiveDropLocator? locator=null;
         try {
-            locator=CreateLocator(run.Command.OperationId,run.Command.Items![0].Name);
+            var item=run.Command.Items![0];
+            locator=CreateLocator(run.Command.OperationId,item.Name,!item.Directory);
             var hr=OleInitialize(IntPtr.Zero);if(hr<0)throw new COMException("ole_initialize",hr);initialized=true;
             Diagnostic("locate_started",run);
             using var monitor=new System.Threading.Timer(_=>{try{if(escape()||!validSource(run.Command.SourceWindowHandle,peer))run.Stop.Cancel();}catch(ObjectDisposedException){}},null,50,50);
-            var data=NativeFileDragService.CreateFileDropDataObject([locator.Folder]);
+            var data=NativeFileDragService.CreateFileDropDataObject([item.Directory?locator.Folder:locator.MarkerPath]);
             (int HResult,int Effect) terminal;
             try {
                 using var input=prepare(run.Command.SourceWindowHandle);

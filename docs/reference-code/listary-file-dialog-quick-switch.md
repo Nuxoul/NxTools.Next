@@ -2,7 +2,7 @@
 
 > 研究日期：2026-07-24<br>
 > 参考版本：本机 `D:\Program Files\Listary\Listary.exe`，文件版本 `6.3.5.94`<br>
-> 主要证据：`D:\Code\NxTools.Next-main\.diagnostics\listary-managed\Listary` 中的托管反编译边界<br>
+> 主要证据：固定目录 `D:\Code\Listary.Decompiled\6.3.5.94\managed\Listary` 中的托管反编译边界；窗口代码对应 `.xaml.cs`，展开状态机见同版本 `expanded\Listary`<br>
 > 次级证据：`D:\Code\SwiftList-main` 开源代码
 
 ## 结论
@@ -300,6 +300,13 @@ SwiftList 不是第一行为标准，但其开源结构印证了上面的能力�
     `SW_SHOWNOACTIVATE` 显示。`TOPMOST` 只属于首次初始化；后续位置跟随仍使用
     `SWP_NOZORDER | SWP_NOACTIVATE`。宿主离开前台时必须隐藏该窗口，不能让 Topmost
     辅助栏悬浮在其他应用之上。
+17. 固定栏查询与速启面板走同一条搜索管线：本地目录源（应用、自定义命令、计算器、环境变量、
+    声明式扩展）与索引请求使用相同的准入、`retain_kinds_apart`、同音回退和 150 ms 首次合并期限，
+    合并结果由 Finder 统一排序并保持已发布行的位置（`unified_catalog_results`、
+    `stable_indexed_results`）。对话框差异只保留四点：当前目录作为 `preferred_directory`，并在
+    统一排序后把父目录为当前目录的索引行排到其它索引行之前，应用等非索引行位置不变；`recent:`
+    保持普通文本；文件夹/文件结果交给原对话框导航/打开，其它结果走速启动作执行；生成号带
+    `FILE_DIALOG_SEARCH_GENERATION_MASK` 路由。
 
 ### Auto Quick Switch
 
@@ -311,6 +318,8 @@ SwiftList 不是第一行为标准，但其开源结构印证了上面的能力�
 6. 路径为空、不存在、非本地文件系统或导航失败时保持原对话框目录，不自动打开 Explorer。
 7. 同步不替用户按“打开/保存”，也不覆盖文件名字段。
 8. 导航完成后保持/恢复原文件对话框为前台；用户应能继续操作它。
+9. 只有已识别的宿主激活才改变同步状态：目录来源激活会替换/置位，文件对话框激活会消费，新对话框首次出现会清除。任务栏、Alt+Tab 切换器、对话框所属程序主窗口等无关前台既不消费也不清除待同步标记，也不作废已冻结的 Explorer 来源（对应 `Class337.method_0` 的 `activated_root != this_host_root → return`）。
+10. 最近来源是 Directory Opus 窗口时，该窗口再次激活但当前面板暂时无法识别（焦点在标题栏、工具栏或文件夹树），保留来源并重新置位待同步；切回对话框时由 `dialog_return` 刷新重新读取活动面板，只有该刷新失败才放弃本次同步。
 
 ### 职责边界
 

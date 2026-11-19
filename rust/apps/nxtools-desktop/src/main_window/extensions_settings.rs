@@ -340,154 +340,215 @@ impl ExtensionManagerView {
             }
         }
     }
-    pub(super) fn render_w9_editor(
-        &mut self,
-        window: &mut Window,
+    pub(super) fn detail_content(
+        &self,
         cx: &mut Context<Self>,
-    ) -> Option<AnyElement> {
-        if self.chain_draft.is_some() {
-            return Some(self.render_chain(window, cx));
-        }
-        let id = self.selected_package.clone()?;
+    ) -> Option<(String, AnyElement, AnyElement)> {
+        use gpui_kit::component::tab::{Tab, TabBar};
+        let id = self.selected_package.as_deref()?;
         let state = self.application.read(cx);
         let package = state
             .packages
             .packages
             .iter()
-            .find(|package| package.manifest.id == id)
-            .cloned();
+            .find(|p| p.manifest.id == id)?
+            .clone();
         let busy = state.busy;
-        let Some(package) = package else {
-            self.selected_package = None;
-            self.settings_draft = None;
-            self.trust_target = None;
-            return None;
-        };
         let view = cx.entity().downgrade();
-        let access = vec![
-            self.package_usage(&package, cx),
-            SettingGroup::new().items([warning_item(), self.package_actions(&package, busy, cx)]),
+        let page = self.detail_initial_page;
+        let has_commands = package
+            .manifest
+            .handlers
+            .iter()
+            .any(|h| matches!(h.feature.as_str(), "quick_launch" | "tools"));
+        let has_automation =
+            package.manifest.handlers.iter().any(|h| {
+                usage::is_event(h) || (h.feature == "quick_launch" && h.entry == "provider")
+            });
+        let pages = [
+            (0, "怎么用", true),
+            (1, "命令与工具", has_commands),
+            (2, "插件设置", !package.manifest.settings.is_empty()),
+            (3, "自动化", has_automation),
+            (4, "来源", true),
         ];
-        let mut settings = vec![SettingGroup::new().item(SettingItem::render({
-            let view = view.clone();
-            let package = package.clone();
-            move |_, _, _| {
-                let package = package.clone();
-                view_button(
-                    "extension-settings-edit",
-                    "编辑设置",
-                    busy || package.manifest.settings.is_empty(),
-                    view.clone(),
-                    move |view, window, cx| {
-                        if view
-                            .settings_draft
-                            .as_ref()
-                            .is_none_or(|draft| draft.id != package.manifest.id)
-                        {
-                            view.settings_draft =
-                                Some(PackageSettingsDraft::new(&package, window, cx));
+        let routes = pages
+            .into_iter()
+            .filter(|(_, _, available)| *available)
+            .collect::<Vec<_>>();
+        let page = if routes.iter().any(|(route, _, _)| *route == page) {
+            page
+        } else {
+            0
+        };
+        let route_ix = routes
+            .iter()
+            .position(|(route, _, _)| *route == page)
+            .unwrap_or(0);
+        let tab_view = view.clone();
+        let tab_id = id.to_owned();
+        let tabs = TabBar::new("extension-detail-tabs")
+            .underline()
+            .small()
+            .selected_index(route_ix)
+            .children(routes.iter().map(|(_, label, _)| Tab::new().label(*label)))
+            .on_click(move |index, window, cx| {
+                let Some((route, _, _)) = routes.get(*index).copied() else {
+                    return;
+                };
+                let tab_view = tab_view.clone();
+                let id = tab_id.clone();
+                window.defer(cx, move |_, cx| {
+                    let _ = tab_view.update(cx, |view, cx| {
+                        if view.selected_package.as_deref() == Some(id.as_str()) {
+                            view.detail_initial_page = route;
+                            cx.notify();
                         }
-                        view.draft_error = None;
-                    },
-                )
-            }
-        }))];
-        if self
-            .settings_draft
-            .as_ref()
-            .is_some_and(|draft| draft.id == id)
-        {
-            settings.push(self.settings_form(&package, busy, cx));
-        }
-        settings.push(self.storage_entry_group(&package, cx));
-        let header = gpui_kit::component::toolbar::Toolbar::new("extension-detail-header")
-            .with_size(gpui_kit::component::Size::Medium)
-            .h_auto()
-            .min_h_8()
-            .w_full()
-            .content(view_button(
-                "extension-detail-back",
-                "返回扩展",
-                busy,
-                view.clone(),
-                |view, _, _| {
-                    // Keep drafts and search when navigating back; Cancel is the explicit discard action.
-                    view.selected_package = None;
-                },
-            ))
-            .content(div().min_w_0().flex_1().child(format!(
-                "{} · {} · {}",
-                package.manifest.name,
-                package.manifest.version,
-                if package.enabled {
-                    "已启用"
+                    });
+                });
+            });
+        let groups = match page {
+            1 => vec![self.package_commands(&package, busy, cx)],
+            2 => {
+                let mut groups = Vec::new();
+                if self
+                    .settings_draft
+                    .as_ref()
+                    .is_some_and(|draft| draft.id == id)
+                {
+                    groups.push(self.settings_form(&package, busy, cx));
                 } else {
-                    "已停用"
+                    let edit_view = view.clone();
+                    let edit_id = id.to_owned();
+                    groups.push(
+                        SettingGroup::new().item(SettingItem::render(move |_, _, _| {
+                            view_button(
+                                "extension-settings-edit",
+                                "编辑设置",
+                                busy,
+                                edit_view.clone(),
+                                {
+                                    let id = edit_id.clone();
+                                    move |view, window, cx| {
+                                        view.open_settings(id.clone(), window, cx)
+                                    }
+                                },
+                            )
+                        })),
+                    );
                 }
-            )))
-            .content(self.activity_button().outline().disabled(busy));
-        let _ = window;
-        let mut detail = div()
+                groups.push(self.storage_entry_group(&package, cx));
+                groups
+            }
+            3 => vec![self.handler_controls(&package, busy, cx)],
+            4 => {
+                let mut groups =
+                    vec![SettingGroup::new().item(self.package_actions(&package, busy, cx))];
+                if package.manifest.runtime.is_some() {
+                    groups.push(SettingGroup::new().item(warning_item()));
+                    groups.push(self.package_environment(&package, cx));
+                }
+                groups.push(package_metadata(&package));
+                groups
+            }
+            _ => vec![self.package_usage(&package, cx)],
+        };
+        let hidden = gpui_kit::StyleRefinement {
+            display: Some(gpui_kit::Display::None),
+            ..Default::default()
+        };
+        let settings = Settings::new(format!(
+            "extension-package-detail-{id}-{page}-{}",
+            self.detail_navigation_revision
+        ))
+        .sidebar_width(px(0.0))
+        .sidebar_size_range(px(0.0)..px(0.0))
+        .sidebar_style(&hidden)
+        .header_style(&hidden)
+        .pages([SettingPage::new("扩展详情")
+            .resettable(false)
+            .header_style(&hidden)
+            .groups(groups)]);
+        let mut body = div()
             .size_full()
             .min_w_0()
+            .min_h_0()
             .flex()
             .flex_col()
             .gap_2()
-            .child(header)
+            .debug_selector(|| "extension-usage-guide".into())
+            .child(tabs)
             .child(
                 div()
-                    .debug_selector(|| "extension-detail-settings-viewport".into())
                     .flex_1()
                     .min_h_0()
                     .w_full()
-                    .child(
-                        Settings::new(format!(
-                            "extension-package-detail-{id}-{}",
-                            self.detail_navigation_revision
-                        ))
-                        .default_selected_index(gpui_kit::component::setting::SelectIndex {
-                            page_ix: self.detail_initial_page,
-                            group_ix: None,
-                        })
-                        .header_style(&gpui_kit::StyleRefinement {
-                            display: Some(gpui_kit::Display::None),
-                            ..Default::default()
-                        })
-                        .sidebar_width(px(160.0))
-                        .sidebar_size_range(px(160.0)..px(208.0))
-                        .pages([
-                            SettingPage::new("用途与启用")
-                                .resettable(false)
-                                .groups(access),
-                            SettingPage::new("命令与工具")
-                                .resettable(false)
-                                .group(self.package_commands(&package, busy, cx)),
-                            SettingPage::new("插件设置")
-                                .resettable(false)
-                                .groups(settings),
-                            SettingPage::new("自动化")
-                                .resettable(false)
-                                .group(self.handler_controls(&package, busy, cx)),
-                            SettingPage::new("来源与能力")
-                                .resettable(false)
-                                .group(package_metadata(&package)),
-                            SettingPage::new("运行环境")
-                                .resettable(false)
-                                .group(self.package_environment(&package, cx)),
-                        ]),
-                    ),
+                    .debug_selector(|| "extension-detail-settings-viewport".into())
+                    .child(settings),
             );
         if let Some(message) = self.draft_error.clone() {
-            detail = detail.child(Alert::error("extension-operation-validation", message).small());
+            body = body.child(Alert::error("extension-operation-validation", message).small());
         }
-        if self
-            .settings_draft
-            .as_ref()
-            .is_some_and(|draft| draft.id == id)
+        let mut footer = div().w_full().flex().justify_end().items_center().gap_2();
+        if page == 2
+            && self
+                .settings_draft
+                .as_ref()
+                .is_some_and(|draft| draft.id == id)
         {
-            detail = detail.child(self.settings_actions(&package, busy, cx));
+            footer = footer.child(self.settings_actions(&package, busy, cx));
+        } else {
+            footer = footer.child(view_button(
+                "extension-detail-back",
+                "关闭",
+                false,
+                view.clone(),
+                |view, _, _| view.selected_package = None,
+            ));
+            if page == 0 {
+                let action_id = id.to_owned();
+                let key = format!("extension-next-{id}");
+                let action = match self.attention_reason(&package, cx) {
+                    Some(catalog::AttentionReason::Trust) => Some(view_button(
+                        key,
+                        "检查信任",
+                        busy,
+                        view,
+                        move |view, window, cx| view.open_trust(action_id.clone(), window, cx),
+                    )),
+                    Some(catalog::AttentionReason::Settings) => Some(view_button(
+                        key,
+                        "去设置",
+                        busy,
+                        view,
+                        move |view, window, cx| view.open_settings(action_id.clone(), window, cx),
+                    )),
+                    Some(catalog::AttentionReason::Paused) => Some(view_button(
+                        key,
+                        "查看自动触发",
+                        busy,
+                        view,
+                        |view, _, _| view.detail_initial_page = 3,
+                    )),
+                    _ if !package.enabled => Some(app_button(
+                        key,
+                        "启用扩展",
+                        busy,
+                        self.application.downgrade(),
+                        move |app, cx| app.set_enabled(action_id.clone(), true, cx),
+                    )),
+                    _ => None,
+                };
+                if let Some(action) = action {
+                    footer = footer.child(action.primary());
+                }
+            }
         }
-        Some(detail.into_any_element())
+        Some((
+            package.manifest.name,
+            body.into_any_element(),
+            footer.into_any_element(),
+        ))
     }
 
     fn package_actions(
@@ -859,7 +920,13 @@ impl ExtensionManagerView {
     ) -> SettingGroup {
         let owner = self.application.downgrade();
         let mut items = Vec::new();
-        for handler in &package.manifest.handlers {
+        let state = self.application.read(cx);
+        let package_id = package.manifest.id.as_str();
+        let mut handlers = package.manifest.handlers.iter().collect::<Vec<_>>();
+        handlers.sort_by_key(|handler| {
+            !usage::is_event(handler) || !state.event_paused(package_id, &handler.id)
+        });
+        for handler in handlers {
             let event = usage::is_event(handler);
             let provider = handler.feature == "quick_launch" && handler.entry == "provider";
             if !event && !provider {
@@ -977,44 +1044,35 @@ impl ExtensionManagerView {
             .items(items)
     }
 
-    pub(super) fn chain_entry_button(&self, cx: &Context<Self>) -> Button {
-        let view = cx.entity().downgrade();
-        let busy = self.application.read(cx).busy;
-        view_button(
-            "extension-chain-edit",
-            "下载解析链",
-            busy,
-            view,
-            |view, window, cx| {
-                let registry = view.application.read(cx).packages.clone();
-                let candidates = candidates(&registry);
-                let labels = candidates.iter().map(reference_label).collect::<Vec<_>>();
-                let choice = cx.new(|cx| SelectState::new(labels, None, window, cx));
-                let hosts = registry
-                    .resolver_chains
-                    .keys()
-                    .chain(registry.resolver_preferences.keys())
-                    .cloned()
-                    .collect::<std::collections::BTreeSet<_>>()
-                    .into_iter()
-                    .collect::<Vec<_>>();
-                let saved_hosts = cx.new(|cx| SelectState::new(hosts, None, window, cx));
-                view.chain_draft = Some(ChainDraft {
-                    route: Vec::new(),
-                    candidates,
-                    choice,
-                    saved_hosts,
-                });
-                view.draft_error = None;
-                view.chain_host.update(cx, |input, cx| {
-                    input.set_value("", window, cx);
-                    input.focus(window, cx);
-                });
-            },
-        )
+    pub(super) fn open_chain(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let view = self;
+        let registry = view.application.read(cx).packages.clone();
+        let candidates = candidates(&registry);
+        let labels = candidates.iter().map(reference_label).collect::<Vec<_>>();
+        let choice = cx.new(|cx| SelectState::new(labels, None, window, cx));
+        let hosts = registry
+            .resolver_chains
+            .keys()
+            .chain(registry.resolver_preferences.keys())
+            .cloned()
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let saved_hosts = cx.new(|cx| SelectState::new(hosts, None, window, cx));
+        view.chain_draft = Some(ChainDraft {
+            route: Vec::new(),
+            candidates,
+            choice,
+            saved_hosts,
+        });
+        view.draft_error = None;
+        view.chain_host.update(cx, |input, cx| {
+            input.set_value("", window, cx);
+            input.focus(window, cx);
+        });
     }
 
-    fn render_chain(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn render_chain(&self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let draft = self.chain_draft.as_ref().expect("chain editor");
         let registry = self.application.read(cx).packages.clone();
         let busy = self.application.read(cx).busy;
@@ -1447,10 +1505,10 @@ pub(super) mod tests {
         let before = std::fs::read(&path).expect("config before navigation");
         let (_, view, window) = mount(config, path.clone(), cx);
         view.update_in(window, |view, window, cx| {
-            view.open_usage("fixture.manager".into(), window, cx)
+            view.open_settings("fixture.manager".into(), window, cx);
+            cx.notify();
         });
         window.run_until_parked();
-        click(window, "extension-usage-settings");
         window.update(|window, cx| {
             window.activate_window();
             window.draw(cx).clear(cx);
@@ -1696,6 +1754,7 @@ pub(super) mod tests {
         let before = std::fs::read(&path).expect("before");
         let (owner, _, window) = mount(config, path.clone(), cx);
         click(window, "extension-manage-fixture.manager");
+        select_page(window, "来源");
         click(window, "extension-remove-fixture.manager");
         idle(&owner, window);
         assert_eq!(
@@ -1724,6 +1783,7 @@ pub(super) mod tests {
         config.save_to(&path).expect("save");
         let (owner, _, window) = mount(config, path.clone(), cx);
         click(window, "extension-manage-fixture.manager");
+        select_page(window, "来源");
         click(window, "extension-remove-fixture.manager");
         owner.update(window, |app, cx| {
             app.packages.packages[0].manifest.description = "changed after review".into();
@@ -1754,8 +1814,8 @@ pub(super) mod tests {
         let activity = window.update(|window, _| {
             gpui_kit::base::test_support::snapshots(window)
                 .into_iter()
-                .find(|node| node.path().last() == Some(&"extension-recent-activity".into()))
-                .expect("actual activity Button")
+                .find(|node| node.label() == Some("调用记录"))
+                .expect("actual activity tab")
                 .bounds()
         });
         assert!(activity.top() >= px(0.0) && activity.bottom() <= px(430.0));
@@ -1767,10 +1827,8 @@ pub(super) mod tests {
             .expect("official Empty header");
         assert!(empty.top() >= px(0.0) && empty.bottom() <= px(430.0));
         assert!(application.read_with(window, |app, _| app.recent_manual_runs().is_empty()));
-        assert!(window.update(|window, cx| window.has_active_dialog(cx)));
-        window.simulate_keystrokes("escape");
-        window.run_until_parked();
         assert!(!window.update(|window, cx| window.has_active_dialog(cx)));
+        assert!(!window.update(|window, cx| window.has_active_sheet(cx)));
     }
 
     #[gpui_kit::test]
@@ -1789,9 +1847,9 @@ pub(super) mod tests {
         window.update(|window, cx| window.draw(cx).clear(cx));
         assert!(
             window
-                .debug_bounds("extension-handler-metadata-one")
+                .debug_bounds("extension-remove-fixture.manager")
                 .is_some(),
-            "handler projected through structured public slots"
+            "management is reachable before metadata"
         );
         let mut last_reachable = false;
         for _ in 0..80 {
@@ -1965,7 +2023,10 @@ pub(super) mod tests {
             first.right() < second.left(),
             "distinct separated tile hit targets"
         );
-        assert_eq!(first.size.height, px(32.0));
+        assert!(
+            first.size.height >= px(96.0),
+            "the entire cell is the hit target"
+        );
     }
 
     #[gpui_kit::test]
@@ -1982,13 +2043,7 @@ pub(super) mod tests {
         ] {
             window.update(|_, cx| crate::theme::set_theme_preference(preference, cx));
             window.update(|window, cx| window.draw(cx).clear(cx));
-            for selector in [
-                "extension-import-open",
-                "extension-directory-open",
-                "extension-environment-open",
-                "extension-chain-edit",
-                "extension-recent-activity",
-            ] {
+            for selector in ["extension-management", "extension-import-open"] {
                 let bounds = window.update(|window, _| {
                     gpui_kit::base::test_support::snapshots(window)
                         .into_iter()
@@ -2001,8 +2056,8 @@ pub(super) mod tests {
                 let painted = window.update(|window, _| {
                     let scale = window.scale_factor();
                     window.painted_quads().iter().any(|quad| {
-                        quad.border_color.a > 0.0
-                            && quad.border_widths.top.as_f32() > 0.0
+                        (selector == "extension-import-open" && !quad.background.is_transparent()
+                            || quad.border_color.a > 0.0 && quad.border_widths.top.as_f32() > 0.0)
                             && (quad.bounds.origin.x.as_f32() / scale - bounds.left().as_f32())
                                 .abs()
                                 < 1.0
@@ -2044,7 +2099,7 @@ pub(super) mod tests {
                 .focus_handle(cx)
                 .focus(window, cx);
         });
-        window.simulate_keystrokes("shift-tab");
+        window.simulate_keystrokes("shift-tab shift-tab");
         let first = window
             .update(|window, cx| window.focused(cx))
             .expect("last header button");
@@ -2056,11 +2111,11 @@ pub(super) mod tests {
             first, second,
             "official Toolbar content still roves real descendant focus"
         );
-        window.simulate_keystrokes("right right right right");
+        window.simulate_keystrokes("right");
         assert_eq!(
             window.update(|window, cx| window.focused(cx)),
             Some(first),
-            "five outlined actions wrap within header"
+            "two header actions wrap within the toolbar"
         );
     }
 
@@ -2081,13 +2136,7 @@ pub(super) mod tests {
             window.simulate_resize(size(px(width), px(430.0)));
             window.update(|window, cx| window.draw(cx).clear(cx));
             let mut previous_right = px(0.0);
-            for selector in [
-                "extension-import-open",
-                "extension-directory-open",
-                "extension-environment-open",
-                "extension-chain-edit",
-                "extension-recent-activity",
-            ] {
+            for selector in ["extension-management", "extension-import-open"] {
                 let bounds = window.update(|window, _| {
                     gpui_kit::base::test_support::snapshots(window)
                         .into_iter()
@@ -2108,35 +2157,16 @@ pub(super) mod tests {
             }
         }
         window.simulate_resize(size(px(744.0), px(430.0)));
+        let _ = view;
         for keyboard in [false, true] {
-            if keyboard {
-                window.update(|window, cx| {
-                    view.read(cx)
-                        .search
-                        .read(cx)
-                        .focus_handle(cx)
-                        .focus(window, cx)
-                });
-                window.simulate_keystrokes("shift-tab right right");
-                window.simulate_event(gpui_kit::KeyDownEvent {
-                    keystroke: Keystroke::parse("space").expect("Space"),
-                    is_held: false,
-                    prefer_character_input: false,
-                });
-                window.simulate_event(KeyUpEvent {
-                    keystroke: Keystroke::parse("space").expect("release"),
-                });
-                window.run_until_parked();
-            } else {
-                click(window, "extension-directory-open");
-            }
+            super::click_management(window, "打开插件目录", keyboard);
             let command = endpoint
                 .try_receive_command_for_contract_test()
                 .expect("actual button dispatch");
             assert!(
                 matches!(command.message, nxtools_protocol::Message::PlatformCommand(nxtools_protocol::PlatformCommand::OpenShellTarget(open)) if std::path::Path::new(&open.target) == temp.path().join("extensions"))
             );
-            click(window, "extension-directory-open");
+            super::click_management(window, "打开插件目录", false);
             assert!(
                 endpoint.try_receive_command_for_contract_test().is_err(),
                 "pending disabled control is inert"
@@ -2163,6 +2193,42 @@ pub(super) mod tests {
     }
 
     #[gpui_kit::test]
+    fn redesigned_extension_workspace_filters_attention_and_opens_one_sheet(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui_kit::component::WindowExt;
+        let temp = tempfile::tempdir().expect("owned workspace");
+        let mut config = fixture(&temp);
+        let other = nxtools_extensions::ImportPreview::from_json(br#"{"schema_version":1,"id":"fixture.off","name":"Off","version":"1","handlers":[{"id":"open","title":"Open","feature":"tools","entry":"action","action":{"type":"website","url_template":"https://example.test"}}]}"#).expect("declarative fixture");
+        config
+            .extensions
+            .install(other, "owned".into(), false)
+            .expect("install");
+        let path = temp.path().join("config.json");
+        config.save_to(&path).expect("config");
+        let original = std::fs::read(&path).expect("original");
+        let (_, _, window) = mount(config, path.clone(), cx);
+        click(window, "extension-attention-open");
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        assert!(
+            window
+                .debug_bounds("extension-manage-fixture.off")
+                .is_none(),
+            "ordinary disabled is not a failure"
+        );
+        click(window, "extension-manage-fixture.manager");
+        assert!(window.update(|window, cx| window.has_active_sheet(cx)));
+        assert!(!window.update(|window, cx| window.has_active_dialog(cx)));
+        window.simulate_keystrokes("escape");
+        window.run_until_parked();
+        assert!(!window.update(|window, cx| window.has_active_sheet(cx)));
+        assert_eq!(
+            std::fs::read(path).expect("discovery never writes"),
+            original
+        );
+    }
+
+    #[gpui_kit::test]
     fn extension_cell_next_step_opens_trust_without_enabling_or_saving(cx: &mut TestAppContext) {
         use gpui_kit::component::WindowExt;
         let temp = tempfile::tempdir().expect("trust cell");
@@ -2171,6 +2237,7 @@ pub(super) mod tests {
         config.save_to(&path).expect("config");
         let original = std::fs::read(&path).expect("bytes");
         let (owner, _, window) = mount(config, path.clone(), cx);
+        click(window, "extension-manage-fixture.manager");
         click(window, "extension-next-fixture.manager");
         window.update(|window, cx| window.draw(cx).clear(cx));
         assert!(
@@ -2183,6 +2250,70 @@ pub(super) mod tests {
     }
 
     #[gpui_kit::test]
+    fn extension_cell_missing_required_settings_opens_editable_draft(cx: &mut TestAppContext) {
+        let temp = tempfile::tempdir().expect("owned settings fixture");
+        let mut config = fixture(&temp);
+        let source = temp.path().join("source");
+        let mut manifest = config.extensions.packages[0].manifest.clone();
+        manifest.settings[0].validation = Some(nxtools_extensions::TextValidation {
+            required: true,
+            min_length: None,
+            max_length: None,
+            pattern: None,
+        });
+        manifest.settings[0].field = nxtools_extensions::SettingType::Text {
+            default: String::new(),
+        };
+        std::fs::write(
+            source.join("extension.json"),
+            serde_json::to_vec(&manifest).expect("manifest"),
+        )
+        .expect("source fixture");
+        let preview = nxtools_extensions::ImportPreview::from_directory(&source)
+            .expect("preview")
+            .stage_into(&temp.path().join("packages"))
+            .expect("stage");
+        let executable = preview
+            .code_directory
+            .as_ref()
+            .expect("staged")
+            .join("fixture.exe");
+        let hash = preview.content_hash.clone();
+        config
+            .extensions
+            .install(preview, "owned".into(), true)
+            .expect("replace fixture");
+        config
+            .extensions
+            .approve(
+                "fixture.manager",
+                &hash,
+                nxtools_extensions::RuntimeIdentity::inspect(&executable).expect("identity"),
+            )
+            .expect("trust fixture");
+        config
+            .extensions
+            .set_enabled("fixture.manager", true, &[])
+            .expect("enable");
+        let path = temp.path().join("config.json");
+        config.save_to(&path).expect("config");
+        let original = std::fs::read(&path).expect("before");
+        let (_, view, window) = mount(config, path.clone(), cx);
+        click(window, "extension-manage-fixture.manager");
+        click(window, "extension-next-fixture.manager");
+        assert!(view.read_with(window, |view, _| view.settings_draft.is_some()));
+        assert!(
+            window
+                .debug_bounds("extension-detail-settings-viewport")
+                .is_some()
+        );
+        assert_eq!(
+            std::fs::read(path).expect("navigation does not save"),
+            original
+        );
+    }
+
+    #[gpui_kit::test]
     fn enabled_cell_use_guide_is_explicit_and_never_dispatches_a_run(cx: &mut TestAppContext) {
         let temp = tempfile::tempdir().expect("use cell");
         let mut config = nxtools_core::AppConfig::default();
@@ -2192,19 +2323,15 @@ pub(super) mod tests {
             .set_enabled("fixture.use", true, &[])
             .expect("enable");
         let (owner, _, window) = mount(config, temp.path().join("unused.json"), cx);
-        click(window, "extension-next-fixture.use");
+        click(window, "extension-manage-fixture.use");
         window.update(|window, cx| window.draw(cx).clear(cx));
         assert!(window.debug_bounds("extension-usage-guide").is_some());
-        assert!(window.debug_bounds("extension-usage-trigger-search:快速启动 → 输入关键词（可在空格后附查询）：findme").is_some());
+        assert!(window.debug_bounds("extension-detail-trigger-search:快速启动 → 输入关键词（可在空格后附查询）：findme").is_some());
         assert!(
             owner.read_with(window, |app, _| app.recent_manual_runs().is_empty()),
             "guide must not execute or guess input"
         );
-        let close = window
-            .debug_bounds("extension-usage-close")
-            .expect("guide action");
-        assert!(close.bottom() <= px(430.0));
-        click(window, "extension-usage-close");
+        click(window, "extension-detail-back");
     }
 
     // Added before the presentation change. Parent owns serialized Cargo/red verification.
@@ -2229,27 +2356,21 @@ pub(super) mod tests {
         let purpose = window
             .debug_bounds("extension-overview-purpose-fixture.manager:整理所选文本，保留原始记录")
             .expect("actual overview must render the author's purpose");
-        let next = window
-            .debug_bounds("extension-next-fixture.manager")
-            .expect("state-specific next step");
+        let tile = window
+            .debug_bounds("extension-manage-fixture.manager")
+            .expect("one tile action");
+        assert!(purpose.top() >= tile.top() && purpose.bottom() <= tile.bottom());
         assert!(
-            purpose.bottom() <= next.top(),
-            "purpose before next-step action"
-        );
-        assert!(
-            next.bottom() <= px(430.0),
-            "next step visible in minimum content size"
-        );
-        assert_eq!(
             window
-                .debug_bounds("extension-manage-fixture.manager")
-                .expect("manage action")
-                .size
-                .height,
-            px(32.0)
+                .debug_bounds("extension-next-fixture.manager")
+                .is_none()
         );
         click(window, "extension-manage-fixture.manager");
         window.update(|window, cx| window.draw(cx).clear(cx));
+        let next = window
+            .debug_bounds("extension-next-fixture.manager")
+            .expect("detail supplies a next step");
+        assert!(next.bottom() <= px(430.0));
         let purpose = window
             .debug_bounds("extension-detail-purpose:整理所选文本，保留原始记录")
             .expect("first detail page must begin with purpose, not just access controls");
@@ -2259,18 +2380,11 @@ pub(super) mod tests {
             )
             .expect("first detail page must show the human trigger");
         assert!(purpose.bottom() <= instruction.top());
+        select_page(window, "来源");
         assert!(
-            window.update(|window, _| gpui_kit::base::test_support::snapshots(window)
-                .iter()
-                .any(|node| node.path().last() == Some(&"0-0".into()))),
-            "usage retains page index zero"
-        );
-        select_page(window, "运行环境");
-        assert!(
-            window.update(|window, _| gpui_kit::base::test_support::snapshots(window)
-                .iter()
-                .any(|node| node.path().last() == Some(&"0-5".into()))),
-            "environment remains page five"
+            window
+                .debug_bounds("extension-remove-fixture.manager")
+                .is_some()
         );
     }
 
@@ -2325,7 +2439,8 @@ pub(super) mod tests {
         let input = window.read(|cx| {
             view.read(cx).settings_draft.as_ref().expect("draft").inputs["name"].entity_id()
         });
-        click(window, "extension-detail-back");
+        window.simulate_keystrokes("escape");
+        window.run_until_parked();
         click(window, "extension-manage-fixture.manager");
         select_page(window, "插件设置");
         assert_eq!(window.read(|cx| view.read(cx).search.entity_id()), search);
@@ -2550,30 +2665,18 @@ pub(super) mod tests {
         window: &mut VisualTestContext,
         label: &str,
     ) {
-        // Historical callers still name page zero by its previous title; the real Settings
-        // item and production label are now usage-first. Preserve the original index seam.
-        let label = if label == "信任与启用" {
-            "用途与启用"
-        } else {
-            label
+        let label = match label {
+            "信任与启用" => "来源",
+            "用途与启用" => "怎么用",
+            "来源与能力" | "运行环境" => "来源",
+            other => other,
         };
-        let index = [
-            "用途与启用",
-            "命令与工具",
-            "插件设置",
-            "自动化",
-            "来源与能力",
-            "运行环境",
-        ]
-        .iter()
-        .position(|title| *title == label)
-        .expect("known package page");
         window.update(|window, cx| window.draw(cx).clear(cx));
         let bounds = window.update(|window, _| {
             gpui_kit::base::test_support::snapshots(window)
                 .into_iter()
-                .find(|snapshot| snapshot.path().last() == Some(&format!("0-{index}").into()))
-                .expect("actual released Settings page item")
+                .find(|snapshot| snapshot.label() == Some(label))
+                .expect("actual detail tab")
                 .bounds()
         });
         window.simulate_click(bounds.center(), Modifiers::default());
@@ -2582,6 +2685,10 @@ pub(super) mod tests {
     }
 
     fn click(window: &mut VisualTestContext, selector: &'static str) {
+        if selector == "extension-chain-edit" {
+            super::click_management(window, "下载解析链", false);
+            return;
+        }
         // Real scrolling and current bounds, not mere cached selector presence.
         top(window);
         for _ in 0..40 {
@@ -2594,6 +2701,9 @@ pub(super) mod tests {
                 && (!(selector.starts_with("extension-opt-in-")
                     || selector.starts_with("extension-secret-clear-")
                     || selector.starts_with("extension-setting-")
+                    || selector == "extension-package-storage-open"
+                    || selector.starts_with("extension-event-retry-")
+                    || selector.starts_with("extension-remove-fixture.")
                     || matches!(
                         selector,
                         "extension-trust-edit" | "extension-detail-toggle" | "extension-revoke"
@@ -2629,8 +2739,9 @@ pub(super) mod tests {
                 window.run_until_parked();
                 return;
             }
+            let position = detail_scroll_point(window);
             window.simulate_event(gpui_kit::ScrollWheelEvent {
-                position: gpui_kit::point(px(650.0), px(350.0)),
+                position,
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
                 ..Default::default()
             });
@@ -2638,9 +2749,19 @@ pub(super) mod tests {
         panic!("manager action {selector} must be reachable at minimum viewport");
     }
 
+    fn detail_scroll_point(window: &mut VisualTestContext) -> gpui_kit::Point<gpui_kit::Pixels> {
+        window
+            .debug_bounds("extension-detail-settings-viewport")
+            .map_or_else(
+                || gpui_kit::point(px(650.0), px(350.0)),
+                |bounds| bounds.center(),
+            )
+    }
+
     fn top(window: &mut VisualTestContext) {
+        let position = detail_scroll_point(window);
         window.simulate_event(gpui_kit::ScrollWheelEvent {
-            position: gpui_kit::point(px(650.0), px(350.0)),
+            position,
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 100.0)),
             ..Default::default()
         });
@@ -2672,6 +2793,7 @@ pub(super) mod tests {
         config.save_to(&path).expect("owned config");
         let (application, view, window) = mount(config, path.clone(), cx);
         click(window, "extension-manage-fixture.manager");
+        select_page(window, "来源");
         window.refresh().expect("disclosure");
         assert_eq!(
             TRUST_WARNING,
@@ -2778,7 +2900,11 @@ pub(super) mod tests {
             view.read(cx).settings_draft.as_ref().expect("draft").inputs["name"].entity_id()
         });
         select_page(window, "自动化");
-        window.refresh().expect("draft actions remain reachable");
+        assert!(window.debug_bounds("extension-settings-save").is_none());
+        select_page(window, "插件设置");
+        window
+            .refresh()
+            .expect("draft actions fit on the settings tab");
         for selector in ["extension-settings-save", "extension-settings-cancel"] {
             let bounds = window.debug_bounds(selector).expect("pinned draft action");
             assert!(
@@ -2787,7 +2913,6 @@ pub(super) mod tests {
                     && bounds.right() <= px(744.0)
             );
         }
-        select_page(window, "插件设置");
         assert_eq!(
             window.read(|cx| view
                 .read(cx)

@@ -130,6 +130,7 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,

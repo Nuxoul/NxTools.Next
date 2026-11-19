@@ -153,7 +153,6 @@ enum Command {
     ClearRecent,
     Extract(bool),
     Test,
-    UnlockDrag,
     ContinueReclamation,
     Refresh,
     Cancel,
@@ -1421,7 +1420,6 @@ impl ArchiveBrowser {
                     });
                 });
             }
-            Command::UnlockDrag => self.unlock_drag(cx),
             Command::Test => {
                 if !matches!(self.status, BrowserStatus::Ready) {
                     return;
@@ -1601,7 +1599,7 @@ impl ArchiveBrowser {
         });
         cx.notify();
     }
-    fn navigate(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn navigate(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
         if self.retired {
             return;
         }
@@ -1976,6 +1974,16 @@ impl ArchiveBrowser {
                 });
             })
     }
+    fn raw_join_menu_item(view: WeakEntity<Self>) -> PopupMenuItem {
+        PopupMenuItem::new("合并分卷文件（.001）…").on_click(move |_, _, cx| {
+            let Ok(platform) = view.read_with(cx, |view, _| view.drag.platform.clone()) else {
+                return;
+            };
+            cx.defer(move |cx| {
+                let _ = crate::tools::raw_join::open(platform, None, cx);
+            });
+        })
+    }
     fn file_menu(
         recent: Vec<PathBuf>,
         ready: bool,
@@ -2017,6 +2025,7 @@ impl ArchiveBrowser {
             Command::New,
             false,
         ))
+        .item(Self::raw_join_menu_item(weak.clone()))
         .item(Self::menu_item(
             weak.clone(),
             "解压全部…  Ctrl+E",
@@ -2651,6 +2660,7 @@ impl ArchiveBrowser {
                     Command::New,
                     false,
                 ))
+                .item(Self::raw_join_menu_item(weak.clone()))
             } else {
                 let view = view.read(cx);
                 menu.item(Self::menu_item(
@@ -2696,14 +2706,6 @@ impl ArchiveBrowser {
                     Command::Test,
                     !matches!(view.status, BrowserStatus::Ready),
                 ))
-                .when(view.encrypted == Some(true), |menu| {
-                    menu.item(Self::menu_item(
-                        weak.clone(),
-                        "解锁拖出",
-                        Command::UnlockDrag,
-                        !matches!(view.status, BrowserStatus::Ready),
-                    ))
-                })
                 .separator()
                 .item(Self::menu_item(
                     weak.clone(),
@@ -2723,6 +2725,7 @@ impl ArchiveBrowser {
     ) -> AnyElement {
         let weak = cx.entity().downgrade();
         Button::new(id)
+            .debug_selector(move || id.into())
             .label(label)
             .ghost()
             .with_size(Size::Small)
@@ -3146,15 +3149,6 @@ impl Render for ArchiveBrowser {
                     ))
                     .child(self.action("archive-test", "测试", Command::Test, !ready, cx))
                     .child(gpui_kit::component::separator::Separator::vertical().h(px(48.)))
-                    .when(self.encrypted == Some(true), |bar| {
-                        bar.child(self.action(
-                            "archive-unlock-drag",
-                            "解锁拖出",
-                            Command::UnlockDrag,
-                            !ready,
-                            cx,
-                        ))
-                    })
                     .when(loading, |bar| {
                         bar.child(self.action(
                             "archive-cancel",
@@ -3303,6 +3297,8 @@ impl Render for ArchiveBrowser {
                                     })
                                     .min_w_0()
                                     .flex_1()
+                                    .whitespace_nowrap()
+                                    .overflow_hidden()
                                     .text_ellipsis()
                                     .child(name.clone())
                                     .tooltip(move |window, cx| {
@@ -3444,7 +3440,6 @@ impl Render for ArchiveBrowser {
         let id = self.window_id;
         div()
             .id("archive-browser")
-            .font_family(crate::ui::typography::UI_FONT_FAMILY)
             .size_full()
             .flex()
             .flex_col()

@@ -30,11 +30,16 @@ internal static class Program
             ("archive association settings fixture grouped compensation gate", ArchiveAssociationSettingsTests.GroupedServiceCompensationAndGate),
             ("archive association settings fixture create whole group", ArchiveAssociationSettingsTests.CreateForwardsWholeGroupWithoutComOrLaunch),
             ("archive association settings fixture fixed settings detached", ArchiveAssociationSettingsTests.FixedDefaultAppsWireResultsAndDetachedReader),
+            ("markdown association fixture strict wire and detached reader", MarkdownAssociationTests.WireAndDetachedReader),
+            ("markdown association fixture registration and effective default", MarkdownAssociationTests.RegistrationAndEffectiveDefault),
+            ("markdown association fixture conflicts cancellation and failures", MarkdownAssociationTests.ConflictsCancellationAndFailures),
+            ("markdown association fixture registered app settings", MarkdownAssociationTests.OpensRegisteredAppSettings),
             ("main startup fixture hidden first show client size", MainWindowStartupTests.OwnedHiddenFirstShowRetainsClientSize),
             ("main startup fixture DPI readback failure and cancellation", MainWindowStartupTests.DpiReadbackFailureAndCancellation),
             ("main startup fixture detached preparation responsiveness", MainWindowStartupTests.DetachedPreparationDoesNotBlockLaterCommands),
             ("system proxy snapshot fixture parsing", SystemProxySnapshotTests.StaticAutomaticAndInvalidConfigurations),
             ("floating picker fixture user wait", FloatingAssistantCoordinatorTests.PickerWaitingForUserIsNotBackgroundTimeout),
+            ("floating picker fixture uses source modal owner", FloatingAssistantCoordinatorTests.PickerUsesSourceWindowAsModalOwner),
             ("floating coordinator fixture strict wire and event", FloatingAssistantCoordinatorTests.StrictWireAndEvents),
             ("floating coordinator fixture environment signature retries", FloatingAssistantCoordinatorTests.EnvironmentSignatureRetriesAndDeduplicates),
             ("floating coordinator fixture fullscreen policy", FloatingAssistantCoordinatorTests.FullscreenPolicyRejectsDesktopAndFramedWindows),
@@ -360,6 +365,20 @@ internal static class Program
             ("extension manifest picker fixture cancellation drops late selection", ExtensionManifestPickerTests.CancellationRejectsLateSelectionWithoutNativeWork),
             ("extension manifest picker fixture invalid selection and safe native failure", ExtensionManifestPickerTests.InvalidSelectionAndNativeFailuresArePayloadSafe),
             ("extension manifest picker fixture detached reader responsiveness", ExtensionManifestPickerTests.DetachedPickerDoesNotBlockLaterCommands),
+            ("elevated input fixture automatic recovery is bounded", ElevatedInputChannelTests.AutomaticRecoveryIsBounded),
+            ("elevated input fixture failure before configuration ACK", ElevatedInputChannelTests.FailureBeforeConfigurationAck),
+            ("elevated input fixture message routing and owned cleanup", ElevatedInputHostTests.MessageRoutingAndOwnedCleanup),
+            ("elevated input fixture paste target and destination validation", ElevatedInputHostTests.PasteTargetAndDestinationValidation),
+            ("elevated input fixture administrator outside pointer message window", ElevatedInputHostTests.AdministratorPointerUsesOriginalMessageWindow),
+            ("elevated input fixture activation uses configured Desktop ownership", ElevatedInputHostTests.ActivationRequiresConfiguredDesktopOwnership),
+            ("elevated input fixture activation and pointer original channel", ElevatedInputChannelTests.ActivationAndPointerUseOriginalConnection),
+            ("elevated input fixture pointer survives long idle and tick wrap", ElevatedInputChannelTests.PointerObservationSurvivesLongIdle),
+            ("elevated input fixture configuration replay and exit", ElevatedInputChannelTests.ConfigurationReplayAndExit),
+            ("elevated input fixture paste and directory share channel", ElevatedInputChannelTests.PasteAndDirectoryShareChannel),
+            ("elevated input fixture unavailable keeps ordinary path", ElevatedInputChannelTests.UnavailableKeepsOrdinaryPath),
+            ("elevated input fixture clipboard write and input ownership", ElevatedInputTests.ClipboardWriteAndInputOwnership),
+            ("elevated input fixture gesture sources never duplicate", ElevatedInputTests.GestureSourcesNeverDuplicate),
+            ("elevated input fixture foreground change never injects", ElevatedInputTests.ForegroundChangeNeverInjects),
             ("keyboard monitor fixture dedicated ownership and disposal", KeyboardMonitorTests.DedicatedOwnershipAndDisposal),
             ("keyboard monitor fixture reset generation and injected input", KeyboardMonitorTests.ResetGenerationAndInjectedInput),
             ("keyboard monitor fixture observable failure retry and thread exit", KeyboardMonitorTests.ObservableFailureRetryAndThreadExit),
@@ -406,6 +425,7 @@ internal static class Program
             ("archive release fixture stable approval rejects partial mixed set", ArchiveReleaseTests.StableApprovalRejectsPartialMixedSet),
             ("archive release staged actual identities", ArchiveReleaseTests.StagedActualIdentities),
             ("trusted release fixture signature locked copy", TrustedReleaseManifestTests.ValidSignatureAndLockedCopy),
+            ("trusted release legacy snapshot recovery-only admission", TrustedReleaseManifestTests.LegacySnapshotIsRecoveryOnly),
             ("trusted release fixture tamper wrong key before parse", TrustedReleaseManifestTests.TamperAndWrongKeyRejectedBeforeParse),
             ("trusted release fixture duplicate traversal schema", TrustedReleaseManifestTests.SignedDuplicateTraversalAndSchemaRejected),
             ("trusted release fixture missing tampered downgrade", TrustedReleaseManifestTests.MissingTamperedAndDowngradeRejected),
@@ -446,8 +466,10 @@ internal static class Program
             ("clipboard capture limits clamp sizes without payload data", ClipboardCaptureLimitsClampAndReject),
             ("quick-launch configuration and panel request preserve Windows context", QuickLaunchContractsRoundTrip),
             ("Quick Launch diagnostics keep published correlations and rate-limit failures", QuickLaunchSummonDiagnosticsKeepPublishedCorrelationAndRateLimitFailures),
+            ("Fullscreen summon classifies borderless and ordinary foreground windows", FullscreenSummonClassifiesForegroundWindows),
+            ("Fullscreen summon publish boundary keeps clipboard and quick-launch policies independent", FullscreenSummonPublishBoundaryKeepsPoliciesIndependent),
             ("Quick Launch suppresses both triggers only during exclusive D3D fullscreen", QuickLaunchFullscreenSuppressionIsPrecise),
-            ("Quick Launch WndProc routes both native summon sources through the fullscreen gate", QuickLaunchWndProcRoutesBothTriggersThroughFullscreenGate),
+            ("Quick Launch and clipboard WndProc routes use the fullscreen gate", QuickLaunchWndProcRoutesBothTriggersThroughFullscreenGate),
             ("auto quick switch only consumes an Explorer source after a dialog is known", AutoQuickSwitchRequiresKnownDialog),
             ("Explorer source caller fixture in-flight known return completes once", ExplorerSourceReturnTests.InFlightKnownReturnCompletesOnce),
             ("Explorer source caller fixture ready snapshot refreshes at return", ExplorerSourceReturnTests.ReadySourceStillRefreshesAtReturn),
@@ -479,6 +501,7 @@ internal static class Program
             ("Directory Opus frame focus keeps captured pane navigable", DirectoryOpusFrameFocusKeepsCapturedPaneNavigable),
             ("Directory Opus pane selection uses title and geometry before cached pane", DirectoryOpusPaneSelectionUsesReferenceEvidence),
             ("Directory source recognition failure clears stale source", DirectorySourceRecognitionFailureClearsStaleSource),
+            ("tracked Directory Opus reactivation keeps one pending dialog sync", TrackedDirectoryOpusReactivationKeepsPendingSync),
             ("pending directory source recognition is bounded and superseded safely", PendingDirectorySourceRecognitionIsBoundedAndSuperseded),
             ("Directory Opus localized display paths canonicalize to parsing paths", DirectoryOpusDisplayPathsCanonicalize),
             ("known folder display aliases cover the desktop folder", KnownFolderDisplayAliasesCoverDesktop),
@@ -566,8 +589,14 @@ internal static class Program
             ("titlebar maximize toggle reaches the real native window boundary", TitlebarMaximizeToggleUsesRealNativeWindow),
             ("window position, resize and shell commands preserve payload", WindowPositionResizeAndShellCommandsPreservePayload),
             ("completion sound and shutdown use the typed Windows adapter", CompletionActionsUseTypedWindowsAdapter),
+            ("B5 completion suspend system wire routes through production dispatch", B5CompletionSuspendSystemWireRoutesThroughProductionDispatch),
+            ("B5 completion held suspend keeps dispatcher responsive and drains", B5CompletionHeldSuspendKeepsDispatcherResponsiveAndDrains),
             ("typed process launch preserves arguments and Windows flags", TypedProcessLaunchPreservesArgumentsAndFlags),
             ("shell action session commands preserve payload", ShellActionSessionCommandsPreservePayload),
+            ("shell action Invoke waits beyond machine deadline", ShellActionWaitTests.InvokeWaitsBeyondMachineDeadline),
+            ("shell action machine wait retains five second deadline", ShellActionWaitTests.MachineWaitRetainsFiveSecondDeadline),
+            ("shell action machine timeout retires queued Invoke", ShellActionWaitTests.MachineTimeoutRetiresQueuedInvoke),
+            ("shell action cancellation retains old worker until actual exit", ShellActionWaitTests.CancellationReturnsPromptlyWithoutWorkerReuse),
             ("shell action session enumerates a real filesystem target", ShellActionSessionEnumeratesFilesystemTarget),
             ("shell action bitmap is staged as a GPUI image", ShellActionBitmapIsStaged),
             ("shell icon extraction command preserves target and size", ShellIconCommandPreservesPayload),
@@ -581,6 +610,8 @@ internal static class Program
             ("download icon recovery fixture rebuilds a corrupt PNG", ArchiveTypeIconTests.CorruptPngRegeneratesThroughOriginalSta),
             ("download icon recovery fixture retains safe native failure", ArchiveTypeIconTests.NativeFailureRetainsSafeCategoryAndCode),
             ("download icon recovery fixture extracts a completed executable", ArchiveTypeIconTests.CompletedExecutableUsesOwnedCache),
+            ("download icon resolution fixture selects 48px for tiny jumbo artwork", ArchiveTypeIconTests.SmallArtworkOnJumboCanvasUsesExtraLarge),
+            ("download icon cache fixture refreshes disk recency on hit", ArchiveTypeIconTests.CacheHitRefreshesDiskRecency),
             ("icon cache reuses identical content keys", IconCacheReusesIdenticalKeys),
             ("icon cache separates size and selector keys", IconCacheSeparatesSizeAndSelectorKeys),
             ("icon cache bounds the memory LRU", IconCacheBoundsMemoryLru),
@@ -722,6 +753,20 @@ internal static class Program
                 TestEffect.Fixture,"Reviewed: original Session/Run/password failure frames and actual terminal mapper/serialized Job events, protected-memory invalidation; GUID scratch only, no worker process/codec/UI/Shell/clipboard/user archives/registry/service"),
             new TestCase("archive OPT07 batch password cancel disconnect drain", Opt07BatchPasswordTests.CancelDisconnectAndDrain,
                 TestEffect.Fixture,"Reviewed: original Session/Run cancel/Stop and input pump, protected-memory zeroing and independent pipe-session owner; GUID empty scratch only, no worker process/codec/UI/Shell/clipboard/user archives/registry/service"),
+            new TestCase("markdown document picker authenticates peer in reader", MarkdownDocumentPickerTests.RejectsInvalidPeerInReader,
+                TestEffect.Fixture, "Reviewed: GUID-named owned pipe and original serial reader; rejected metadata does not enter a dialog or native adapter"),
+            new TestCase("markdown document picker uses detached STA and retires HWND", MarkdownDocumentPickerTests.OwnedMultiselectIsDetachedAndRetired,
+                TestEffect.Fixture, "Reviewed: GUID-named pipe, hidden self-owned HWND, original reader/STA and controlled modal return; no actual system picker or user data"),
+            new TestCase("markdown document picker bounds wire result and diagnostics", MarkdownDocumentPickerTests.ResultBoundsAndDiagnostics,
+                TestEffect.Fixture, "Reviewed: GUID-named pipe, hidden self-owned HWND and controlled native outcomes through the original reader/STA; no actual system picker or user data"),
+            new TestCase("markdown export save picker owns cancel and retirement", MarkdownDocumentPickerTests.ExportPickerOwnsCancelAndRetirement,
+                TestEffect.Fixture, "Reviewed: owned pipe, hidden self-owned HWND, controlled Save dialog outcomes on real STA; no visible dialog or user files"),
+            new TestCase("markdown export PDF transfers only a successful staged render", MarkdownDocumentPickerTests.PdfTransfersOnlySuccessfulRender,
+                TestEffect.Fixture, "Reviewed: owned pipe, dedicated STA and owned synthetic staging files; injected renderer, no WebView runtime or network"),
+            new TestCase("markdown export PDF discards a retired pipe result", MarkdownDocumentPickerTests.PdfDisconnectRetiresInFlightStaging,
+                TestEffect.Fixture, "Reviewed: owned pipe and synthetic scratch files; controlled in-flight STA cancellation and stale completion, no WebView runtime"),
+            new TestCase("markdown export PDF actual offline WebView2", MarkdownDocumentPickerTests.PdfUsesActualOfflineWebView,
+                TestEffect.RestrictedFixture, "Authorized only: real installed WebView2 runtime in hidden owned window, owned synthetic HTML/PDF and loopback connection sentinel; no runtime install, PDF viewer or user files"),
             new TestCase("archive OPT07 picker multiple folders", Opt07PickerTests.MultipleFolders,
                 TestEffect.Fixture,"Reviewed: hidden self-owned HWND, original parser/Pick/bounded STA, configured IFileOpenDialog options and instance-scoped controlled return; 2/16/32 vectors and typed envelope, no actual system dialog/Shell/clipboard/files/registry/service/user data"),
             new TestCase("archive OPT07 picker atomic limits", Opt07PickerTests.LimitsAreAtomic,
@@ -863,6 +908,8 @@ internal static class Program
                 TestEffect.Fixture,"Reviewed: strict locate parser only; no STA/OLE/files/GUI/Registry"),
             new TestCase("archive Root drop locate receiver copy", ArchiveDropLocateTests.ReceiverCopyLocatesCreatedFolder,
                 TestEffect.Fixture,"Reviewed: GUID-owned scratch staging/destination, controlled CF_HDROP copy receiver on owned STA, scoped FileSystemWatcher; no physical gesture/Explorer/GUI/Registry"),
+            new TestCase("archive Root drop locate direct marker parent", ArchiveDropLocateTests.DirectMarkerLocatesParentWithoutWrapper,
+                TestEffect.Fixture,"Reviewed: GUID-owned scratch marker and controlled CF_HDROP receiver on owned STA; direct parent location leaves no wrapper folder or marker; no physical gesture/Explorer/GUI/Registry"),
             new TestCase("archive Root drop locate uncopied cancelled busy", ArchiveDropLocateTests.UncopiedOrCancelledDropReportsNoDestination,
                 TestEffect.Fixture,"Reviewed: GUID-owned scratch staging, injected loop/cancel on owned STA, scoped FileSystemWatcher; no physical gesture/Explorer/GUI/Registry"),
             new TestCase("archive Phase F integration default disabled pure HKCU", ArchiveIntegrationPlanTests.DefaultsAreDisabledAndPlanIsPureHkcu,
@@ -909,6 +956,10 @@ internal static class Program
                 TestEffect.Fixture,"Reviewed: blocking memory store/original bounded STA/cancel/log observations; no Registry/COM/Shell/service/process effects"),
             new TestCase("archive Phase F P206 service enabled apply exact revert", ArchiveIntegrationServiceTests.EnabledApplyRecordsFactsAndRevertsExactly,
                 TestEffect.Fixture,"Reviewed: explicitly enabled service over fake store/in-memory ledger only; no Registry/files/process/COM/Explorer/system"),
+            new TestCase("archive Phase F P206 service set default claims class", ArchiveIntegrationServiceTests.SetDefaultClaimsClassAndExplorerChoice,
+                TestEffect.Fixture,"Reviewed: explicitly enabled service over fake store/in-memory ledger and fake Explorer choice owner only; no Registry/files/process/COM/Explorer/system"),
+            new TestCase("archive Phase F P206 user choice proof", ArchiveIntegrationServiceTests.UserChoiceProofIsStableAndMinuteScoped,
+                TestEffect.Fixture,"Reviewed: pure proof computation over fixed inputs; no Registry/files/process/COM/Explorer/system"),
             new TestCase("archive Phase F P206 service failures compensate", ArchiveIntegrationServiceTests.ApplyFailuresCompensateAndNeverReportApplied,
                 TestEffect.Fixture,"Reviewed: fake store write-then-throw and failing in-memory ledger; no Registry/files/process/COM/Explorer/system"),
             new TestCase("archive Phase F P206 ledger wire registry target guards", ArchiveIntegrationServiceTests.LedgerRoundTripWireAndRegistryTargetGuards,
@@ -933,6 +984,98 @@ internal static class Program
                 TestEffect.Fixture,"Reviewed: GUID-owned scratch encoded segments and original native source leases; protection/discovery only,not codec interoperability; no GUI/Shell/system mutation"),
             new TestCase("archive Phase E source single ZIP exact disk count", ArchiveVolumeSourceTests.OrdinarySingleSourceAndExactZipDiskCount,
                 TestEffect.Fixture,"Reviewed: GUID-owned scratch single/ZIP disk discovery,all-member lease protection; no GUI/Shell/system mutation"),
+            new TestCase("archive REF19 source ALZ genuine protected released", ArchiveAlzegVolumeSourceTests.AlzGenuineFamiliesProtectedAndReleased,
+                TestEffect.Fixture,"Reviewed: CC0 ordinary/real ALZ families copied to GUID-owned session scratch, original native source leases, writer/rename protection and exact handle release; no worker/GUI/Shell/Registry/service/member execution"),
+            new TestCase("archive REF19 source EGG genuine protected released", ArchiveAlzegVolumeSourceTests.EggGenuineFamiliesProtectedAndReleased,
+                TestEffect.Fixture,"Reviewed: CC0 ordinary/real EGG families copied to GUID-owned session scratch, first/middle/final entry, original native leases and exact handle release; no worker/GUI/Shell/Registry/service/member execution"),
+            new TestCase("archive REF19 source ALZ missing corrupt release", ArchiveAlzegVolumeSourceTests.AlzMissingCorruptAndFailureRelease,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 ALZ copies only, missing/corrupt headers/tails, typed acquisition failure and released handles; no worker/GUI/Shell/Registry/service/member execution"),
+            new TestCase("archive REF19 source EGG missing corrupt release", ArchiveAlzegVolumeSourceTests.EggMissingCorruptAndFailureRelease,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 EGG copies only, missing/corrupt/duplicate/cyclic Header IDs, typed acquisition failure and released handles; no worker/GUI/Shell/Registry/service/member execution"),
+            new TestCase("archive REF19 source EGG IDs not filename order", ArchiveAlzegVolumeSourceTests.EggHeaderIdsNotFilenameOrder,
+                TestEffect.Fixture,"Reviewed: renamed GUID-owned CC0 EGG continuations, unrelated owned archive, original ordered source leases and release; no worker/GUI/Shell/Registry/service/member execution"),
+            new TestCase("archive REF19 source finite admission content dispatch", ArchiveAlzegVolumeSourceTests.FiniteAdmissionAndContentDispatch,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 and synthetic source copies only, finite encoded/metadata quotas and content-bound discovery; no worker/GUI/Shell/Registry/service/member execution"),
+            new TestCase("archive REF20 SFX source ordinary protected release", ArchiveSfxVolumeSourceTests.OrdinaryProtectedAndReleased,
+                TestEffect.Fixture, "Reviewed: GUID-owned data-only ordinary SFX coordinate copies, original source leases/writer and parent-rename denial/exclusive reopen; no executable or member launch"),
+            new TestCase("archive REF20 SFX source split entries protected release", ArchiveSfxVolumeSourceTests.SplitEntriesProtectedAndReleased,
+                TestEffect.Fixture, "Reviewed: GUID-owned data-only SFX split families from EXE and final ZIP entries, complete ordered native source leases and release; no executable or member launch"),
+            new TestCase("archive REF20 SFX source missing surplus corrupt release", ArchiveSfxVolumeSourceTests.MissingSurplusAndCorruptRelease,
+                TestEffect.Fixture, "Reviewed: owned missing/surplus parts and descriptor mutations, typed native acquisition failure and exclusive reopen; no executable or member launch"),
+            new TestCase("archive REF20 SFX source finite admission unrelated", ArchiveSfxVolumeSourceTests.FiniteAdmissionAndUnrelatedSources,
+                TestEffect.Fixture, "Reviewed: owned coordinate family and unrelated data file, bounded original source admission and actual lease release; no executable or member launch"),
+            new TestCase("archive REF20 SFX missing corrupt typed cleanup", ArchiveSfxProductTests.MissingCorruptFamilyTypedCleanup,
+                TestEffect.Fixture, "Reviewed: missing own generated continuation and malformed own prefix descriptor, original Test/lease failure and actual release; generated EXE/member never executed"),
+            new TestCase("archive REF20 SFX complete prefix split limit", ArchiveSfxProductTests.CompletePrefixMustFitVolume,
+                TestEffect.Fixture, "Reviewed: GUID-owned source and original creation quota at full stub plus span marker boundary, zero publication and cleanup; no generated EXE execution"),
+            new TestCase("archive REF20 SFX explicit intent wire", ArchiveSfxProductTests.ExplicitIntentWireContract,
+                TestEffect.Fixture, "Reviewed: synthetic immutable Job JSON only, explicit SFX intent, legacy omission and incompatible option refusal; no native execution"),
+            new TestCase("archive REF20 SFX ordinary Store Deflate", ArchiveSfxProductTests.OrdinaryStoredDeflate,
+                TestEffect.Fixture, "Reviewed: GUID-owned source trees and matching worker, original Create/Read/Test/extract/native publication, exact bytes and handle release; generated EXE/member never executed"),
+            new TestCase("archive REF20 SFX split Store Deflate", ArchiveSfxProductTests.SplitStoredDeflate,
+                TestEffect.Fixture, "Reviewed: GUID-owned small forced physical SFX families, original Job/native candidate journal and full-family readback; generated EXE/member never executed"),
+            new TestCase("archive REF20 SFX fresh family no overwrite", ArchiveSfxProductTests.FreshFamilyNoOverwrite,
+                TestEffect.Fixture, "Reviewed: GUID-owned preexisting family sentinels, original bounded held-directory refusal and zero publication; no deployed files or EXE execution"),
+            new TestCase("archive REF20 SFX cancel publication facts", ArchiveSfxProductTests.CancellationBeforeAndAfterPublication,
+                TestEffect.Fixture, "Reviewed: GUID-owned split creation, original pre/late publication cancellation and actual worker/output cleanup; no generated EXE/member execution"),
+            new TestCase("archive REF20 SFX native first error protection", ArchiveSfxProductTests.NativeWriteFirstErrorAndProtection,
+                TestEffect.Fixture, "Reviewed: owned native write112 injection, original source leases/first error/actual cleanup and exclusive reopen; no generated EXE/member execution"),
+            new TestCase("archive REF20 SFX partial publication journal", ArchiveSfxProductTests.LaterPublicationFailureKeepsJournal,
+                TestEffect.Fixture, "Reviewed: GUID-owned later-target conflict after first native publication, no-replace journal and cleanup facts; no generated EXE/member execution"),
+            new TestCase("archive REF20 SFX selected small output source credit", ArchiveSfxProductTests.SelectedSmallOutputKeepsSourceAdmission,
+                TestEffect.Fixture, "Reviewed: GUID-owned copies of independently qualified actual product SFX, original Browse-bound selected Job, exact low output/metadata quotas and exclusive source release; no EXE/member execution"),
+            new TestCase("archive REF20 SFX selected output quota remains exact", ArchiveSfxProductTests.SelectedOutputQuotaRemainsExact,
+                TestEffect.Fixture, "Reviewed: GUID-owned qualified actual SFX, original Browser selection with one-byte output shortfall, typed no-publication and actual source/helper release; no EXE/member execution"),
+            new TestCase("archive REF19 product raw names Browse Test reject extract", ArchiveAlzegProductTests.RawUnsafeNamesBrowseTestRejectExtract,
+                TestEffect.Fixture, "Reviewed: owned specification ALZ/EGG raw names, original read-only integrity and unsafe-path refusal before output, protected sources and actual cleanup; no member execution"),
+            new TestCase("archive REF19 product EGG name declarations typed cleanup", ArchiveAlzegProductTests.EggNameDeclarationsTypedCleanup,
+                TestEffect.Fixture, "Reviewed: owned specification locale/parent/encrypted-name/reserved-global declarations, typed original Read/Job refusal and no output; no member execution"),
+            new TestCase("archive REF19 product EGG POSIX kinds Browse Test extract", ArchiveAlzegProductTests.EggPosixKindsBrowseTestExtract,
+                TestEffect.Fixture, "Reviewed: owned CC0 POSIX/specification kinds, original Read/Job/native payload and timestamp restoration, nonmaterializing links/FIFOs and actual cleanup; no member execution"),
+            new TestCase("archive REF19 product EGG short POSIX failure lifecycle", ArchiveAlzegProductTests.EggShortAndPosixFailureLifecycle,
+                TestEffect.Fixture, "Reviewed: owned specification short AES/LEA headers, typed unsupported/no-output and original POSIX cancel/native-write failure cleanup; no member execution"),
+            new TestCase("archive REF19 product EGG AZO Browse Test extract", ArchiveAlzegProductTests.EggAzoBrowseTestExtract,
+                TestEffect.Fixture, "owned CC0/specification AZO inputs, original Read/Browser/Job/native output and actual cleanup; no member execution"),
+            new TestCase("archive REF19 product EGG AZO failure lifecycle", ArchiveAlzegProductTests.EggAzoFailureLifecycle,
+                TestEffect.Fixture, "owned AZO corruption/limit/cancel/write fixtures, protected sources and actual cleanup; no member execution"),
+            new TestCase("archive REF19 product EGG solid Browse Test extract", ArchiveAlzegProductTests.EggSolidBrowseTestExtract,
+                TestEffect.Fixture, "owned CC0/specification solid samples, original Read/Browser/Job/native output and cleanup"),
+            new TestCase("archive REF19 product EGG solid selected tail limit", ArchiveAlzegProductTests.EggSolidSelectedTailKeepsPredecessorsAndLimit,
+                TestEffect.Fixture, "owned solid predecessors, original Browser selection/output credit and actual native cleanup"),
+            new TestCase("archive REF19 product EGG solid failure lifecycle", ArchiveAlzegProductTests.EggSolidFailureLifecycle,
+                TestEffect.Fixture, "owned solid corruption/limit/cancel/write fixtures with protected sources and actual cleanup"),
+            new TestCase("archive REF19 product ordinary ALZ Browse Test extract", ArchiveAlzegProductTests.OrdinaryAlzBrowseTestExtract,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 ALZ copies, explicit actual Rust worker under original Read/Job/native output, independent exact bytes and complete cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product ordinary EGG Browse Test extract", ArchiveAlzegProductTests.OrdinaryEggBrowseTestExtract,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 EGG method copies, explicit actual Rust worker under original Read/Job/native output, independent exact bytes and complete cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product split ALZ Browse Test extract", ArchiveAlzegProductTests.SplitAlzBrowseTestExtract,
+                TestEffect.Fixture,"Reviewed: GUID-owned genuine CC0 ALZ volumes, explicit actual Rust worker, original complete-source Read/Browser-bound Job/native output, independent bytes/CP949 names and cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product split EGG Browse Test extract", ArchiveAlzegProductTests.SplitEggBrowseTestExtract,
+                TestEffect.Fixture,"Reviewed: GUID-owned genuine CC0 EGG volumes including continuation entry, explicit actual Rust worker, original complete-source Read/Browser-bound Job/native output, independent exact bytes/cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product missing corrupt typed cleanup", ArchiveAlzegProductTests.MissingCorruptOutcomesAndCleanup,
+                TestEffect.Fixture,"Reviewed: missing/corrupt GUID-owned CC0 volumes only, explicit actual Rust worker, original Read/Test/extract Job failures and owned zero-output cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product changed continuation old Browser", ArchiveAlzegProductTests.ChangedContinuationRejectsOldBrowser,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 continuations replaced only after original Read cleanup, explicit actual Rust worker and stale Browser-bound Job rejection before output; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product cancel all-source cleanup", ArchiveAlzegProductTests.CancelRetainsAllSourcesThroughCleanup,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 volumes/output, explicit actual Rust worker, original Job cancel at existing native precommit probe, all-source protection through real cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product native write first-error cleanup", ArchiveAlzegProductTests.NativeWriteFailureRetainsAllSourcesThroughCleanup,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 volumes/output, explicit actual Rust worker, existing native write probe returns owned error112, all-source protection/first-error/actual cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product source-bound output readmission", ArchiveAlzegProductTests.LowOutputReadmissionUsesCompleteSourceBinding,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 volume families, explicit original worker/Job shortfall and output-only retry, exact independent bytes and cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product selected-member output limit", ArchiveAlzegProductTests.SelectedMemberKeepsOriginalOutputLimit,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 families, original Read/Browser entry materialization narrowed to one byte, typed selected quota and worker/cache/source cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product encrypted ALZ Browse Test extract", ArchiveAlzegProductTests.EncryptedAlzBrowseTestExtract,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 encrypted samples, original Read/Browser/Job/password ticket and explicit actual worker/native output, independent exact bytes and cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product encrypted ALZ password failure lifecycle", ArchiveAlzegProductTests.EncryptedAlzPasswordFailureLifecycle,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 copies/ciphertext mutations, original Job password wrong/cancel and stale tickets, source/helper protection, zero preparation writes and actual cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product encrypted EGG Browse Test extract", ArchiveAlzegProductTests.EncryptedEggBrowseTestExtract,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 EGG samples, original Read/Browser/Job/password/native output and independent byte comparison; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product encrypted EGG password failure lifecycle", ArchiveAlzegProductTests.EncryptedEggPasswordFailureLifecycle,
+                TestEffect.Fixture,"Reviewed: GUID-owned EGG ciphertext/tag mutations, original password tickets, source/helper protection, zero preparation writes and actual cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product ALZ DLZ Browse Test extract", ArchiveAlzegProductTests.AlzDlzBrowseTestExtract,
+                TestEffect.Fixture,"Reviewed: GUID-owned CC0 and labelled specification samples, actual Read/Browser/Job/worker/native output, independent bytes and cleanup; no GUI/Shell/member execution/Registry/service"),
+            new TestCase("archive REF19 product ALZ DLZ failure lifecycle", ArchiveAlzegProductTests.AlzDlzFailureLifecycle,
+                TestEffect.Fixture,"Reviewed: GUID-owned DLZ mutations, finite budgets, current Job cancel/native write112, source protection and actual cleanup; no GUI/Shell/member execution/Registry/service"),
             new TestCase("archive incoming Add backslash conflict decisions", EditInteractionTests.IncomingBackslashDecisions,
                 TestEffect.Fixture,"Reviewed: GUID-owned backslash ZIP and source, matching worker, original conflict tickets and native publication probes; independent content/source/no-partial/cleanup checks; no GUI/Shell/system/user archive"),
             new TestCase("archive incoming Add Desktop to native boundary", EditInteractionTests.IncomingDesktopNativeAdd,
@@ -1090,6 +1233,8 @@ internal static class Program
     private sealed class FakeCompletionSystemActions : ICompletionSystemActions
     {
         public int SoundRequests { get; private set; }
+        public List<bool> SuspendRequests { get; } = [];
+        public Queue<WindowsCommandResult> SuspendResults { get; } = new();
         public ushort? ShutdownDelaySeconds { get; private set; }
 
         public WindowsCommandResult PlayNotificationSound()
@@ -1102,6 +1247,14 @@ internal static class Program
         {
             ShutdownDelaySeconds = delaySeconds;
             return new WindowsCommandResult(true);
+        }
+
+        public WindowsCommandResult RequestSuspend(bool hibernate)
+        {
+            SuspendRequests.Add(hibernate);
+            return SuspendResults.Count == 0
+                ? new WindowsCommandResult(true)
+                : SuspendResults.Dequeue();
         }
     }
 
@@ -1124,6 +1277,124 @@ internal static class Program
         Assert(actions.SoundRequests == 1);
         Assert(actions.ShutdownDelaySeconds == 1);
         return Task.CompletedTask;
+    }
+
+    private static async Task B5CompletionSuspendSystemWireRoutesThroughProductionDispatch()
+    {
+        var actions = new FakeCompletionSystemActions();
+        var expected = new[]
+        {
+            (Hibernate: false, Result: new WindowsCommandResult(true)),
+            (Hibernate: true, Result: new WindowsCommandResult(true)),
+            (Hibernate: false, Result: new WindowsCommandResult(false, "unsupported", NativeErrorCode: 50)),
+            (Hibernate: false, Result: new WindowsCommandResult(false, "access denied", NativeErrorCode: 5)),
+            (Hibernate: true, Result: new WindowsCommandResult(false, "privilege not held", NativeErrorCode: 1314)),
+            (Hibernate: true, Result: new WindowsCommandResult(false, "native failure", NativeErrorCode: 87))
+        };
+        foreach (var item in expected)
+        {
+            actions.SuspendResults.Enqueue(item.Result);
+        }
+
+        var adapter = CreateCompletionOnlyAdapter(actions);
+        var log = new RecordingPlatformLog();
+        var client = new PlatformPipeClient("unused-b5-fixture", adapter, log);
+        var execute = typeof(PlatformPipeClient).GetMethods(
+                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+            .Single(method => method.Name == "ExecuteCommandAsync" &&
+                method.GetParameters().Length == 5 &&
+                method.GetParameters()[4].ParameterType == typeof(uint));
+
+        for (var index = 0; index < expected.Length; index++)
+        {
+            var item = expected[index];
+            var diagnosticCorrelationId = Guid.NewGuid();
+            var request = ProtocolEnvelope.Create(
+                "platform_command",
+                new { Command = "suspend_system", Data = new { item.Hibernate } },
+                diagnosticCorrelationId);
+            var parsed = PlatformCommandParser.ParseSuspendSystem(request);
+            Assert(parsed.Hibernate == item.Hibernate);
+
+            var outgoing = Channel.CreateBounded<ProtocolEnvelope>(1);
+            await (Task)execute.Invoke(
+                client,
+                [request, "suspend_system", outgoing.Writer, CancellationToken.None, 0u])!;
+            var response = await outgoing.Reader.ReadAsync();
+            Assert(response.CorrelationId == request.Id);
+            Assert(response.Payload.GetProperty("success").GetBoolean() == item.Result.Success);
+            Assert(ReadOptionalString(response.Payload, "error") == item.Result.Error);
+            Assert(ReadOptionalInt32(response.Payload, "native_error_code") == item.Result.NativeErrorCode);
+            Assert(response.Payload.GetProperty("data").ValueKind == JsonValueKind.Null);
+
+            var action = item.Hibernate ? "hibernate" : "sleep";
+            var accepted = log.Entries.Single(entry =>
+                entry.EventName == "command.received" &&
+                entry.CorrelationId == diagnosticCorrelationId);
+            Assert(Equals(accepted.Fields["command"], "suspend_system"));
+            Assert(Equals(accepted.Fields["action"], action));
+            var terminal = log.Entries.Single(entry =>
+                entry.EventName == "command.completed" &&
+                entry.CorrelationId == diagnosticCorrelationId);
+            Assert(Equals(terminal.Fields["action"], action));
+            Assert(Equals(terminal.Fields["terminal"], item.Result.Success ? "succeeded" : "failed"));
+            Assert(Equals(terminal.Fields["native_error_code"], item.Result.NativeErrorCode));
+            Assert(terminal.Fields.ContainsKey("elapsed_ms"));
+        }
+
+        Assert(actions.SuspendRequests.SequenceEqual(expected.Select(item => item.Hibernate)));
+    }
+
+    private static async Task B5CompletionHeldSuspendKeepsDispatcherResponsiveAndDrains()
+    {
+        var dispatcher = new PlatformCommandSequenceDispatcher();
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var release = new ManualResetEventSlim();
+        await dispatcher.DispatchAsync("suspend_system", () =>
+        {
+            entered.TrySetResult();
+            Assert(release.Wait(TimeSpan.FromSeconds(10)));
+            return Task.CompletedTask;
+        });
+        await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var laterCommandRan = false;
+        await dispatcher.DispatchAsync("set_window_visibility", () =>
+        {
+            laterCommandRan = true;
+            return Task.CompletedTask;
+        });
+        Assert(laterCommandRan);
+
+        var drain = dispatcher.DrainAsync(TimeSpan.FromSeconds(10));
+        await Task.Delay(25);
+        Assert(!drain.IsCompleted);
+        release.Set();
+        await drain.WaitAsync(TimeSpan.FromSeconds(5));
+    }
+
+    private static WindowsPlatformAdapter CreateCompletionOnlyAdapter(
+        ICompletionSystemActions completionSystemActions)
+    {
+        var adapter = (WindowsPlatformAdapter)System.Runtime.CompilerServices.RuntimeHelpers
+            .GetUninitializedObject(typeof(WindowsPlatformAdapter));
+        typeof(WindowsPlatformAdapter).GetField(
+            "_completionSystemActions",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(adapter, completionSystemActions);
+        return adapter;
+    }
+
+    private static string? ReadOptionalString(JsonElement element, string propertyName)
+    {
+        var value = element.GetProperty(propertyName);
+        return value.ValueKind == JsonValueKind.Null ? null : value.GetString();
+    }
+
+    private static int? ReadOptionalInt32(JsonElement element, string propertyName)
+    {
+        var value = element.GetProperty(propertyName);
+        return value.ValueKind == JsonValueKind.Null ? null : value.GetInt32();
     }
 
     private static Task EnvelopeUsesWireNames()
@@ -1211,6 +1482,71 @@ internal static class Program
         return Task.CompletedTask;
     }
 
+
+    private static Task FullscreenSummonClassifiesForegroundWindows()
+    {
+        var monitor = new FullscreenRect(1920, 0, 3840, 1080);
+        var coveredWindow = new FullscreenRect(1920, 0, 3840, 1080);
+        var borderless = new FullscreenForegroundSnapshot(
+            true, true, false, false, 0, coveredWindow, monitor);
+        var exclusiveQueryFailed = new FullscreenSummonObservation(
+            FullscreenNotificationStateResult.Failure(unchecked((int)0x80004005)),
+            true, borderless);
+        var publications = 0;
+        var decision = QuickLaunchSummonGate.DispatchObserved(
+            true, true, QuickLaunchSummonTrigger.ClipboardHotKey,
+            () => exclusiveQueryFailed, _ => publications++);
+        Assert(decision.Suppressed);
+        Assert(decision.FullscreenKind == FullscreenSuppressionKind.Borderless);
+        Assert(decision.QueryHresult == unchecked((int)0x80004005));
+        Assert(publications == 0);
+
+        var ordinaryMaximized = borderless with { WindowBounds = new FullscreenRect(0, 0, 1600, 900), Style = 0x00C40000 };
+        var desktop = borderless with { Desktop = true };
+        var hidden = borderless with { Visible = false };
+        var minimized = borderless with { Minimized = true };
+        var invalid = borderless with { Valid = false };
+        foreach (var foreground in new[] { ordinaryMaximized, desktop, hidden, minimized, invalid })
+        {
+            decision = QuickLaunchSummonGate.DispatchObserved(
+                true, true, QuickLaunchSummonTrigger.HotKey,
+                () => new FullscreenSummonObservation(
+                    new FullscreenNotificationStateResult(true, 2, 0), true, foreground),
+                _ => publications++);
+            Assert(!decision.Suppressed);
+        }
+        Assert(publications == 5);
+        return Task.CompletedTask;
+    }
+
+    private static Task FullscreenSummonPublishBoundaryKeepsPoliciesIndependent()
+    {
+        var monitor = new FullscreenRect(0, 0, 2560, 1440);
+        var foreground = new FullscreenForegroundSnapshot(
+            true, true, false, false, 0,
+            new FullscreenRect(0, 0, 2560, 1440), monitor);
+        var observation = new FullscreenSummonObservation(
+            new FullscreenNotificationStateResult(true, 2, 0), true, foreground);
+        var quickPublications = 0;
+        var clipboardPublications = 0;
+        var quick = QuickLaunchSummonGate.DispatchObserved(
+            true, false, QuickLaunchSummonTrigger.DoubleControl,
+            () => observation, _ => quickPublications++);
+        var clipboard = QuickLaunchSummonGate.DispatchObserved(
+            true, true, QuickLaunchSummonTrigger.ClipboardHotKey,
+            () => observation, _ => clipboardPublications++);
+        Assert(quick.Published && quickPublications == 1);
+        Assert(clipboard.Suppressed && clipboardPublications == 0);
+
+        var source = File.ReadAllText(Path.Combine(
+            FindRepositoryRoot(), "csharp", "NxTools.PlatformHost", "Windows", "WindowsPlatformAdapter.EventWindow.cs"));
+        Assert(source.Contains("_clipboardSuppressInFullscreen = command.SuppressInFullscreen", StringComparison.Ordinal));
+        Assert(source.Contains("_quickLaunchSuppressInExclusiveFullscreen = request.Command.SuppressInExclusiveFullscreen", StringComparison.Ordinal));
+        Assert(source.Contains("PublishPanelRequest()", StringComparison.Ordinal));
+        Assert(source.Contains("QuickLaunchSummonTrigger.ClipboardHotKey", StringComparison.Ordinal));
+        return Task.CompletedTask;
+    }
+
     private static Task QuickLaunchFullscreenSuppressionIsPrecise()
     {
         foreach (var trigger in new[]
@@ -1261,8 +1597,6 @@ internal static class Program
                 publish: _ => publications++);
             Assert(!decision.Suppressed);
             Assert(decision.QueryHresult == unchecked((int)0x80004001));
-            Assert(!decision.Suppressed);
-            Assert(decision.QueryHresult == unchecked((int)0x80004001));
             Assert(publications == 3);
 
             queries = 0;
@@ -1298,6 +1632,10 @@ internal static class Program
             0.1);
         Assert(diagnosticGate.TryAcquire(success, out _));
         Assert(diagnosticGate.TryAcquire(success with { CorrelationId = Guid.NewGuid() }, out _));
+        var suppressed = success with { CorrelationId = Guid.NewGuid(), Suppressed = true, Published = false };
+        Assert(diagnosticGate.TryAcquire(suppressed, out _));
+        Assert(diagnosticGate.TryAcquire(success with { CorrelationId = Guid.NewGuid() }, out _));
+        Assert(diagnosticGate.TryAcquire(suppressed with { CorrelationId = Guid.NewGuid() }, out _));
 
         var failure = success with
         {
@@ -1323,11 +1661,16 @@ internal static class Program
             "case WmHotKey when message.WParam.ToInt32() == QuickLaunchHotKeyId:\r\n                    PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.HotKey);",
             StringComparison.Ordinal));
         Assert(source.Contains(
-            "case WmQuickLaunchGesture:\r\n                    PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.DoubleControl);",
+            "case WmQuickLaunchGesture:\r\n                    HandleQuickLaunchGesture(",
             StringComparison.Ordinal));
+        var routing = File.ReadAllText(Path.Combine(repositoryRoot, "csharp", "NxTools.PlatformHost",
+            "Windows", "WindowsPlatformAdapter.ElevatedInput.cs"));
+        Assert(routing.Contains("PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.DoubleControl);", StringComparison.Ordinal));
         Assert(source.Contains(
-            "var decision = QuickLaunchSummonGate.Dispatch(",
+            "var decision = QuickLaunchSummonGate.DispatchObserved(",
             StringComparison.Ordinal));
+        Assert(source.Contains("QuickLaunchSummonTrigger.ClipboardHotKey", StringComparison.Ordinal));
+        Assert(source.Contains("PublishPanelRequestCore", StringComparison.Ordinal));
         Assert(source.Contains(
             "correlationId => PublishQuickLaunchPanelRequestCore(correlationId)",
             StringComparison.Ordinal));
@@ -2153,7 +2496,8 @@ internal static class Program
                 ExcludedProcesses = new[] { "KeePass.exe", "Bitwarden.exe" },
                 MaxTextBytes = 12UL * 1024 * 1024,
                 MaxImageBytes = 96UL * 1024 * 1024,
-                MaxImagePixels = 120_000_000
+                MaxImagePixels = 120_000_000,
+                SuppressInFullscreen = false,
             }
         });
 
@@ -2168,6 +2512,7 @@ internal static class Program
         Assert(command.MaxTextBytes == 12UL * 1024 * 1024);
         Assert(command.MaxImageBytes == 96UL * 1024 * 1024);
         Assert(command.MaxImagePixels == 120_000_000);
+        Assert(!command.SuppressInFullscreen);
 
         var recordingEnvelope = ProtocolEnvelope.Create("platform_command", new
         {
@@ -2176,11 +2521,18 @@ internal static class Program
         });
         var recording = PlatformCommandParser.ParseSetClipboardHotKeyRecording(recordingEnvelope);
         Assert(recording.Recording);
+        var summonId = Guid.NewGuid();
+        var summon = PlatformEventEnvelopeFactory.Create(new ClipboardPanelRequestedEvent(
+            new ForegroundContext(42, 42, 7, "fixture", "fixture"),
+            100, 200, 0, 96, 1, 1, summonId));
+        Assert(summon.CorrelationId == summonId);
+        Assert(summon.Payload.GetProperty("event").GetString() == "clipboard_panel_requested");
         return Task.CompletedTask;
     }
 
     private static Task ClipboardCaptureLimitsClampAndReject()
     {
+        Assert(new ConfigureClipboardCommand([], "C", "Alt+C", []).SuppressInFullscreen);
         var limits = ClipboardCaptureLimits.From(new ConfigureClipboardCommand(
             [], "C", "Alt+C", [], 1, ulong.MaxValue, 0));
         Assert(limits.MaxTextBytes == ClipboardCaptureLimits.MinTextBytes);
@@ -2422,8 +2774,12 @@ internal static class Program
         Assert(current.SourceWindowHandle == 99);
         Assert(tracker.IsCurrent(current));
 
+        // An unrelated foreground between source and dialog (taskbar, Alt+Tab) is not observed;
+        // the newest source still synchronizes exactly once.
         tracker.ObserveExplorer(111);
-        tracker.ObserveOther();
+        var afterUnrelated = tracker.ObserveFileDialog(dialog) ??
+            throw new InvalidOperationException("Expected the newest source to survive an unrelated foreground.");
+        Assert(afterUnrelated.SourceWindowHandle == 111);
         Assert(tracker.ObserveFileDialog(dialog) is null);
 
         tracker.Configure(enabled: false);
@@ -3425,6 +3781,34 @@ internal static class Program
                 @"C:\\Dialog",
                 null));
         Assert(candidate is null);
+        return Task.CompletedTask;
+    }
+
+    private static Task TrackedDirectoryOpusReactivationKeepsPendingSync()
+    {
+        var tracker = new AutoQuickSwitchTracker();
+        tracker.Configure(enabled: true);
+        var dialog = new DirectoryNavigationContext(
+            DirectoryNavigationAdapter.FileDialogHost,
+            77,
+            @"C:\Dialog",
+            null);
+        Assert(tracker.ObserveFileDialog(dialog) is null);
+        var lister = new DirectoryNavigationContext(
+            DirectoryNavigationAdapter.ThirdPartyFileManagerHost,
+            88,
+            @"D:\Work",
+            "dopus:lister-88");
+        tracker.ObserveDirectorySource(lister, "Work (Directory Opus)");
+        Assert(tracker.ObserveFileDialog(dialog) is not null);
+
+        // The same lister is activated again but its pane is not yet recognizable.
+        Assert(!tracker.MarkSourcePending(99));
+        Assert(tracker.MarkSourcePending(88));
+        var candidate = tracker.ObserveFileDialog(dialog) ??
+            throw new InvalidOperationException("Expected the tracked lister to synchronize again.");
+        Assert(candidate.Source == lister);
+        Assert(tracker.ObserveFileDialog(dialog) is null);
         return Task.CompletedTask;
     }
 
@@ -6913,6 +7297,19 @@ internal static class Program
                 launcherTool, "system_tool", out var launcherTarget, out _));
             Assert(launcherTarget.Target == launcherTool);
         }
+        foreach (var application in new[] { "notepad.exe", "ms-settings:" })
+        {
+            Assert(ShellTarget.TryCreate(application, "system_tool", out var target, out _));
+            Assert(target.Kind == ShellTargetKind.SystemTool);
+            var launched = target.LaunchCaptured(_ => { }, start =>
+            {
+                Assert(start.FileName == application && start.UseShellExecute && start.Verb.Length == 0);
+                return null;
+            });
+            Assert(launched.Success);
+        }
+        Assert(!ShellTarget.TryCreate("ms-settings:display", "system_tool", out _, out _));
+        Assert(!ShellTarget.TryCreate("ms-settings:", "run_elevated", out _, out _));
         Assert(!ShellTarget.TryCreate(
             "cmd /c whoami", "system_tool", out _, out _));
         Assert(ShellTarget.TryCreate(

@@ -14,16 +14,37 @@ pub(crate) fn publish<W: Write + Send>(
     native: &mut PrivateOutput<'_, W>,
     control: &OperationControl,
 ) -> Result<u64> {
-    let maximum = request
-        .volume_bytes
-        .ok_or(ArchiveError::UnsupportedOperation)?;
     let name = request
         .create_name
         .as_deref()
         .ok_or(ArchiveError::UnsupportedOperation)?;
+    let self_extracting = request.operation == "create_zip"
+        && request
+            .zip_options
+            .as_ref()
+            .is_some_and(|options| options.self_extracting);
     let mut candidates = if request.operation == "create_zip" {
-        crate::zip_container::split_encoded(encoded, maximum, &request.limits.into(), control)?
+        if self_extracting {
+            crate::zip_container::sfx_encoded(
+                encoded,
+                request.volume_bytes,
+                &request.limits.into(),
+                control,
+            )?
+        } else {
+            crate::zip_container::split_encoded(
+                encoded,
+                request
+                    .volume_bytes
+                    .ok_or(ArchiveError::UnsupportedOperation)?,
+                &request.limits.into(),
+                control,
+            )?
+        }
     } else {
+        let maximum = request
+            .volume_bytes
+            .ok_or(ArchiveError::UnsupportedOperation)?;
         let length = encoded.metadata()?.len();
         let count = length.div_ceil(maximum).max(1);
         if count > 1024 {
@@ -58,10 +79,16 @@ pub(crate) fn publish<W: Write + Send>(
         for (index, candidate) in candidates.iter_mut().enumerate() {
             control.checkpoint()?;
             let target = if request.operation == "create_zip" {
-                if index + 1 == count {
+                let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
+                if self_extracting && index == 0 {
                     name.to_owned()
+                } else if index + 1 == count {
+                    if self_extracting {
+                        format!("{stem}.zip")
+                    } else {
+                        name.to_owned()
+                    }
                 } else {
-                    let stem = name.rsplit_once('.').map_or(name, |(stem, _)| stem);
                     format!("{stem}.z{:02}", index + 1)
                 }
             } else {

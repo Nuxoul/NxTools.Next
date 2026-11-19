@@ -68,6 +68,17 @@ internal static class ArchiveJobTests {
         var oldAck=ProtocolEnvelope.Create("hello_ack",new{accepted_capabilities=Array.Empty<string>()});
         var newAck=ProtocolEnvelope.Create("hello_ack",new{accepted_capabilities=new[]{PlatformCapabilities.ArchiveJobLargeCount}});
         Check(!PlatformPipeClient.AcceptsArchiveJobLargeCount(oldAck) && PlatformPipeClient.AcceptsArchiveJobLargeCount(newAck),"large-count capability requires HelloAck");
+        var selected=new ArchiveJobSelection(new ArchiveBrowserContext(Guid.NewGuid(),"Zip","",new ArchiveBrowserSource("v1:fixture",new uint[32],1,1)),Enumerable.Range(0,4097).Select(i=>(ulong)i).ToArray());
+        var legacy=JsonSerializer.SerializeToElement(selected,JsonDefaults.Options);
+        Check(!legacy.TryGetProperty("strip_prefix",out _) && JsonSerializer.Deserialize<ArchiveJobSelection>(legacy,ArchiveJobWire.Strict)!.StripPrefix is null,"selected legacy omission/default");
+        var selectionExtract=new ArchiveJobExtract{Strategy="here",Conflict="skip",SingleFileFolder=false,CopyMotw=false,Selection=selected with{StripPrefix="folder/"}};
+        Check(selectionExtract.Valid,"large selected prefix accepted");
+        Check((selectionExtract with{Selection=selected with{StripPrefix=new string('界',86)+"/"}}).Valid,"selected prefix follows native UTF16 component budget");
+        var largeCommand=Start(new(){Kind="extract",Paths=["C:\\owned\\tiny.zip"],Destination="C:\\owned\\out",Extract=selectionExtract});
+        Check(ArchiveJobWire.Parse(Wire(largeCommand)).Request!.Extract!.Selection!.Ordinals.Length==4097,"large selection survives strict wire parsing");
+        foreach(var invalid in new[]{"","folder","/folder/","folder\\","../","folder/../","CON/"})
+            Check(!(selectionExtract with{Selection=selected with{StripPrefix=invalid}}).Valid,"invalid selected prefix "+invalid);
+        Check(!(selectionExtract with{Strategy="name"}).Valid && !(selectionExtract with{Selection=selected with{Ordinals=[0,0]}}).Valid,"selected strategy/uniqueness");
         var picker=new ArchivePickerCommand{Version=1,OperationId=Guid.NewGuid(),SessionId=Guid.NewGuid(),Generation=7,OwnerWindowHandle=1,Purpose="files"};
         using var cancelled=new CancellationTokenSource();cancelled.Cancel();var result=ArchiveJobPicker.Pick(picker,0,cancelled.Token);Check(result.Cancelled && result.Paths.Length==0 && result.Generation==7,"pre-cancel must not create dialog");
         return Task.CompletedTask;
@@ -114,21 +125,51 @@ internal static class ArchiveJobTests {
     }
     public static async Task ActualSelectedZipSevenzRarAndChangedSource(){
         var root=Package();try {
-            var archive=Path.Combine(root,"selection.zip");using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)){foreach(var name in new[]{"folder/","folder/a.txt","other.txt"}){var e=zip.CreateEntry(name);if(!name.EndsWith('/')){using var w=new StreamWriter(e.Open());w.Write(name);}}}
+            var archive=Path.Combine(root,"selection.zip");using(var zip=ZipFile.Open(archive,ZipArchiveMode.Create)){foreach(var name in new[]{"folder/","folder/empty/","folder/a.txt","other.txt"}){var e=zip.CreateEntry(name);if(!name.EndsWith('/')){using var w=new StreamWriter(e.Open());w.Write(name);}}}
             var sources=new List<string>{archive};
             var fixtures=Path.GetFullPath(Path.Combine(AppContext.BaseDirectory,"../../../../../rust/crates/nxtools-archive/tests/fixtures/upstream"));
             foreach(var fixture in new[]{"non-solid.7z","rar4.rar","rar5.rar"}){var path=Path.Combine(root,fixture);File.Copy(Path.Combine(fixtures,fixture),path);sources.Add(path);}
             await using var jobs=ArchiveJobSession.ForOwnedTestPackage(root);
             foreach(var path in sources){
-                var browser=await Browse(root,path);var selected=path==archive?browser.Entries.Single(e=>e.Kind=="Directory").Ordinal:browser.Entries.First(e=>e.Kind=="File").Ordinal;
+                var browser=await Browse(root,path);
+                var member=path==archive?browser.Entries.Single(e=>e.Kind=="Directory" && e.Name.TrimEnd('/')=="folder"):browser.Entries.FirstOrDefault(e=>e.Kind=="File" && e.Name.Contains('/'))??browser.Entries.First(e=>e.Kind=="File");
+                var prefix=path==archive?"folder/":member.Name.Contains('/')?member.Name[..(member.Name.LastIndexOf('/')+1)]:null;
                 var destination=Path.Combine(root,"selected-"+Guid.NewGuid());Directory.CreateDirectory(destination);
-                var options=new ArchiveJobExtract{Strategy="name",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(browser.Context,[selected])};var command=Start(new(){Kind="extract",Paths=[path],Destination=destination,Extract=options});
+                var options=new ArchiveJobExtract{Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(browser.Context,[member.Ordinal],prefix)};var command=Start(new(){Kind="extract",Paths=[path],Destination=destination,Extract=options});
                 Check(jobs.Dispatch(Wire(command)).Success,"selected admission");var terminal=await Finish(jobs);Check(terminal.Outcome=="succeeded" && terminal.FilesCommitted>=1 && terminal.CleanupComplete,"selected native terminal "+terminal.Code+" format "+browser.Context.Format);
-                var files=Directory.GetFiles(destination,"*",SearchOption.AllDirectories);Check(files.Length==(int)terminal.FilesCommitted,"selected committed files only");Check(files.All(file=>Path.GetRelativePath(destination,file).StartsWith(Path.GetFileNameWithoutExtension(path)+Path.DirectorySeparatorChar)),"original name strategy prefix");
-                if(path==archive){Check(files.Length==1 && File.ReadAllText(files[0])=="folder/a.txt","directory expands descendants not unrelated members");}
+                var files=Directory.GetFiles(destination,"*",SearchOption.AllDirectories);Check(files.Length==(int)terminal.FilesCommitted,"selected committed files only");
+                var expected=path==archive?"a.txt":prefix is null?member.Name:member.Name[prefix.Length..];
+                Check(files.Length==1 && Path.GetRelativePath(destination,files[0])==expected.Replace('/',Path.DirectorySeparatorChar) && (prefix is null || !Directory.Exists(Path.Combine(destination,prefix.TrimEnd('/')))),"selected output strips only its original prefix");
+                if(path==archive)Check(File.ReadAllText(files[0])=="folder/a.txt" && Directory.Exists(Path.Combine(destination,"empty")),"selected directory expands descendants and keeps empty child");
             }
+            var emptyArchive=Path.Combine(root,"empty-selected.zip");using(var zip=ZipFile.Open(emptyArchive,ZipArchiveMode.Create))zip.CreateEntry("folder/empty/");
+            var emptyBrowser=await Browse(root,emptyArchive);var emptyTarget=Path.Combine(root,"empty-selected");Directory.CreateDirectory(emptyTarget);
+            var emptyJob=Start(new(){Kind="extract",Paths=[emptyArchive],Destination=emptyTarget,Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(emptyBrowser.Context,[emptyBrowser.Entries.Single().Ordinal],"folder/empty/")}});
+            Check(jobs.Dispatch(Wire(emptyJob)).Success,"empty selected admission");var emptyTerminal=await Finish(jobs);
+            Check(emptyTerminal.Outcome=="succeeded" && emptyTerminal.FilesCommitted==0 && Directory.GetFileSystemEntries(emptyTarget).Length==0,"receiver-owned empty directory has no nested duplicate");
+            var outsideBrowser=await Browse(root,archive);var outsideTarget=Path.Combine(root,"outside-selected");Directory.CreateDirectory(outsideTarget);
+            var outsideJob=Start(new(){Kind="extract",Paths=[archive],Destination=outsideTarget,Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(outsideBrowser.Context,[outsideBrowser.Entries.Single(e=>e.Name=="other.txt").Ordinal],"folder/")}});
+            Check(jobs.Dispatch(Wire(outsideJob)).Success,"outside-prefix admission");var outsideTerminal=await Finish(jobs);
+            Check(outsideTerminal.Code=="source_changed" && outsideTerminal.FilesCommitted==0 && Directory.GetFileSystemEntries(outsideTarget).Length==0,"outside prefix refused before native output");
+            var unicodePrefix=new string('界',86)+"/";var unicodeArchive=Path.Combine(root,"unicode-prefix.zip");
+            using(var zip=ZipFile.Open(unicodeArchive,ZipArchiveMode.Create)){var entry=zip.CreateEntry(unicodePrefix+"a.txt");using var writer=new StreamWriter(entry.Open());writer.Write("unicode-prefix-payload");}
+            var unicodeBrowser=await Browse(root,unicodeArchive);var unicodeTarget=Path.Combine(root,"unicode-selected");Directory.CreateDirectory(unicodeTarget);
+            var unicodeJob=Start(new(){Kind="extract",Paths=[unicodeArchive],Destination=unicodeTarget,Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(unicodeBrowser.Context,[unicodeBrowser.Entries.Single().Ordinal],unicodePrefix)}});
+            Check(jobs.Dispatch(Wire(unicodeJob)).Success,"UTF16-safe selected directory prefix admitted");var unicodeTerminal=await Finish(jobs);
+            Check(unicodeTerminal.Outcome=="succeeded" && File.ReadAllText(Path.Combine(unicodeTarget,"a.txt"))=="unicode-prefix-payload","selected prefix uses native UTF16 component budget");
+            var duplicateArchive=Path.Combine(root,"duplicate-selected.zip");
+            using(var zip=ZipFile.Open(duplicateArchive,ZipArchiveMode.Create))foreach(var text in new[]{"first-original","second-original"}){var entry=zip.CreateEntry("folder/same.txt");using var writer=new StreamWriter(entry.Open());writer.Write(text);}
+            var duplicateBrowser=await Browse(root,duplicateArchive);var duplicateTarget=Path.Combine(root,"duplicate-selected");Directory.CreateDirectory(duplicateTarget);
+            var duplicateJob=Start(new(){Kind="extract",Paths=[duplicateArchive],Destination=duplicateTarget,Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(duplicateBrowser.Context,[duplicateBrowser.Entries[1].Ordinal],"folder/")}});
+            Check(jobs.Dispatch(Wire(duplicateJob)).Success,"single colliding original admission");var duplicateTerminal=await Finish(jobs);
+            Check(duplicateTerminal.Outcome=="succeeded" && File.ReadAllText(Path.Combine(duplicateTarget,"same.txt"))=="second-original","selected original ordinal output: "+duplicateTerminal.Outcome+" "+duplicateTerminal.Code);
+            var sevenzDuplicate=Path.Combine(root,"ordinal-selected.7z");ArchiveVirtualTreeTests.SevenzOrdinalFixture(sevenzDuplicate);
+            var sevenzDuplicateBrowser=await Browse(root,sevenzDuplicate);var sevenzDuplicateTarget=Path.Combine(root,"ordinal-selected");Directory.CreateDirectory(sevenzDuplicateTarget);
+            var sevenzDuplicateJob=Start(new(){Kind="extract",Paths=[sevenzDuplicate],Destination=sevenzDuplicateTarget,Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(sevenzDuplicateBrowser.Context,[2,3])}});
+            Check(jobs.Dispatch(Wire(sevenzDuplicateJob)).Success,"7z original-ordinal selection admission");var sevenzDuplicateTerminal=await Finish(jobs);
+            Check(sevenzDuplicateTerminal.Outcome=="succeeded" && sevenzDuplicateTerminal.FilesCommitted==2 && File.ReadAllText(Path.Combine(sevenzDuplicateTarget,"same.txt"))=="two" && new FileInfo(Path.Combine(sevenzDuplicateTarget,"empty-b.txt")).Length==0 && Directory.GetFiles(sevenzDuplicateTarget).Length==2,"7z selected original ordinals after interleaved empty records: "+sevenzDuplicateTerminal.Outcome+" "+sevenzDuplicateTerminal.Code);
             var original=await Browse(root,archive);File.Delete(archive);using(var replacement=ZipFile.Open(archive,ZipArchiveMode.Create)){replacement.CreateEntry("replacement.txt");}
-            var changed=Path.Combine(root,"changed");Directory.CreateDirectory(changed);var stale=Start(new(){Kind="extract",Paths=[archive],Destination=changed,Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(original.Context,[1])}});Check(jobs.Dispatch(Wire(stale)).Success,"stale admitted before native identity");var denied=await Finish(jobs);Check(denied.Code=="source_changed" && denied.FilesCommitted==0 && denied.CleanupComplete && Directory.GetFiles(changed,"*",SearchOption.AllDirectories).Length==0,"native stale binding refusal "+denied.Code);
+            var changed=Path.Combine(root,"changed");Directory.CreateDirectory(changed);var stale=Start(new(){Kind="extract",Paths=[archive],Destination=changed,Extract=new(){Strategy="here",SingleFileFolder=false,Conflict="skip",CopyMotw=false,Selection=new(original.Context,[2],"folder/")}});Check(jobs.Dispatch(Wire(stale)).Success,"stale admitted before native identity");var denied=await Finish(jobs);Check(denied.Code=="source_changed" && denied.FilesCommitted==0 && denied.CleanupComplete && Directory.GetFiles(changed,"*",SearchOption.AllDirectories).Length==0,"native stale binding refusal "+denied.Code);
         }finally{Directory.Delete(root,true);}
     }
     public static async Task ActualReadmissionShortfallNoOutput(){

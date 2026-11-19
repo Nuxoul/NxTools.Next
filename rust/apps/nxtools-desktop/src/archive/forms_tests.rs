@@ -2744,3 +2744,6 @@ fn ref17_b3_e1_actual_preset_and_step_controls_preserve_bytes_and_focus(cx: &mut
         }
     }
 }
+
+#[path = "forms_ref20_tests.rs"]
+mod ref20;

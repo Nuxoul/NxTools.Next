@@ -1,0 +1,5 @@
+{"file":"docs/reference-code/mister-download-manager.md","reason":"Verified source-page versus derived Referer reference chains"}
+{"file":".trellis/tasks/11-13-download-page-provenance/design.md","reason":"Additive optional metadata, legacy serialization and unchanged lifecycle"}
+{"file":".trellis/spec/nxtools-browser-host/backend/quality-guidelines.md","reason":"Native framing, bounded fields and durable acceptance"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Capture source/privacy and existing transport ownership"}
+{"file":".trellis/spec/browser-extension/controlled-handoff.md","reason":"Pending/Held/Commit identity and cancellation boundaries"}

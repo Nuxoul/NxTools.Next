@@ -1,0 +1,5 @@
+{"file":".trellis/spec/shared/verification.md","reason":"truthful verification and native acceptance boundary"}
+{"file":".trellis/spec/platformhost/index.md","reason":"native owner contracts and quality check; read the elevated foreground input scenario in native-contracts.md explicitly"}
+{"file":"csharp/NxTools.PlatformHost.Tests/README.md","reason":"exact fixture effects and selection"}
+{"file":".trellis/tasks/11-12-elevated-foreground-input/prd.md","reason":"accepted scope"}
+{"file":".trellis/tasks/11-12-elevated-foreground-input/design.md","reason":"input ownership, source routing and lifetime invariants"}

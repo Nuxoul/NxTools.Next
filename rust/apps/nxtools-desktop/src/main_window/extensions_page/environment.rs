@@ -594,6 +594,10 @@ mod tests {
         (app, retained.borrow().clone().expect("view"), surface)
     }
     pub(super) fn click(surface: &mut VisualTestContext, selector: &'static str) {
+        if selector == "extension-environment-open" {
+            super::super::click_management(surface, "运行环境", false);
+            return;
+        }
         for _ in 0..24 {
             surface.update(|window, cx| window.draw(cx).clear(cx));
             if let Some(bounds) = surface.debug_bounds(selector)

@@ -218,13 +218,37 @@ impl NetworkSettingsView {
                     .child(Label::new("暂无应用规则。添加应用后选择要禁用的功能。").text_sm()),
             );
         }
+        let fullscreen = Switch::new("global-fullscreen-suppression")
+            .small()
+            .tooltip("包含独占全屏和无边框全屏；只限制面板呼出，不影响剪贴板后台记录。保存后生效")
+            .checked(self.suppress_in_fullscreen)
+            .disabled(self.saving)
+            .accessibility_label("全屏时暂不呼出速启和剪贴板")
+            .on_change(cx.listener(|this, requested: &bool, _, cx| {
+                if !this.saving {
+                    this.suppress_in_fullscreen = *requested;
+                    cx.notify();
+                }
+            }))
+            .into_any_element();
         div()
             .w_full()
             .min_w_0()
             .flex()
             .flex_col()
             .gap_2()
-            .child(Label::new("按应用独立禁用功能，勾选项在应用设置后生效。").text_sm())
+            .child(
+                div()
+                    .debug_selector(|| "global-setting-9".into())
+                    .w_full()
+                    .min_h_6()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .gap_2()
+                    .child(Label::new("全屏时暂不呼出速启和剪贴板").text_sm())
+                    .child(fullscreen),
+            )
             .child(
                 div()
                     .debug_selector(|| "global-blacklist-table".into())

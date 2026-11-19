@@ -43,7 +43,7 @@ class PackageLocalTests(unittest.TestCase):
             "if ($env:FIXTURE_BAD_HASH -eq '1') { $digest='BAD' }\n"
             "@{release_sequence=$ReleaseSequence;files=@(@{path='owned.bin';size=7;sha256=$digest})}|ConvertTo-Json -Depth 4|Set-Content (Join-Path $p 'NxTools.release.json')\n"
             "$i=Join-Path $r 'artifacts\\installer';New-Item -ItemType Directory -Force $i|Out-Null\n"
-            "[IO.File]::WriteAllText((Join-Path $i 'NxTools.Next-setup-0.7.0.exe'),'fake setup - never execute')\n"
+            "[IO.File]::WriteAllText((Join-Path $i 'NxTools.Next-setup-0.7.2.exe'),'fake setup - never execute')\n"
             "exit 0\n",
             encoding="ascii",
         )
@@ -141,7 +141,7 @@ class PackageLocalTests(unittest.TestCase):
         status = self.status()
         self.assertEqual(status["state"], "Completed")
         self.assertFalse(status["installation_executed"])
-        setup = self.root / "artifacts/installer/NxTools.Next-setup-0.7.0.exe"
+        setup = self.root / "artifacts/installer/NxTools.Next-setup-0.7.2.exe"
         digest = hashlib.sha256(setup.read_bytes()).hexdigest().upper()
         self.assertEqual(status["installer_sha256"], digest)
         self.assertIn(digest, Path(str(setup) + ".sha256").read_text())

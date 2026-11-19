@@ -15,6 +15,7 @@ serde_json.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true
 tracing-subscriber.workspace = true
+uuid.workspace = true
 
 [dev-dependencies]
 nxtools-extensions = { path = "../nxtools-extensions", features = ["test-support"] }

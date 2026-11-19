@@ -8,6 +8,7 @@ pub(crate) struct DownloadShutdownCountdownView {
     pub(crate) correlation_id: uuid::Uuid,
     pub(crate) remaining_seconds: u64,
     pub(crate) executing: bool,
+    pub(crate) action: nxtools_download::DownloadCompletionAction,
 }
 
 impl DownloadShutdownCountdownView {
@@ -22,6 +23,7 @@ impl DownloadShutdownCountdownView {
             correlation_id,
             remaining_seconds,
             executing: false,
+            action: nxtools_download::DownloadCompletionAction::Shutdown,
         }
     }
 }
@@ -32,6 +34,8 @@ impl Render for DownloadShutdownCountdownView {
         self.theme = Theme::active(cx);
         let theme = self.theme;
         let correlation_id = self.correlation_id;
+        let action_label = completion_action_label(self.action);
+        let escape_application = self.application.clone();
         let cancel_application = self.application.clone();
         let close_application = self.application.clone();
         let execute_application = self.application.clone();
@@ -39,7 +43,7 @@ impl Render for DownloadShutdownCountdownView {
             theme,
             "download-shutdown-titlebar",
             "download-shutdown-close",
-            "自动关机",
+            format!("完成后{action_label}"),
             move |_, _, cx| {
                 let application = close_application.clone();
                 cx.defer(move |cx| {
@@ -93,14 +97,14 @@ impl Render for DownloadShutdownCountdownView {
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(theme.danger)
                             .child(if self.executing {
-                                "正在请求 Windows 关机"
+                                format!("正在请求{action_label}")
                             } else {
-                                "所有下载已完成，即将关机"
+                                format!("下载已成功完成，即将{action_label}")
                             }),
                     )
                     .child(div().debug_selector(|| "download-shutdown-consequence".into())
                         .w_full().child(Alert::warning("download-shutdown-risk",
-                            "这是一次性操作。取消、新建下载或重新启动 NxTools 都不会恢复该计划。")
+                            "取消会停止本次动作；持久化意图保留，仅供后续成功完成使用。")
                             .icon(Icon::new(MaterialIcon::Info)).xsmall())),
             ))
             .into_any_element();
@@ -108,22 +112,21 @@ impl Render for DownloadShutdownCountdownView {
             DialogFooter::new()
                 .items_center()
                 .child(
-                    action_button("download-shutdown-now-button", "立即关机")
-                        .debug_selector(|| "download-shutdown-danger-now-action".into())
-                        .custom(danger_hover_button_variant(theme, cx))
-                        .disabled(self.executing)
-                        .on_click(move |_, _, cx| {
-                            let application = execute_application.clone();
-                            cx.defer(move |cx| {
-                                application.update(cx, |application, cx| {
-                                    application.execute_shutdown(
-                                        correlation_id,
-                                        "user_requested",
-                                        cx,
-                                    );
-                                });
+                    action_button(
+                        "download-shutdown-now-button",
+                        format!("立即{action_label}"),
+                    )
+                    .debug_selector(|| "download-shutdown-danger-now-action".into())
+                    .custom(danger_hover_button_variant(theme, cx))
+                    .disabled(self.executing)
+                    .on_click(move |_, _, cx| {
+                        let application = execute_application.clone();
+                        cx.defer(move |cx| {
+                            application.update(cx, |application, cx| {
+                                application.execute_shutdown(correlation_id, "user_requested", cx);
                             });
-                        }),
+                        });
+                    }),
                 )
                 .child(
                     action_button("download-shutdown-cancel-button", "取消")
@@ -145,17 +148,30 @@ impl Render for DownloadShutdownCountdownView {
                 )
                 .into_any_element(),
         );
-        dialog_shell(
-            theme,
-            DialogShellIds {
-                root: "download-shutdown-dialog-shell",
-                titlebar: "download-shutdown-dialog-titlebar",
-                body: "download-shutdown-dialog-body",
-                footer: "download-shutdown-dialog-footer",
-            },
-            titlebar,
-            body,
-            footer,
-        )
+        div()
+            .size_full()
+            .on_key_down(move |event, _, cx| {
+                if event.keystroke.key == "escape" {
+                    let application = escape_application.clone();
+                    cx.stop_propagation();
+                    cx.defer(move |cx| {
+                        application.update(cx, |app, cx| {
+                            app.cancel_shutdown_countdown(correlation_id, "escape", cx)
+                        })
+                    });
+                }
+            })
+            .child(dialog_shell(
+                theme,
+                DialogShellIds {
+                    root: "download-shutdown-dialog-shell",
+                    titlebar: "download-shutdown-dialog-titlebar",
+                    body: "download-shutdown-dialog-body",
+                    footer: "download-shutdown-dialog-footer",
+                },
+                titlebar,
+                body,
+                footer,
+            ))
     }
 }

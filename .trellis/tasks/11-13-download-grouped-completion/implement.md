@@ -1,0 +1,3 @@
+# Execution
+
+Use the existing batch admission correlation as runtime-only membership, the original completion snapshot/coordinator and the official notification owner. Production intake/terminal/notification regressions protect independent group settlement, action-free grouped/standalone notices and unchanged active-window handling. Preserve configured sound/directory feedback, B5 authority and original native command lifecycle. Verify production GPUI notifications, unchanged config, B5 contracts and strict affected lint. Record exact outcomes and native acceptance limits; no packaging, product launch or commit.

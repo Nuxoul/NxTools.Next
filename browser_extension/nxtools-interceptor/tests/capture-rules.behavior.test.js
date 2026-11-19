@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { loadBackground } = require("./harness/load-background.cjs");
+const { loadBackground, createControlledHandoffResponder } = require("./harness/load-background.cjs");
 
 const download = {
   id: 81, startTime: "2026-11-10T00:00:00Z", filename: "C:\\Downloads\\example.zip",
@@ -11,14 +11,15 @@ const download = {
   cookieStoreId: "fixture-origin"
 };
 function fixture(browser, chrome = {}, pending = false) {
-  return loadBackground({ browser, chrome, desktop: { respond(message) {
+  const controlled = createControlledHandoffResponder({ prepareState: pending ? "pending" : "held", fallback(message) {
     if (message.type !== "create_task") return { ok: true, data: { tasks: [] } };
     return pending
       ? { ok: true, accepted: false, handoffId: message.payload.handoffId,
         data: { handoffState: "awaiting_confirmation", reason: "confirmation_pending" } }
       : { ok: true, accepted: true, handoffId: message.payload.handoffId, taskId: "durable-task",
         data: { handoffState: "persisted", reason: "desktop_accepted" } };
-  } } });
+  } });
+  return loadBackground({ browser, chrome, desktop: { respond: controlled.respond } });
 }
 async function fire(bg, browser, overrides = {}) {
   let suggestions = 0;
@@ -27,14 +28,14 @@ async function fire(bg, browser, overrides = {}) {
   if (browser === "chrome") {
     assert.equal(bg.chrome.api.downloads.onDeterminingFilename.fire(item, () => { suggestions += 1; })[0], true);
   } else bg.chrome.api.downloads.onCreated.fire(item);
-  await bg.settle();
   await bg.waitFor(() => {
-    if (browser === "chrome") return suggestions === 1;
     const current = bg.evaluate("lastHandoff");
     return current !== previous && current && !["submitting", "persisted"].includes(current.state);
   }, "current automatic decision");
   const state = JSON.parse(JSON.stringify(bg.evaluate("lastHandoff")));
-  if (browser === "chrome") assert.equal(suggestions, 1);
+  if (browser === "chrome") {
+    assert.equal(suggestions, state.state === "awaiting_confirmation" ? 0 : 1);
+  }
   return state;
 }
 function retained(bg) {
@@ -45,7 +46,7 @@ function excluded(bg, state, reason = "rule_excluded") {
   assert.equal(state.state, "skipped");
   assert.equal(state.reason, reason);
   assert.equal(state.owner, "browser");
-  assert.equal(bg.desktop.requestsOfType("create_task").length, 0);
+  assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 0);
   assert.equal(bg.chrome.nativePorts.length, 0, "rule decisions do not launch a native host");
   assert.equal(bg.chrome.callsNamed("cookies.getAll").length, 0, "excluded inputs do not read credentials");
   retained(bg);
@@ -72,7 +73,7 @@ for (const browser of ["chrome", "firefox"]) {
     const state = await fire(bg, browser, { totalBytes: -1 });
     assert.equal(state.reason, "confirmation_pending");
     assert.equal(state.state, "awaiting_confirmation");
-    assert.equal(bg.desktop.requestsOfType("create_task").length, 1);
+    assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 1);
     retained(bg);
   });
 
@@ -81,7 +82,7 @@ for (const browser of ["chrome", "firefox"]) {
     await bg.settle();
     const state = await fire(bg, browser);
     assert.equal(state.state, "transferred");
-    assert.equal(bg.desktop.requestsOfType("create_task").length, 1);
+    assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 1);
   });
 
   test(`B2 ${browser} restored session pause precedes exclusions and matching rules`, async () => {
@@ -156,7 +157,7 @@ for (const browser of ["chrome", "firefox"]) {
     await bg.settle();
     await fire(bg, browser);
     await fire(bg, browser);
-    const frames = bg.desktop.requestsOfType("create_task").map(entry => entry.message);
+    const frames = bg.desktop.requestsOfType("prepare_browser_handoff").map(entry => entry.message);
     assert.equal(new Set(frames.map(frame => frame.payload.handoffId)).size, 1);
     assert.ok(frames.every(frame => frame.requestId === frame.payload.handoffId));
   });
@@ -225,7 +226,7 @@ for (const browser of ["chrome", "firefox"]) {
     const decision = await fire(bg, browser);
     assert.equal(decision.reason, "rule_excluded");
     assert.equal(bg.chrome.nativePorts.length, hostCount);
-    assert.equal(bg.desktop.requestsOfType("create_task").length, 0);
+    assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 0);
     retained(bg);
   });
 
@@ -249,7 +250,7 @@ for (const browser of ["chrome", "firefox"]) {
     const state = await fire(bg, browser, { filename: "", url: "https://origin.test/get", finalUrl: "https://cdn.test/get",
       mime: "application/pdf", totalBytes: 128 * 1024 });
     assert.equal(state.state, "transferred");
-    assert.equal(bg.desktop.requestsOfType("create_task").length, 1);
+    assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 1);
   });
 
   test(`B2 ${browser} zero unknown size and Content-Disposition keep confirmation authority`, async () => {
@@ -263,7 +264,7 @@ for (const browser of ["chrome", "firefox"]) {
     await bg.settle();
     const state = await fire(bg, browser, { totalBytes: 0 });
     assert.equal(state.reason, "confirmation_pending");
-    const request = bg.desktop.requestsOfType("create_task")[0].message;
+    const request = bg.desktop.requestsOfType("prepare_browser_handoff")[0].message;
     assert.equal(request.payload.fileName, "report.pdf");
     retained(bg);
   });

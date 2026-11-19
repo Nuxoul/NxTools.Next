@@ -3,8 +3,11 @@ use crate::ui::metrics::SPACING_4;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::Input;
 use gpui_kit::component::label::Label;
+use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Sizable as _, Size as ControlSize};
+
+const SEARCH_FEEDBACK_DELAY: Duration = Duration::from_millis(150);
 
 /// Keep keyboard focus/ring outside the normal-result and compact-action rails.
 pub(super) fn quick_launch_focusable_row(
@@ -64,6 +67,8 @@ pub(crate) struct QuickLaunchPanel {
     pub(crate) is_open: bool,
     pub(crate) results_visible: bool,
     pub(crate) search_pending: bool,
+    search_feedback_timer: Option<gpui_kit::Task<()>>,
+    search_feedback_generation: Option<u64>,
     pub(crate) query_dispatch_generation: u64,
     pub(crate) results_appearance_generation: u64,
     pub(crate) result_scroll: UniformListScrollHandle,
@@ -116,6 +121,7 @@ impl QuickLaunchPanel {
             |this, state, event: &InputEvent, window, cx| match event {
                 InputEvent::Change => {
                     let query = state.read(cx).value().to_string();
+                    this.stop_search_feedback();
                     this.dismiss_preview(cx);
                     let application = this.application.clone();
                     cx.defer(move |cx| {
@@ -235,6 +241,8 @@ impl QuickLaunchPanel {
             is_open: true,
             results_visible: false,
             search_pending: false,
+            search_feedback_timer: None,
+            search_feedback_generation: None,
             query_dispatch_generation: 0,
             results_appearance_generation: 0,
             result_scroll: UniformListScrollHandle::new(),
@@ -278,6 +286,7 @@ impl QuickLaunchPanel {
         self.is_open = true;
         self.results_visible = false;
         self.search_pending = false;
+        self.stop_search_feedback();
         self.reset_presented_results();
         self.result_scroll
             .0
@@ -303,6 +312,7 @@ impl QuickLaunchPanel {
             self.results_appearance_generation.wrapping_add(1).max(1);
         self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
         self.search_pending = false;
+        self.stop_search_feedback();
         self.action_mode = None;
         let application = self.application.clone();
         cx.defer(move |cx| {
@@ -432,6 +442,21 @@ impl QuickLaunchPanel {
         );
         let generation = self.query_dispatch_generation;
         self.search_pending = true;
+        self.stop_search_feedback();
+        self.search_feedback_timer = Some(cx.spawn(async move |panel, cx| {
+            cx.background_executor().timer(SEARCH_FEEDBACK_DELAY).await;
+            let _ = panel.update(cx, |panel, cx| {
+                if panel.is_open
+                    && panel.search_pending
+                    && !panel.recent_directory_mode
+                    && panel.action_mode.is_none()
+                    && panel.query_dispatch_generation == generation
+                {
+                    panel.search_feedback_generation = Some(generation);
+                    cx.notify();
+                }
+            });
+        }));
         self.selected = 0;
         self.selection_explicit = false;
         self.pointer_selection_gate.reset();
@@ -440,9 +465,9 @@ impl QuickLaunchPanel {
             .borrow()
             .base_handle
             .set_offset(point(px(0.0), px(0.0)));
-        cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(SEARCH_INPUT_DEBOUNCE).await;
-            let _ = this.update(cx, |this, cx| {
+        let panel = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let _ = panel.update(cx, |this, cx| {
                 if !this.is_open
                     || this.action_mode.is_some()
                     || this.query_dispatch_generation != generation
@@ -452,8 +477,12 @@ impl QuickLaunchPanel {
                 }
                 this.run_search(query, cx);
             });
-        })
-        .detach();
+        });
+    }
+
+    fn stop_search_feedback(&mut self) {
+        self.search_feedback_timer = None;
+        self.search_feedback_generation = None;
     }
 
     pub(crate) fn run_search(&mut self, query: String, cx: &mut Context<Self>) {
@@ -471,6 +500,9 @@ impl QuickLaunchPanel {
                 pending: false,
             });
         self.search_pending = update.pending;
+        if !update.pending {
+            self.stop_search_feedback();
+        }
         let mut committed = Vec::new();
         if apply_search_update(&mut committed, update.results, update.pending) {
             self.selected = 0;
@@ -516,6 +548,7 @@ impl QuickLaunchPanel {
         self.results = results.into();
         self.selected = 0;
         self.search_pending = false;
+        self.stop_search_feedback();
         self.reset_presented_results();
         self.result_scroll
             .0
@@ -963,6 +996,14 @@ impl QuickLaunchPanel {
         self.ime_enter_gate.reset();
         self.sync_window_content_size(&query, window, cx);
         self.focus_search(window, cx);
+        schedule_application_update(
+            self.application.clone(),
+            move |application, cx| {
+                application.refresh_indexed_results(cx, false);
+                application.refresh_extension_results_after_action_mode(&query, cx);
+            },
+            cx,
+        );
         cx.notify();
     }
 
@@ -984,6 +1025,7 @@ impl QuickLaunchPanel {
         self.selected = 0;
         self.selection_explicit = false;
         self.search_pending = false;
+        self.stop_search_feedback();
         self.status = None;
         self.reset_presented_results();
         self.result_scroll
@@ -1033,6 +1075,7 @@ impl QuickLaunchPanel {
                 .scroll_to_item(selected, ScrollStrategy::Center);
         }
         self.search_pending = false;
+        self.stop_search_feedback();
         self.status = None;
         cx.notify();
     }
@@ -1205,6 +1248,7 @@ impl QuickLaunchPanel {
         }
         let captured_window_handle = self.target.window_handle;
         self.is_open = false;
+        self.stop_search_feedback();
         self.finish_result_entrances("close", cx);
         self.query_dispatch_generation = self.query_dispatch_generation.wrapping_add(1).max(1);
         let panel = cx.entity().downgrade();
@@ -1261,6 +1305,7 @@ impl QuickLaunchPanel {
 
     /// Query/engine health stays attached to the last-good search results.
     pub(crate) fn set_error(&mut self, message: String, cx: &mut Context<Self>) {
+        self.stop_search_feedback();
         self.search_pending &= !self.results.is_empty();
         self.status = Some(message.into());
         cx.notify();
@@ -1346,7 +1391,7 @@ impl QuickLaunchPanel {
         let (window, cx) = render;
         let theme = self.theme;
         let stale = self.search_pending;
-        let selected = index == self.selected;
+        let selected = !stale && index == self.selected;
         let query = if stale {
             self.committed_query.clone()
         } else {
@@ -1389,7 +1434,9 @@ impl QuickLaunchPanel {
             super::retained_text_tests::observe(format!("result-title-{index}"), &title);
             super::retained_text_tests::observe(format!("result-subtitle-{index}"), &subtitle);
         }
-        let shortcut_hint = quick_launch_shortcut_hint(visible_position);
+        let shortcut_hint = (!stale)
+            .then(|| quick_launch_shortcut_hint(visible_position))
+            .flatten();
         let name_highlights = if result
             .subtitle
             .as_deref()
@@ -1898,14 +1945,6 @@ impl Render for QuickLaunchPanel {
             div()
                 .flex_1()
                 .min_h_0()
-                .when(self.search_pending && self.status.is_none(), |container| {
-                    container.child(progress_state(
-                        theme,
-                        "quick-launch-results-progress",
-                        "正在搜索",
-                        "正在合并应用、本地文件与系统工具结果。",
-                    ))
-                })
                 .when(self.status.is_some(), |container| {
                     container.child(empty_state(
                         theme,
@@ -2002,7 +2041,6 @@ impl Render for QuickLaunchPanel {
             .relative()
             .size_full()
             .overflow_hidden()
-            .font_family(UI_FONT_FAMILY)
             .bg(theme.canvas)
             .text_color(theme.text)
             .border_1()
@@ -2011,6 +2049,7 @@ impl Render for QuickLaunchPanel {
             .border_color(theme.canvas)
             .flex()
             .flex_col()
+            // The cue lives in the existing input; result and window geometry stay fixed.
             .child(
                 div()
                     .debug_selector(|| "quick-launch-search-header".into())
@@ -2043,6 +2082,42 @@ impl Render for QuickLaunchPanel {
                                     .w_full()
                                     .text_size(px(SEARCH_INPUT_TEXT_SIZE))
                                     .line_height(px(SEARCH_INPUT_LINE_HEIGHT))
+                                    .suffix(
+                                        div().w(px(64.0)).flex_none().flex().justify_end().when(
+                                            self.is_open
+                                                && self.search_pending
+                                                && !self.recent_directory_mode
+                                                && self.action_mode.is_none()
+                                                && self.search_feedback_generation
+                                                    == Some(self.query_dispatch_generation),
+                                            |slot| {
+                                                slot.child(
+                                                    div()
+                                                        .debug_selector(|| {
+                                                            "quick-launch-search-feedback".into()
+                                                        })
+                                                        .flex()
+                                                        .items_center()
+                                                        .gap(px(SPACING_4))
+                                                        .when(
+                                                            crate::ui::motion::motion_allowed(cx),
+                                                            |status| {
+                                                                status.child(
+                                                                    Spinner::new().small().color(
+                                                                        theme.icon_muted.into(),
+                                                                    ),
+                                                                )
+                                                            },
+                                                        )
+                                                        .child(
+                                                            Label::new("搜索中")
+                                                                .text_size(px(TEXT_LABEL))
+                                                                .text_color(theme.text_secondary),
+                                                        ),
+                                                )
+                                            },
+                                        ),
+                                    )
                                     .prefix(
                                         div().id("quick-launch-search-icon").child(
                                             gpui_kit::component::Icon::new(MaterialIcon::Search)

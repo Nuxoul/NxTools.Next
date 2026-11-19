@@ -31,6 +31,15 @@ if ($handler.Contains('self.refresh_entries(cx)')) {
 
 Write-Host "Clipboard command-result lifecycle architecture gate passed."
 
+$clipboardWorkerPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\clipboard_worker.rs"
+$clipboardWorkerSource = Get-Content -LiteralPath $clipboardWorkerPath -Raw
+if ($clipboardWorkerSource -notmatch '(?s)fn extension_get_async\([^{}]*\{\s*self\.active_item_async\(item_id\)\.await' -or
+    $clipboardWorkerSource -notmatch 'match state\.history\.active_item\(source_id\)' -or
+    $clipboardWorkerSource -match '\bfind_history_item\(') {
+    throw "Clipboard extension reads and derived captures must fetch the active row by ID without paging through history."
+}
+Write-Host "Clipboard worker uses active-row lookup for extension reads and derived captures."
+
 $clipboardPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\clipboard.rs"
 $clipboardUiPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\ui\mod.rs"
 $clipboardUiTestsPath = Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\ui\tests.rs"

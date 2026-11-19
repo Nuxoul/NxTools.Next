@@ -30,3 +30,9 @@ HZ5 adds optional `ArchiveJobExtract.reclamation {mode:start|continue,recovery_i
 ArchiveEntry v1 optional preview_options follows [the frozen preview budget contract](../../nxtools-desktop/backend/archive-preview.md):
 missing/null keeps legacy behavior, strict non-null options are preview-only and omitted from private
 worker materialize payloads. Ordinary materialize/drag/authorize authority is unchanged.
+
+Ordinary selected drag extraction adds optional `ArchiveJobSelection.strip_prefix` / C# `StripPrefix`;
+missing/null preserves original paths. A present prefix is a safe forward-slash directory ending `/`,
+with native255-UTF-16 component and32767-byte transport bounds, and requires strategy `Here`.
+Selection uniqueness and real frame/resource limits remain; no fixed4096-ordinal Extract cap.
+See [selected output contract](../../nxtools-archive/backend/reusable-plans.md#scenario-selected-extraction-output-prefix).

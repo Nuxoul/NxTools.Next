@@ -11,12 +11,17 @@ mod assets;
 mod clipboard;
 mod clipboard_worker;
 mod completion_actions;
+#[cfg(test)]
+#[path = "../../../crates/nxtools-download/tests/support/b4_url.rs"]
+mod completion_http_fixture;
+mod data_directory;
 mod download_taskbar_overlay;
 mod download_window_lifecycle;
 mod downloads;
 mod extensions;
 mod icons;
 mod main_window;
+mod markdown_launch;
 mod network_settings;
 mod notifications;
 mod platform_events;
@@ -46,6 +51,9 @@ use main_window::{MainWindow, MainWindowShellContext};
 use network_settings::NetworkSettingsApplication;
 use notifications::NotificationCenter;
 use nxtools_core::{AppPaths, SingleInstanceGuard, SystemSettings};
+use nxtools_protocol::desktop_markdown_intent::{
+    DesktopMarkdownIntent, LaunchFailure as MarkdownLaunchFailure,
+};
 use platform_events::{
     BrowserStartupWindow, PlatformApplicationTargets, PlatformEventDispatcher,
     PlatformEventDispatcherGlobal,
@@ -61,7 +69,7 @@ use std::process::Command;
 use std::rc::Rc;
 use std::sync::Once;
 use std::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,14 +193,29 @@ impl DesktopLaunchMode {
     }
 }
 
+fn startup_main_window_presentation(
+    mode: DesktopLaunchMode,
+    archive_origin: bool,
+    markdown_origin: bool,
+) -> (bool, bool) {
+    if markdown_origin {
+        (false, false)
+    } else {
+        archive_launch::main_window_presentation(mode, archive_origin)
+    }
+}
+
 fn run(
     instance_wait: std::time::Duration,
     launch_mode: DesktopLaunchMode,
     initial_archive: Option<nxtools_protocol::desktop_archive_intent::DesktopArchiveIntent>,
+    initial_markdown: Option<DesktopMarkdownIntent>,
 ) -> Result<()> {
+    let markdown_origin = initial_markdown.is_some();
     let (main_focus, main_show) =
-        archive_launch::main_window_presentation(launch_mode, initial_archive.is_some());
-    let mut runtime = DesktopRuntime::initialize(instance_wait, initial_archive)?;
+        startup_main_window_presentation(launch_mode, initial_archive.is_some(), markdown_origin);
+    let offer_integration_setup = main_show && matches!(launch_mode, DesktopLaunchMode::Normal);
+    let mut runtime = DesktopRuntime::initialize(instance_wait, initial_archive, initial_markdown)?;
     install_panic_logging();
     let platform_bridge = runtime
         .platform_bridge
@@ -210,6 +233,10 @@ fn run(
         .archive_launches
         .take()
         .context("desktop archive ingress unavailable")?;
+    let markdown_launches = runtime
+        .markdown_launches
+        .take()
+        .context("desktop Markdown ingress unavailable")?;
     let finder_catalog = runtime
         .finder_catalog
         .take()
@@ -218,6 +245,7 @@ fn run(
         .download_engine
         .take()
         .context("desktop runtime did not provide a download engine")?;
+    let download_shutdown = download_engine.clone();
     let download_default_directory = runtime.download_default_directory.clone();
     let download_database_path = runtime.download_database_path.clone();
     let ffmpeg_install_directory = runtime.ffmpeg_install_directory.clone();
@@ -233,15 +261,26 @@ fn run(
     info!(pipe_name = %runtime.config.platform_pipe_name, "starting GPUI application");
 
     let worker_shutdown = clipboard_worker.clone();
+    let completion_exit_correlation = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let exit_correlation_for_application = completion_exit_correlation.clone();
+    let migration_slot = data_directory::MigrationSlot::default();
+    let migration_for_ui = migration_slot.clone();
+    let migration_result = data_directory::take_result(&AppPaths::discover()?);
     gpui_kit::application()
         .with_assets(NxToolsAssets)
         .run(move |cx: &mut App| {
+            cx.set_global(migration_for_ui);
+            cx.set_global(crate::completion_actions::CompletionExitCorrelation(
+                exit_correlation_for_application,
+            ));
             gpui_kit::init(cx);
             crate::ui::markdown_document::init(cx);
             //Unknown native animation preference is conservative until PlatformHost's snapshot.
             cx.set_reduce_motion(true);
             crate::theme::apply_component_theme(cx);
             crate::theme::set_theme_preference(app_config.system.theme, cx);
+            crate::theme::set_ui_font_family(&app_config.system.ui_font_family, cx);
+            crate::tools::markdown_reader::install_settings(&app_config, config_path.clone(), cx);
 
             let notifications = cx.new(|_| NotificationCenter::default());
             crate::notifications::register(&notifications, cx);
@@ -249,6 +288,15 @@ fn run(
                 center.set_position(app_config.system.notification_position, cx);
                 center.set_duration_seconds(app_config.system.notification_duration_seconds, cx);
             });
+            if let Some(success) = migration_result {
+                notifications.update(cx, |center, cx| {
+                    if success {
+                        center.show_success("data-directory-migrated", "软件数据迁移完成", "已使用新数据目录；原目录保留为备份。", cx);
+                    } else {
+                        center.show_error("data-directory-migration-failed", "软件数据未能迁移", "仍使用原数据目录，原数据完整保留。请检查目标目录权限、可用空间后重试。", cx);
+                    }
+                });
+            }
             let platform_bridge = Rc::new(platform_bridge);
             notifications.update(cx, |center, _| {
                 center.bind_copy_platform(Rc::clone(&platform_bridge))
@@ -271,6 +319,7 @@ fn run(
                 start_on_login_silently: false,
                 close_to_tray: false,
                 theme: app_config.system.theme,
+                ui_font_family: app_config.system.ui_font_family.clone(),
                 notification_position: app_config.system.notification_position,
                 notification_duration_seconds: app_config.system.notification_duration_seconds,
             }));
@@ -424,6 +473,17 @@ fn run(
                             cx,
                         )
                     });
+                    if offer_integration_setup {
+                        let main = main_window.clone();
+                        let source = window.window_handle();
+                        cx.defer(move |cx| {
+                            let _ = source.update(cx, |_, window, cx| {
+                                main.update(cx, |main, cx| {
+                                    main.maybe_show_integration_setup(window, cx);
+                                });
+                            });
+                        });
+                    }
                     cx.new(|cx| Root::new(main_window, window, cx))
                 },
             );
@@ -513,10 +573,13 @@ fn run(
                 cx.defer(move |cx| assistant.update(cx, |assistant, cx| assistant.start(cx)));
             };
             let main_preparation = if !main_show {
-                Some(platform_events::MainWindowPreparation::new(
-                    main_window_handle,
-                    publish_main,
-                ))
+                let preparation =
+                    platform_events::MainWindowPreparation::new(main_window_handle, publish_main);
+                Some(if markdown_origin {
+                    preparation.keep_application_on_failure()
+                } else {
+                    preparation
+                })
             } else {
                 cx.defer(publish_main);
                 None
@@ -538,12 +601,53 @@ fn run(
                 )
             });
             cx.set_global(PlatformEventDispatcherGlobal::new(dispatcher));
+            crate::markdown_launch::start(markdown_launches, Rc::clone(&platform_bridge), cx);
         });
+    let migration_correlation = migration_slot
+        .0
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().map(|migration| migration.correlation_id));
+    let shutdown_correlation_id = completion_exit_correlation
+        .lock()
+        .ok()
+        .and_then(|mut correlation| correlation.take())
+        .or(migration_correlation)
+        .unwrap_or_else(Uuid::new_v4);
+    let shutdown_started = Instant::now();
+    info!(event="desktop.shutdown.started",correlation_id=%shutdown_correlation_id,"normal application resource drain started");
+    let download_drain =
+        runtime.shutdown_downloads_and_wait(&download_shutdown, shutdown_correlation_id);
     let extension_shutdown = runtime.extension_service.shutdown_and_wait();
     let clipboard_shutdown = worker_shutdown.shutdown();
-    extension_shutdown.context("failed to drain extension resources during shutdown")?;
-    clipboard_shutdown.context("failed to flush clipboard history worker during shutdown")?;
+    if download_drain.is_err() || extension_shutdown.is_err() || clipboard_shutdown.is_err() {
+        error!(event="desktop.shutdown.failed",correlation_id=%shutdown_correlation_id,elapsed_ms=shutdown_started.elapsed().as_millis(),"normal feature resource drain failed");
+    }
+    let resource_drain = download_drain
+        .and(extension_shutdown)
+        .and(clipboard_shutdown);
+    if resource_drain.is_ok() {
+        info!(event="desktop.shutdown.feature_resources_drained",correlation_id=%shutdown_correlation_id,elapsed_ms=shutdown_started.elapsed().as_millis(),"download, extension and clipboard resources drained");
+    }
 
+    drop(download_shutdown);
+    let migration = migration_slot
+        .0
+        .lock()
+        .ok()
+        .and_then(|mut slot| slot.take());
+    if let Some(migration) = migration {
+        let success = resource_drain.is_ok() && migration.execute().is_ok();
+        if data_directory::save_result(&migration.source, success).is_err() {
+            warn!(event = "data_directory.result_write.failed", correlation_id = %migration.correlation_id, "migration result notification could not be persisted");
+        }
+        let correlation_id = migration.correlation_id;
+        drop(migration);
+        data_directory::restart()?;
+        info!(event = "data_directory.restart.started", %correlation_id, success, "desktop restart requested after migration");
+    } else {
+        resource_drain.context("failed to drain feature resources during shutdown")?;
+    }
     drop(runtime);
     Ok(())
 }
@@ -565,6 +669,18 @@ fn install_panic_logging() {
 }
 
 fn main() {
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    let cwd = std::env::current_dir().ok();
+    let markdown_intent = match markdown_launch::parse_arguments(
+        arguments.iter().cloned(),
+        cwd.as_deref().unwrap_or(Path::new("")),
+    ) {
+        Ok(intent) => intent,
+        Err(failure) => {
+            eprintln!("NxTools could not parse Markdown startup arguments ({failure}).");
+            std::process::exit(2);
+        }
+    };
     #[cfg(not(debug_assertions))]
     if std::env::args_os().any(|argument| argument == "--ui-preview") {
         eprintln!("Isolated UI preview is available only in Debug builds.");
@@ -594,50 +710,64 @@ fn main() {
             std::process::exit(2);
         }
     };
-    let archive_intent = match std::env::current_dir()
-        .ok()
-        .and_then(|cwd| archive_launch::parse_arguments(std::env::args_os().skip(1), &cwd).ok())
-    {
-        Some(intent) => intent,
-        None => {
-            eprintln!("NxTools could not parse archive startup arguments (InvalidRequest).");
-            std::process::exit(2);
+    let archive_intent = if markdown_intent.is_some() {
+        None
+    } else {
+        match cwd.and_then(|cwd| archive_launch::parse_arguments(arguments, &cwd).ok()) {
+            Some(intent) => intent,
+            None => {
+                eprintln!("NxTools could not parse archive startup arguments (InvalidRequest).");
+                std::process::exit(2);
+            }
         }
     };
-    match relaunch_protected_desktop_when_current() {
+    match relaunch_protected_desktop_when_current(markdown_intent.as_ref()) {
         Ok(true) => return,
         Ok(false) => {}
         Err(error) => eprintln!("NxTools could not use the protected desktop copy: {error:#}"),
     }
-    let forwarded = archive_launch::route_before_startup(
-        archive_intent.as_ref(),
-        runtime::forward_running_archive,
-        || {
-            if launch_mode.should_summon_running_instance() {
-                match runtime::summon_running_desktop() {
-                    Ok(forwarded) => Ok(forwarded),
-                    Err(error) => {
-                        eprintln!("NxTools could not summon the running instance: {error:#}");
-                        Ok(false)
-                    }
-                }
-            } else {
-                match runtime::desktop_instance_is_running() {
-                    Ok(running) => Ok(running),
-                    Err(error) => {
-                        eprintln!(
-                            "NxTools could not check the existing desktop instance: {error:#}"
-                        );
-                        Ok(false)
-                    }
+    let ordinary = || {
+        if launch_mode.should_summon_running_instance() {
+            match runtime::summon_running_desktop() {
+                Ok(forwarded) => Ok(forwarded),
+                Err(error) => {
+                    eprintln!("NxTools could not summon the running instance: {error:#}");
+                    Ok(false)
                 }
             }
+        } else {
+            match runtime::desktop_instance_is_running() {
+                Ok(running) => Ok(running),
+                Err(error) => {
+                    eprintln!("NxTools could not check the existing desktop instance: {error:#}");
+                    Ok(false)
+                }
+            }
+        }
+    };
+    let forwarded = markdown_launch::route_before_startup(
+        markdown_intent.as_ref(),
+        runtime::forward_running_markdown,
+        || {
+            archive_launch::route_before_startup(
+                archive_intent.as_ref(),
+                runtime::forward_running_archive,
+                ordinary,
+            )
         },
     );
     match forwarded {
         Ok(true) => return,
         Ok(false) => {}
         Err(error) => {
+            if let Some(intent) = &markdown_intent {
+                report_markdown_startup_failure(
+                    intent.request_id,
+                    &error,
+                    MarkdownLaunchFailure::Disconnected,
+                );
+                std::process::exit(1);
+            }
             let failure = error
                 .downcast_ref::<nxtools_protocol::desktop_archive_intent::LaunchFailure>()
                 .copied()
@@ -651,12 +781,35 @@ fn main() {
             .context("background download host startup failed"),
         DesktopLaunchMode::Normal
         | DesktopLaunchMode::SilentStart
-        | DesktopLaunchMode::BrowserDialog { .. } => {
-            run(instance_wait, launch_mode, archive_intent.clone())
-                .context("desktop startup failed")
-        }
+        | DesktopLaunchMode::BrowserDialog { .. } => run(
+            instance_wait,
+            launch_mode,
+            archive_intent.clone(),
+            markdown_intent.clone(),
+        )
+        .context("desktop startup failed"),
     };
     if let Err(error) = result {
+        if let Some(intent) = &markdown_intent {
+            match markdown_launch::recover_instance_race(
+                &error,
+                intent,
+                runtime::forward_running_markdown,
+            ) {
+                Ok(true) => return,
+                Ok(false) => report_markdown_startup_failure(
+                    intent.request_id,
+                    &error,
+                    MarkdownLaunchFailure::OwnerUnavailable,
+                ),
+                Err(error) => report_markdown_startup_failure(
+                    intent.request_id,
+                    &error,
+                    MarkdownLaunchFailure::Disconnected,
+                ),
+            }
+            std::process::exit(1);
+        }
         match archive_launch::recover_instance_race(
             &error,
             archive_intent.as_ref(),
@@ -691,6 +844,20 @@ fn main() {
     }
 }
 
+fn report_markdown_startup_failure(
+    correlation_id: Uuid,
+    error: &anyhow::Error,
+    default: MarkdownLaunchFailure,
+) {
+    let failure = error
+        .downcast_ref::<MarkdownLaunchFailure>()
+        .copied()
+        .unwrap_or(default);
+    let log_dir = AppPaths::discover().ok().map(|paths| paths.log_dir);
+    let report = anyhow::anyhow!("Markdown startup failed ({failure}, operation {correlation_id})");
+    startup_failure::report(log_dir.as_deref(), None, &report, false);
+}
+
 fn protected_restart_instance_wait() -> std::time::Duration {
     let mut arguments = std::env::args_os();
     while let Some(argument) = arguments.next() {
@@ -705,7 +872,9 @@ fn protected_restart_instance_wait() -> std::time::Duration {
     std::time::Duration::ZERO
 }
 
-fn relaunch_protected_desktop_when_current() -> Result<bool> {
+fn relaunch_protected_desktop_when_current(
+    markdown_intent: Option<&DesktopMarkdownIntent>,
+) -> Result<bool> {
     let current = std::env::current_exe().context("failed to locate desktop executable")?;
     let Some(protected) = protected_desktop_path() else {
         return Ok(false);
@@ -715,8 +884,17 @@ fn relaunch_protected_desktop_when_current() -> Result<bool> {
     {
         return Ok(false);
     }
-    Command::new(&protected)
-        .args(std::env::args_os().skip(1))
+    let mut command = Command::new(&protected);
+    if let Some(intent) = markdown_intent {
+        command
+            .arg(markdown_launch::OPEN_ARGUMENT)
+            .arg(&intent.path)
+            .arg(markdown_launch::CORRELATION_ARGUMENT)
+            .arg(intent.request_id.to_string());
+    } else {
+        command.args(std::env::args_os().skip(1));
+    }
+    command
         .spawn()
         .with_context(|| format!("failed to start protected desktop {}", protected.display()))?;
     Ok(true)

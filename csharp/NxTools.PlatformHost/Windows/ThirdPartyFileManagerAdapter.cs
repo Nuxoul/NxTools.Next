@@ -1,3 +1,4 @@
+using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Protocol;
 
 namespace NxTools.PlatformHost.Windows;
@@ -36,17 +37,40 @@ internal sealed record ThirdPartyFileManagerCaptureAttempt(
 
 internal static class ThirdPartyFileManagerAdapter
 {
+    private static readonly OneCommanderFileManagerOperations OneCommander = new();
     private static readonly ThirdPartyFileManagerSessionRegistry Registry =
         new(
         [
             new DirectoryOpusFileManagerOperations(),
             new TotalCommanderFileManagerOperations(),
-            new OneCommanderFileManagerOperations(),
+            OneCommander,
             new FilesFileManagerOperations()
         ]);
 
-    public static void WarmUp() =>
-        UiaOneCommanderWindowOperations.WarmUpFocusTracker();
+    public static IDisposable BeginLifetime(IPlatformLog log, string role)
+    {
+        OneCommander.BeginLifetime(log, role);
+        return new DirectoryLifetime();
+    }
+
+    public static void ResumeLifetime(IPlatformLog log, string role) => OneCommander.BeginLifetime(log, role);
+    public static void ObserveForeground(ForegroundContext context) => OneCommander.ObserveForeground(context);
+    public static void RetireWindow(long window) => OneCommander.RetireWindow(window);
+    public static void ReleaseContext(string? contextId) => Registry.ReleaseContext(contextId);
+    public static void Stop()
+    {
+        Registry.Clear();
+        OneCommander.Stop();
+    }
+
+    private sealed class DirectoryLifetime : IDisposable
+    {
+        private int stopped;
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref stopped, 1) == 0) Stop();
+        }
+    }
 
     public static bool IsPotentialHost(ForegroundContext foreground)
     {
@@ -396,9 +420,25 @@ internal sealed class ThirdPartyFileManagerSessionRegistry
         }
     }
 
+    internal void ReleaseContext(string? contextId)
+    {
+        if (string.IsNullOrWhiteSpace(contextId)) return;
+        lock (_gate) RemoveSession(contextId);
+    }
+
+    internal void Clear()
+    {
+        lock (_gate)
+        {
+            foreach (var contextId in _sessions.Keys.ToArray()) RemoveSession(contextId);
+            _consumedDirectoryOpusSources.Clear();
+        }
+    }
+
     private void RemoveSession(string contextId)
     {
-        _sessions.Remove(contextId);
+        if (_sessions.Remove(contextId, out var session) && session.PaneState is OneCommanderPaneState pane)
+            pane.Dispose();
         if (_sessionOrderNodes.Remove(contextId, out var node))
         {
             _sessionOrder.Remove(node);

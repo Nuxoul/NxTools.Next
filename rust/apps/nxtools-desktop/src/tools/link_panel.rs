@@ -6,7 +6,6 @@ use crate::clipboard::ClipboardApplication;
 use crate::theme::Theme;
 use crate::tools::link_detector::DetectedLinkKind;
 use crate::ui::metrics::{RADIUS_FLOATING, SPACING_4};
-use crate::ui::typography::UI_FONT_FAMILY;
 use gpui_kit::component::Icon;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -177,7 +176,6 @@ impl Render for LinkPanelView {
         let mut container = div()
             .debug_selector(|| "link-panel".into())
             .size_full()
-            .font_family(UI_FONT_FAMILY)
             .bg(theme.surface)
             .border_1()
             .border_color(theme.border_subtle)
@@ -189,12 +187,10 @@ impl Render for LinkPanelView {
         for (index, link) in self.links.iter().enumerate().take(visible_count) {
             let application = application.clone();
             let copy_application = application.clone();
-            let open_application = application.clone();
             let download_application = application.clone();
             let explicit_download_value = link.copy_value.clone();
             let download_enabled = kind_is_download_target(link.kind, &link.copy_value);
             let explicit_copy_value = link.copy_value.clone();
-            let explicit_open_value = link.copy_value.clone();
             let copy_value = link.copy_value.clone();
             let kind = link.kind;
             let tooltip_value = link.copy_value.clone();
@@ -316,35 +312,6 @@ impl Render for LinkPanelView {
                                                 });
                                             }),
                                     )
-                                    .child(
-                                        Button::new(("link-panel-open", index))
-                                            .debug_selector(move || format!("link-panel-open-{index}"))
-                                            .xsmall()
-                                            .ghost()
-                                            .flex_none()
-                                            .label(match kind {
-                                                DetectedLinkKind::Web => "打开链接",
-                                                DetectedLinkKind::LocalFile => "打开文件位置",
-                                                DetectedLinkKind::LocalDirectory => "打开文件夹",
-                                            })
-                                            .on_click(move |_, window, cx| {
-                                                cx.stop_propagation();
-                                                let value = explicit_open_value.clone();
-                                                let application = open_application.clone();
-                                                window.remove_window();
-                                                cx.defer(move |cx| {
-                                                    if let Some(application) = application.upgrade() {
-                                                        application.update(cx, |application, cx| {
-                                                            if application.forget_link_panel_if_current(panel_window) {
-                                                                application.dispatch_link_panel_route(
-                                                                    route, &value, kind, value.len(), false, cx,
-                                                                );
-                                                            }
-                                                        });
-                                                    }
-                                                });
-                                            }),
-                                    )
                                     .when(download_enabled, |row| row.child(
                                         Button::new(("link-panel-download", index))
                                             .debug_selector(move || format!("link-panel-download-{index}"))
@@ -399,7 +366,7 @@ impl Render for LinkPanelView {
                                 application.update(cx, |application, cx| {
                                     if application.forget_link_panel_if_current(panel_window) {
                                         application.dispatch_link_panel_route(
-                                            route, &copy_value, kind, value_length, true, cx,
+                                            route, &copy_value, kind, value_length, cx,
                                         );
                                     }
                                 });

@@ -72,7 +72,8 @@ Detailed executable scenarios: [acceptance.md](acceptance.md). Read [handoff ind
 | Classic HKCU Explorer verbs and per-user OpenWith registration | Phase F source/isolated fixtures required; real application/testing separately authorized |
 | Genuine Explorer drag-out, including unmaterialized selected entries | Required; Phase F delayed-rendering OLE; cannot substitute prepare-then-drag |
 | Password manager; bounded image preview; explicit temp-edit write-back | Optional enhancements with their own acceptance gates; no plaintext secret persistence |
-| SFX/ZIPX/LZH/ISO/ZPAQ creation; RAR creation; repair/recovery; AMSI; email; icon packs/skins/language/updater; Windows11 top-level IExplorerCommand menu | Excluded |
+| Create ordinary/split ZIP-SFX through the existing immutable Job and native publication owners | Required; Phase E, approved REF-20 continuation; no SFX editing grant |
+| ZIPX/LZH/ISO/ZPAQ creation; other SFX creation; RAR creation; repair/recovery; AMSI; email; icon packs/skins/language/updater; Windows11 top-level IExplorerCommand menu | Excluded |
 
 ## Requirements
 

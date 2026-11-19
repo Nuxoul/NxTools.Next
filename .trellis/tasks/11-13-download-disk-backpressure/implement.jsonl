@@ -1,0 +1,4 @@
+{"file":"docs/reference-code/download.md","reason":"Original written-byte, limiter and durable writer lifecycle"}
+{"file":"docs/reference-code/mister-download-manager.md","reason":"Verified disk/network clock separation and reference chains"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Claim/write/sync and actual slow-connection regression contracts"}
+{"file":".trellis/tasks/11-13-download-disk-backpressure/design.md","reason":"Bounded per-writer timing correction and red-capable injection"}

@@ -23,6 +23,7 @@ impl DownloadTaskSummary {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -267,9 +268,16 @@ impl DownloadEngine {
                     downloaded_bytes: state.transfer.downloaded_bytes,
                     total_bytes: state
                         .transfer
-                        .probe
-                        .as_ref()
-                        .and_then(|probe| probe.total_bytes)
+                        .final_committed
+                        .then_some(state.transfer.downloaded_bytes)
+                        .filter(|_| request.media.is_none())
+                        .or_else(|| {
+                            state
+                                .transfer
+                                .probe
+                                .as_ref()
+                                .and_then(|probe| probe.total_bytes)
+                        })
                         .or(request.expected_total_bytes),
                     file_name,
                     final_path: state.transfer.final_path.clone(),
@@ -406,6 +414,7 @@ impl DownloadEngine {
                 task,
                 segments,
                 timeline,
+                paused_url_revision: self.paused_url_replacement_revision(task_id)?,
             })
         })();
         match result {
@@ -452,9 +461,16 @@ pub(super) fn snapshot_from_state(state: &EngineTaskState) -> DownloadEngineTask
         downloaded_bytes: state.transfer.downloaded_bytes,
         total_bytes: state
             .transfer
-            .probe
-            .as_ref()
-            .and_then(|probe| probe.total_bytes)
+            .final_committed
+            .then_some(state.transfer.downloaded_bytes)
+            .filter(|_| state.task.request().media.is_none())
+            .or_else(|| {
+                state
+                    .transfer
+                    .probe
+                    .as_ref()
+                    .and_then(|probe| probe.total_bytes)
+            })
             .or(state.task.request().expected_total_bytes),
         error: state.transfer.error.clone(),
         final_path: state

@@ -147,6 +147,22 @@ internal static class FloatingAssistantCoordinatorTests
         var terminal = await retired.WaitAsync(TimeSpan.FromSeconds(2));
         Assert(!terminal.Success && terminal.Error == "picker_retired", "stop retires picker without a false native failure");
     }
+    internal static Task PickerUsesSourceWindowAsModalOwner()
+    {
+        using var windows = new PumpedWindows();
+        var result = FloatingAssistantCoordinator.RunImagePickerWithOwner(
+            windows.Source.ToInt64(),
+            (uint)Environment.ProcessId,
+            owner =>
+            {
+                Assert(owner.Handle == windows.Source, "image picker must be owned by the invoking desktop window");
+                return new WindowsCommandResult(true, Data: "{\"selected_path\":null}");
+            },
+            CancellationToken.None);
+        Assert(result.Success, "owner-bound image picker returns its selected result");
+        return Task.CompletedTask;
+    }
+
 
     internal static async Task InvalidPickerPeerFailsBeforeDialog()
     {

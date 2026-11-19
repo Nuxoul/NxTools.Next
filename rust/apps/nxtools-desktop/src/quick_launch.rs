@@ -51,12 +51,14 @@ use tracing::{error, info, warn};
 use crate::icons::{MaterialIcon, shell_icon_path_is_renderable};
 use crate::notifications::NotificationCenter;
 use crate::runtime::{IndexerBridge, IndexerNotification};
-use crate::theme::{Theme, UI_FONT_FAMILY};
+use crate::theme::Theme;
 use crate::ui::components::state::{empty_state, progress_state};
 use crate::ui::metrics::{
     COMPACT_RESULT_ICON_RAIL_WIDTH, COMPACT_RESULT_ROW_HEIGHT, COMPACT_RESULT_TRAILING_RAIL_WIDTH,
     RADIUS_CONTROL, SPACING_4, SPACING_8, SPACING_12,
 };
+#[cfg(test)]
+use crate::ui::typography::UI_FONT_FAMILY;
 use crate::ui::typography::{
     LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, TEXT_META,
 };
@@ -109,6 +111,26 @@ pub(crate) fn should_log_index_status_change(
             .unwrap_or(true)
 }
 
+/// Indexed provider rows enter the Finder catalog ranking as external entries.
+fn indexed_search_entries(items: &[IndexSearchItem]) -> Vec<ExternalSearchEntry> {
+    items
+        .iter()
+        .map(|item| {
+            let normalized_path = item.path.replace('/', "\\").to_lowercase();
+            ExternalSearchEntry {
+                id: format!("indexed:{normalized_path}"),
+                name: item.name.clone(),
+                target: item.path.clone(),
+                source: if item.is_directory {
+                    ApplicationSource::IndexedDirectory
+                } else {
+                    ApplicationSource::IndexedFile
+                },
+            }
+        })
+        .collect()
+}
+
 const PANEL_WIDTH: f32 = 620.0;
 const LAUNCHER_LIST_MAX_HEIGHT: f32 = 470.0;
 const LAUNCHER_RESULT_ROW_HEIGHT: f32 = 52.0;
@@ -141,7 +163,7 @@ const AUTO_QUICK_SWITCH_REQUEST_MAX_AGE_MS: i64 = 3_000;
 const OPEN_GRACE: Duration = Duration::from_millis(180);
 const FAILED_NAVIGATION_FOREGROUND_GUARD: Duration = Duration::from_millis(750);
 const RESULTS_APPEAR_DURATION: Duration = crate::ui::motion::ENTER_DURATION;
-const SEARCH_INPUT_DEBOUNCE: Duration = Duration::from_millis(65);
+const INDEX_SEARCH_FAILURE_MESSAGE: &str = "最近修改查询超出安全处理预算，请缩小范围后重试";
 const QUICK_LAUNCH_PREVIEW_HOVER_DELAY: Duration = Duration::from_millis(420);
 const QUICK_LAUNCH_PREVIEW_SWITCH_DELAY: Duration = Duration::from_millis(110);
 const QUICK_LAUNCH_PREVIEW_LEAVE_DELAY: Duration = Duration::from_millis(140);
@@ -437,6 +459,12 @@ impl QuickLaunchApplication {
         info!(event = "global.blacklist.quick_launch_updated", %correlation_id,
             rule_count = self.config.process_blacklist.entries().len(),
             elapsed_ms = started_at.elapsed().as_millis(), "quick launch live rules updated");
+        let settings = self.config.quick_launch.clone();
+        let _ = self.send_configuration_correlated(
+            &settings,
+            uuid::Uuid::new_v4(),
+            Some(correlation_id),
+        );
         cx.notify();
     }
 
@@ -489,7 +517,7 @@ impl QuickLaunchApplication {
             crate::extensions::service::refresh_storage_metadata(&mut packages, &current);
         }
         self.config.extensions = packages;
-        self.refresh_indexed_results(cx);
+        self.refresh_indexed_results(cx, true);
         cx.notify();
     }
 
@@ -731,18 +759,6 @@ impl QuickLaunchApplication {
         if !enabled {
             self.hide_file_dialog_search_window(cx);
         }
-        self.persist_and_sync_quick_launch_behavior(cx);
-    }
-
-    pub(crate) fn set_exclusive_fullscreen_suppression(
-        &mut self,
-        enabled: bool,
-        cx: &mut Context<Self>,
-    ) {
-        if self.config.quick_launch.suppress_in_exclusive_fullscreen == enabled {
-            return;
-        }
-        self.config.quick_launch.suppress_in_exclusive_fullscreen = enabled;
         self.persist_and_sync_quick_launch_behavior(cx);
     }
 
@@ -1024,16 +1040,27 @@ impl QuickLaunchApplication {
             self.pending_index_search = None;
         }
         if let IndexerNotification::Event(IndexerEvent::SearchFailed(failure)) = &notification {
+            if self.handle_file_dialog_search_failure(failure.generation, cx) {
+                return;
+            }
             if failure.generation == self.index_search.generation {
                 self.index_search.complete = true;
                 self.index_search.items.clear();
-                if let Some(popup) = self.popup.clone() {
+                self.index_search.failed = true;
+                let query = self.index_search.query.clone();
+                let providers_pending = self.extension_search_in_progress(&query);
+                if providers_pending && let Some(popup) = self.popup.clone() {
                     let _ = popup.panel.update(cx, |panel, cx| {
-                        panel.results.clear();
-                        panel
-                            .set_error("最近修改查询超出安全处理预算，请缩小范围后重试".into(), cx);
+                        if panel.is_open
+                            && panel.action_mode.is_none()
+                            && panel.search_input.read(cx).value().as_ref() == query
+                        {
+                            panel.set_error(INDEX_SEARCH_FAILURE_MESSAGE.into(), cx);
+                            panel.search_pending = true;
+                        }
                     });
                 }
+                self.refresh_indexed_results(cx, false);
             }
             return;
         }
@@ -1134,16 +1161,17 @@ impl QuickLaunchApplication {
             &notification,
             IndexerNotification::Event(IndexerEvent::SearchBatch(batch))
                 if batch.generation == self.index_search.generation
-                    && (batch.complete || !batch.items.is_empty())
+                    && batch.complete
         );
         let indexer_disconnected = matches!(&notification, IndexerNotification::Disconnected);
         if apply_indexer_notification(&mut self.index_status, &mut self.index_search, notification)
         {
             if retry_current_query {
                 self.retry_index_search_after_ready(cx);
+                self.retry_file_dialog_search_after_ready(cx);
             }
             if refresh_results {
-                self.refresh_indexed_results(cx);
+                self.refresh_indexed_results(cx, false);
             }
             if indexer_disconnected {
                 self.refresh_results_after_indexer_disconnect(cx);
@@ -2095,7 +2123,7 @@ impl QuickLaunchApplication {
             return;
         }
         if let Some(pending) = self.pending_window_activation.remove(&correlation_id) {
-            self.handle_window_activation_result(pending, &result, cx);
+            self.handle_window_activation_result(correlation_id, pending, &result, cx);
             return;
         }
         if let Some(pending) = self.pending_icons.remove(&correlation_id) {
@@ -2113,15 +2141,15 @@ impl QuickLaunchApplication {
             if let Some(path) = icon_path {
                 self.failed_icon_resources.remove(&resource_key);
                 self.icon_resources.insert(resource_key, path.clone());
+                let icons = entry_ids
+                    .into_iter()
+                    .map(|entry_id| (entry_id, path.clone()))
+                    .collect::<Vec<_>>();
+                self.deliver_file_dialog_search_icons(icons.clone(), cx);
                 if let Some(popup) = self.popup.clone() {
-                    let _ = popup.panel.update(cx, |panel, cx| {
-                        panel.set_icons(
-                            entry_ids
-                                .into_iter()
-                                .map(|entry_id| (entry_id, path.clone())),
-                            cx,
-                        );
-                    });
+                    let _ = popup
+                        .panel
+                        .update(cx, |panel, cx| panel.set_icons(icons, cx));
                 }
             } else {
                 self.record_icon_failure(resource_key, cx);
@@ -2315,7 +2343,7 @@ impl QuickLaunchApplication {
                         expires_at: Instant::now() + FAILED_NAVIGATION_FOREGROUND_GUARD,
                     });
                 }
-                self.begin_window_activation(popup.native_window_handle);
+                self.begin_window_activation(popup.native_window_handle, cx);
                 let _ = popup.window.update(cx, |_, window, app| {
                     let _ = popup.panel.update(app, |panel, cx| {
                         panel.notify_operation(
@@ -2336,6 +2364,7 @@ impl QuickLaunchApplication {
 
     fn handle_window_activation_result(
         &mut self,
+        correlation_id: uuid::Uuid,
         pending: PendingWindowActivation,
         result: &PlatformCommandResult,
         cx: &mut Context<Self>,
@@ -2348,6 +2377,24 @@ impl QuickLaunchApplication {
             return;
         }
 
+        let (stage, attempt) = match pending.step {
+            QuickLaunchWindowActivationStep::PreTopmost(attempt) => ("pre_topmost", attempt),
+            QuickLaunchWindowActivationStep::Activate(attempt) => ("activate", attempt),
+            QuickLaunchWindowActivationStep::ConfirmTopmost(attempt) => {
+                ("confirm_topmost", attempt)
+            }
+        };
+        info!(
+            event = "quick_launch.window_activation.step_completed",
+            %correlation_id,
+            window_handle = pending.window_handle,
+            stage,
+            attempt,
+            success = result.success,
+            native_error_code = ?result.native_error_code,
+            "quick-launch window activation step completed"
+        );
+
         if should_focus_search_after_activation(pending.step, result.success)
             && let Some(popup) = self.popup.clone()
         {
@@ -2359,24 +2406,55 @@ impl QuickLaunchApplication {
         }
 
         let Some(next) = next_window_activation_step(pending.step, result.success) else {
-            if result.success {
-                info!(
-                    window_handle = pending.window_handle,
-                    "quick-launch popup activation and topmost confirmed"
-                );
-            } else {
-                warn!(
-                    window_handle = pending.window_handle,
-                    reason = result.error.as_deref().unwrap_or("unknown Windows error"),
-                    "quick-launch popup stayed open after bounded topmost retries were exhausted"
-                );
+            match pending.step {
+                QuickLaunchWindowActivationStep::Activate(_) => {
+                    warn!(
+                        %correlation_id,
+                        window_handle = pending.window_handle,
+                        reason = result.error.as_deref().unwrap_or("unknown Windows error"),
+                        native_error_code = ?result.native_error_code,
+                        "quick-launch popup activation failed after bounded retries"
+                    );
+                    self.notify_window_activation_failure(cx);
+                }
+                QuickLaunchWindowActivationStep::ConfirmTopmost(_) if result.success => {
+                    info!(
+                        %correlation_id,
+                        window_handle = pending.window_handle,
+                        "quick-launch popup activation and topmost confirmed"
+                    );
+                }
+                QuickLaunchWindowActivationStep::ConfirmTopmost(_) => {
+                    warn!(
+                        %correlation_id,
+                        window_handle = pending.window_handle,
+                        reason = result.error.as_deref().unwrap_or("unknown Windows error"),
+                        "quick-launch popup stayed open after bounded topmost retries were exhausted"
+                    );
+                }
+                QuickLaunchWindowActivationStep::PreTopmost(_) => {}
             }
             return;
         };
-        self.queue_window_activation_step(pending.window_handle, next);
+        self.queue_window_activation_step(pending.window_handle, next, cx);
     }
 
-    fn begin_window_activation(&mut self, window_handle: i64) {
+    fn notify_window_activation_failure(&self, cx: &mut Context<Self>) {
+        let Some(popup) = self.popup.clone() else {
+            return;
+        };
+        let _ = popup.window.update(cx, |_, _, app| {
+            let _ = popup.panel.update(app, |panel, cx| {
+                panel.notify_operation(
+                    crate::notifications::NotificationLevel::Error,
+                    "无法激活快速启动窗口，请点击搜索框后重试。".into(),
+                    cx,
+                );
+            });
+        });
+    }
+
+    fn begin_window_activation(&mut self, window_handle: i64, cx: &mut Context<Self>) {
         self.pending_window_activation.clear();
         if window_handle == 0 {
             warn!("quick-launch popup opened without a native Windows handle");
@@ -2385,6 +2463,7 @@ impl QuickLaunchApplication {
         self.queue_window_activation_step(
             window_handle,
             QuickLaunchWindowActivationStep::PreTopmost(0),
+            cx,
         );
     }
 
@@ -2392,6 +2471,7 @@ impl QuickLaunchApplication {
         &mut self,
         window_handle: i64,
         initial_step: QuickLaunchWindowActivationStep,
+        cx: &mut Context<Self>,
     ) {
         let mut step = Some(initial_step);
         while let Some(current) = step {
@@ -2426,6 +2506,11 @@ impl QuickLaunchApplication {
                         "could not queue quick-launch window activation step"
                     );
                     step = next_window_activation_step(current, false);
+                    if step.is_none()
+                        && matches!(current, QuickLaunchWindowActivationStep::Activate(_))
+                    {
+                        self.notify_window_activation_failure(cx);
+                    }
                 }
             }
         }
@@ -2464,7 +2549,7 @@ impl QuickLaunchApplication {
     }
 
     fn send_configuration_for(&mut self, settings: &QuickLaunchSettings) -> Option<uuid::Uuid> {
-        self.send_configuration_for_with_id(settings, uuid::Uuid::new_v4())
+        self.send_configuration_correlated(settings, uuid::Uuid::new_v4(), None)
     }
 
     fn send_configuration_for_with_id(
@@ -2472,11 +2557,20 @@ impl QuickLaunchApplication {
         settings: &QuickLaunchSettings,
         command_id: uuid::Uuid,
     ) -> Option<uuid::Uuid> {
+        self.send_configuration_correlated(settings, command_id, None)
+    }
+
+    fn send_configuration_correlated(
+        &mut self,
+        settings: &QuickLaunchSettings,
+        command_id: uuid::Uuid,
+        correlation_id: Option<uuid::Uuid>,
+    ) -> Option<uuid::Uuid> {
         let command = ConfigureQuickLaunchCommand {
             enabled: settings.enabled,
             auto_quick_switch_enabled: settings.auto_quick_switch,
             file_dialog_search_enabled: settings.file_dialog_search,
-            suppress_in_exclusive_fullscreen: settings.suppress_in_exclusive_fullscreen,
+            suppress_in_exclusive_fullscreen: self.config.suppress_panel_in_fullscreen(),
             hotkey_modifiers: settings
                 .hotkey
                 .modifiers
@@ -2493,10 +2587,17 @@ impl QuickLaunchApplication {
             hotkey_display: settings.hotkey.display.clone(),
         };
         self.pending_configuration.insert(command_id);
-        match self
-            .platform
-            .send_command_with_id(PlatformCommand::ConfigureQuickLaunch(command), command_id)
-        {
+        let queued = match correlation_id {
+            Some(correlation_id) => self.platform.send_command_with_id_correlated(
+                PlatformCommand::ConfigureQuickLaunch(command),
+                command_id,
+                correlation_id,
+            ),
+            None => self
+                .platform
+                .send_command_with_id(PlatformCommand::ConfigureQuickLaunch(command), command_id),
+        };
+        match queued {
             Ok(_) => {
                 self.configuration_status = "正在应用".into();
                 Some(command_id)
@@ -2524,27 +2625,27 @@ impl QuickLaunchApplication {
         if recent_modified_filter(query).is_some() {
             return recent_modified_results(indexed);
         }
-        let indexed = indexed
-            .iter()
-            .map(|item| {
-                let normalized_path = item.path.replace('/', "\\").to_lowercase();
-                ExternalSearchEntry {
-                    id: format!("indexed:{normalized_path}"),
-                    name: item.name.clone(),
-                    target: item.path.clone(),
-                    source: if item.is_directory {
-                        ApplicationSource::IndexedDirectory
-                    } else {
-                        ApplicationSource::IndexedFile
-                    },
-                }
-            })
-            .collect::<Vec<_>>();
+        let indexed = indexed_search_entries(indexed);
+        let provisional = self.index_search.query == query && !self.index_search.complete;
+        self.merge_extension_rows(
+            query,
+            self.unified_catalog_results(query, &indexed, provisional),
+        )
+    }
+
+    /// One ranking owner for every launcher surface: local catalog sources and indexed rows
+    /// are scored, de-duplicated and history-weighted together by the Finder catalog.
+    fn unified_catalog_results(
+        &self,
+        query: &str,
+        indexed: &[ExternalSearchEntry],
+        provisional: bool,
+    ) -> Vec<SearchResult> {
         let catalog = self.catalog.borrow();
-        let results = if self.index_search.query == query && !self.index_search.complete {
+        let results = if provisional {
             catalog.search_with_packages_normal(
                 query,
-                &indexed,
+                indexed,
                 &self.config.quick_launch.custom_commands,
                 &self.config.extensions,
                 RESULT_LIMIT,
@@ -2552,16 +2653,16 @@ impl QuickLaunchApplication {
         } else {
             catalog.search_with_packages(
                 query,
-                &indexed,
+                indexed,
                 &self.config.quick_launch.custom_commands,
                 &self.config.extensions,
                 RESULT_LIMIT,
             )
         };
-        self.merge_extension_rows(query, results.unwrap_or_else(|error| {
+        results.unwrap_or_else(|error| {
             error!(%error, query_length = query.chars().count(), "quick-launch unified search failed");
             Vec::new()
-        }))
+        })
     }
 
     fn cancel_index_search(&mut self, reason: &'static str, cx: &mut Context<Self>) {
@@ -2588,14 +2689,13 @@ impl QuickLaunchApplication {
         let local_search_started = Instant::now();
         self.begin_extension_providers(query, cx);
         let recent_mode = recent_modified_filter(query).is_some();
-        let local_results = if recent_mode {
-            Vec::new()
+        let local_normal_hit = if recent_mode {
+            false
         } else {
             self.catalog
                 .borrow()
-                .search_with_packages_normal(
+                .has_local_normal_hit(
                     query,
-                    &[],
                     &self.config.quick_launch.custom_commands,
                     &self.config.extensions,
                     RESULT_LIMIT,
@@ -2606,11 +2706,12 @@ impl QuickLaunchApplication {
                         query_length = query.chars().count(),
                         "quick-launch ordinary local search failed"
                     );
-                    Vec::new()
+                    false
                 })
         };
+        let allow_homophone_fallback = !recent_mode && !local_normal_hit;
         let mut index_request = self.index_search.begin(query, INDEX_CANDIDATE_LIMIT);
-        index_request.context.allow_homophone_fallback = !recent_mode && local_results.is_empty();
+        index_request.context.allow_homophone_fallback = allow_homophone_fallback;
         let generation = index_request.generation;
         let indexer_connected = self.indexer.is_connected();
         let index_available = index_status_has_searchable_snapshot(self.index_status.as_ref());
@@ -2657,27 +2758,32 @@ impl QuickLaunchApplication {
             indexer_connected,
             index_available,
             search_queued,
-            allow_homophone_fallback = !recent_mode && local_results.is_empty(),
+            allow_homophone_fallback,
             "quick-launch query provider state"
         );
-        if !should_publish_immediate_results(search_indexer, search_queued) {
+        self.last_local_search_us = Some(elapsed_microseconds(local_search_started));
+        if search_queued || self.extension_search_in_progress(query) {
             return QuickLaunchSearchUpdate {
                 results: Vec::new(),
                 pending: true,
             };
         }
-        let results = if search_queued {
-            local_results
-        } else {
-            self.combined_results(query)
-        };
-        self.last_local_search_us = Some(elapsed_microseconds(local_search_started));
+        let results = self.combined_results(query);
         self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
-        let pending = search_update_pending(search_queued, !results.is_empty());
-        QuickLaunchSearchUpdate { results, pending }
+        self.index_search.terminal_published = true;
+        QuickLaunchSearchUpdate {
+            results,
+            pending: false,
+        }
     }
 
-    fn refresh_indexed_results(&mut self, cx: &mut Context<Self>) {
+    fn refresh_indexed_results(&mut self, cx: &mut Context<Self>, provider_changed: bool) {
+        if !self.index_search.complete
+            || self.extension_search_in_progress(&self.index_search.query)
+            || (!provider_changed && self.index_search.terminal_published)
+        {
+            return;
+        }
         let Some(popup) = self.popup.clone() else {
             return;
         };
@@ -2709,24 +2815,36 @@ impl QuickLaunchApplication {
                 )
             })
             .count();
-        info!(
-            generation = self.index_search.generation,
-            complete = self.index_search.complete,
-            indexed_candidates = self.index_search.items.len(),
-            indexed_visible,
-            result_count = results.len(),
-            "quick-launch merged provider results published"
-        );
+        let result_count = results.len();
         self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
-        let pending = search_update_pending(!self.index_search.complete, !results.is_empty());
-        let _ = popup.panel.update(cx, |panel, cx| {
-            if pending {
-                panel.search_pending = true;
-                cx.notify();
-            } else {
+        let failed = self.index_search.failed;
+        let published = popup
+            .panel
+            .update(cx, |panel, cx| {
+                if !panel.is_open
+                    || panel.action_mode.is_some()
+                    || panel.search_input.read(cx).value().as_ref() != query
+                {
+                    return false;
+                }
                 panel.replace_results(results, cx);
-            }
-        });
+                if failed {
+                    panel.set_error(INDEX_SEARCH_FAILURE_MESSAGE.into(), cx);
+                }
+                true
+            })
+            .unwrap_or(false);
+        if published {
+            self.index_search.terminal_published = true;
+            info!(
+                generation = self.index_search.generation,
+                complete = self.index_search.complete,
+                indexed_candidates = self.index_search.items.len(),
+                indexed_visible,
+                result_count,
+                "quick-launch merged provider results published"
+            );
+        }
     }
 
     fn refresh_results_after_indexer_disconnect(&mut self, cx: &mut Context<Self>) {
@@ -2746,11 +2864,9 @@ impl QuickLaunchApplication {
         let Some((true, true, query)) = panel_state else {
             return;
         };
-        let results = self.combined_results(&query);
-        self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
-        let _ = popup
-            .panel
-            .update(cx, |panel, cx| panel.replace_results(results, cx));
+        self.index_search.query = query;
+        self.index_search.complete = true;
+        self.refresh_indexed_results(cx, true);
     }
 
     fn request_catalog_refresh(&mut self, cx: &mut Context<Self>) {
@@ -3509,6 +3625,9 @@ impl QuickLaunchApplication {
                 }
             }
         }
+        if !cached.is_empty() {
+            self.deliver_file_dialog_search_icons(cached.clone(), cx);
+        }
         if !cached.is_empty()
             && let Some(popup) = self.popup.clone()
         {
@@ -3928,7 +4047,7 @@ impl QuickLaunchApplication {
         let window_handle = popup.native_window_handle;
         let _ = popup.window.update(cx, |_, window, _| {
             window.on_next_frame(move |_, app| {
-                let _ = application.update(app, |application, _cx| {
+                let _ = application.update(app, |application, cx| {
                     if application.active_summon.is_none()
                         || application.popup_session_id != session_id
                         || application.popup.as_ref().is_none_or(
@@ -3956,7 +4075,7 @@ impl QuickLaunchApplication {
                         warn!(%error, window_handle, "failed to reveal quick-launch popup after first frame");
                         return;
                     }
-                    application.begin_window_activation(window_handle);
+                    application.begin_window_activation(window_handle, cx);
                     info!(event = "quick_launch.popup.revealed", window_handle, "quick-launch popup revealed after first frame");
                 });
             });

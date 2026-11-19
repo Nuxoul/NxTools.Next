@@ -1,0 +1,52 @@
+﻿[
+    {
+        "name":  "format",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-format.log"
+    },
+    {
+        "name":  "clippy-nxtools-core",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-core.log"
+    },
+    {
+        "name":  "clippy-nxtools-download",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-download.log"
+    },
+    {
+        "name":  "clippy-nxtools-download-ipc",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-download-ipc.log"
+    },
+    {
+        "name":  "clippy-nxtools-ipc",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-ipc.log"
+    },
+    {
+        "name":  "clippy-nxtools-protocol",
+        "exit":  101,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-protocol.log"
+    },
+    {
+        "name":  "clippy-nxtools-desktop",
+        "exit":  101,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-desktop.log"
+    },
+    {
+        "name":  "clippy-nxtools-cli",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-cli.log"
+    },
+    {
+        "name":  "clippy-nxtools-browser-host",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-clippy-nxtools-browser-host.log"
+    },
+    {
+        "name":  "check",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-check.log"
+    }
+]

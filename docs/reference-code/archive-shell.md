@@ -7,7 +7,7 @@ Status: **2026-10-23 release-chain source and isolated test-key staging added** 
 | Source | Exact finding | Boundary retained |
 | --- | --- | --- |
 | `D:\Code\Archiver-main\gui\src\shell.rs:56-107,116-138,653-675` | Pure Windows key generation writes a classic `SubCommands` cascade below `HKCU\Software\Classes\SystemFileAssociations\.<ext>\shell\Archiver`, with leaf command lines using quoted `%1`. Its unregister deletes whole roots and its tests cover layout, not mixed ownership or grouped selection. | Reuse only the pure-plan shape. Do not copy whole-root deletion or infer grouped multi-selection. |
-| `D:\Code\Archiver-main\installer\archiver.iss:81-114` | A ProgID, `shell\open\command`, and per-extension `OpenWithProgids` values populate Open With without writing `UserChoice`. | Next uses an owned ProgID/value plan only; setting a default remains a Windows Settings/user action. |
+| `D:\Code\Archiver-main\installer\archiver.iss:81-114` | A ProgID, `shell\open\command`, and per-extension `OpenWithProgids` values populate Open With without writing `UserChoice`. | Next uses an owned ProgID/value plan; the explicit `set_default` choice additionally claims the HKCU class default (see "Default program claim"). |
 | `csharp/NxTools.PlatformHost/Windows/BrowserRegistrationTransaction.cs:13-42` | Existing compensation captures every target before the first write, records an attempted write before calling `Write`, and restores every attempted step in reverse. | P206 preserves that ordering through a fake-store-only archive transaction; no Registry-backed store was added. |
 | `rust/apps/nxtools-desktop/src/archive_launch.rs:61-175` | Product ingress already accepts `--archive-open`, `--archive-extract {smart|here|name|dialog}`, `--archive-compress`, and `--archive-test`; it bounds/validates the resulting intent. | P206 command strings use existing ingress and remain explicitly one `%1` path per classic invocation. |
 | Windows SDK `10.0.26100.0`, `ShObjIdl_core.idl:416-444` / `.h:2836-2981` | `IExecuteCommand`, IID `7F9185B0-CB92-43C5-80A9-92277A4F7B54`, receives invocation settings then `Execute()`; it has no path-array argument. | A grouped handler cannot obtain selection from `IExecuteCommand` alone. |
@@ -319,3 +319,81 @@ with nonzero PID, malformed status, foreign registration/hash/type and unknown n
 remain refusals. No service startup, stop, blanket process-name skip or recovery deletion is added.
 Extend `tests/architecture/installer-process-identity.ps1` at both the original resolver and
 CIM-null discovery call site. Read-only machine replay is not actual installed-upgrade acceptance.
+
+## Classic quick-create local-server commands
+
+The classic file/folder ZIP and7z commands use fixed `MUIVerb` labels `压缩为同名 .zip`
+and `压缩为同名 .7z`, with `command\DelegateExecute` referencing their existing independent
+CLSID/LocalServer32 identities. `ArchiveSelectionHandlerPlan.AddMenu` uses this same registration
+shape for every selected command in both flat and cascade layouts. No in-process Explorer DLL
+or dynamic selection-title activation is required. Rust `ArchiveMenuCommand::label` uses the
+same visible labels as the native plan; output naming remains in the original Create draft.
+
+Reference recheck: `D:\Code\Archiver-main\gui\src\shell.rs::windows_keys` builds explicit
+MUIVerb leaves for file and Directory cascades. Its per-file `%1` execution is not adopted.
+Bounded legacy NxTools C# searches for ShellIntegration/ContextMenu/右键菜单 found no archive
+integration owner. The current grouped chain is `ArchiveSelectionCommand.SetSelection` ->
+`Execute` -> `ShellSelectionReader.Read` -> `DesktopIntentForwarder.Forward`; one complete ordered
+selection, one correlation and once-only retirement remain unchanged. LocalServer owns STA,
+factory registration, message pump and shutdown; Desktop owns the original archive Job/window.
+
+Apply over an existing applied-facts ledger replaces the earlier revision through the same exact
+compare-before-restore Uninstall (which removes old `ExplorerCommandHandler` values) and then
+installs the fixed-label delegates, so no separate Revert step is needed. Foreign or modified
+values are preserved. Fake-store tests cover both layouts and that exact service sequence; they
+do not establish installed Explorer menu or compression acceptance.
+
+## Classic menu icon ownership
+
+`D:\Code\Archiver-main\gui\src\shell.rs::windows_keys` writes an `Icon` value beside
+each cascade root's `MUIVerb` and `SubCommands`, including archive, ordinary-file and
+Directory menus. Next's `ArchiveIntegrationPlan.AddClassicCascade` already uses the
+packaged desktop's archive group (`"NxTools.exe",-2`); the grouped
+`ArchiveSelectionHandlerPlan.Create` -> `AddMenu` chain must carry the same icon from
+the desktop sibling of the approved selection helper. A helper executable is not
+the product icon resource owner.
+
+Cascade roots receive one icon; flat layouts receive an icon on each directly visible
+verb. These values belong to the original Apply transaction, compensation and exact
+applied-facts Revert. Adding them does not change COM identities, complete ordered
+selection delivery, native invocation lifetime or the replacing Apply
+policy. Pure-plan/fake-store coverage includes paths with spaces and all three menu
+sources; installed Explorer refresh/appearance remains a separate acceptance boundary.
+
+## Default program claim (Bandizip-equivalent association)
+
+Reference behavior (verified on the development machine, Windows 11 23H2 build 22631):
+`D:\Tool\Bandizip\Bandizip.exe` contains the Explorer proof salt
+`User Choice set via Windows User Experience`, i.e. Bandizip writes a valid
+`FileExts\.<ext>\UserChoice` (ProgId + Hash) itself; icons and double-click change immediately.
+
+Why a class default alone is not enough: Explorer resolves through UserChoice first. Without one,
+`AssocQueryString(ASSOCSTR_PROGID)` returned `Unknown` ("Pick an app", generic shell32 icon) for
+`.zip`, whose `FileExts\.zip\OpenWithProgids` lists several candidates, and kept a remembered
+candidate (`7z_auto_file` -> Bandizip icon) for `.7z`/`.rar` even though `HKCR\.<ext>` already
+named `NxTools.Archive`. Removing the foreign candidate from real `.7z` still gave `Unknown`.
+Throwaway extensions confirmed the class default resolves only when it is the sole candidate.
+
+Proof verification: `UserChoiceHash.Compute` reproduced all 156 Windows-written UserChoice hashes
+on this machine (extension + SID + ProgId + last-write minute as hex FILETIME + shell32 experience
+string, lower-cased, UTF-16LE with terminator, MD5-seeded two-pass 32-bit mix, base64 of 8 bytes).
+A throwaway extension in the same ambiguous state resolved to `NxTools.Archive` with icon
+`"NxTools.exe",-2` and app `NxTools` after `WindowsArchiveDefaultClaim.Set`; restoring the recorded
+original returned it to `7z_auto_file`; removal returned `Unknown`.
+
+Current chain: Rust `ArchiveShellIntegrationSettings.set_default` (serde default false) ->
+`ArchiveShellIntegrationCommand.set_default` -> `ArchiveIntegrationIntent.SetDefault` ->
+`ArchiveIntegrationPlan.AddOpenWith` writes `Software\Classes\.<ext>` default = `NxTools.Archive`
+before the OpenWithProgids value, plus the owned ProgID display/DefaultIcon (`"NxTools.exe",-2`)/
+open command. `ArchiveIntegrationService` records `PriorUserChoices` in the applied facts (a
+replaced revision's record wins; our own ProgID is never recorded), persists the ledger, calls
+`IArchiveDefaultClaim.Set` per extension, sends one flushed `SHChangeNotify(ASSOCCHANGED)`, reads
+each extension back with `Resolves`, and logs `archive.shell_integration.default_claimed`
+(extension/resolved/unresolved counts). Unresolved extensions yield applied + `user_choice_locked`.
+Revert and replacement call `RestoreChoices` (`archive.shell_integration.default_restored`):
+only choices still naming NxTools are returned to the recorded original. The guide's recommended
+action enables cascade, Open With and the default claim for all supported extensions.
+
+Limitation: the proof is Explorer's private format. Windows builds that change it (for example
+the newer `UserChoiceLatest` scheme) make `Resolves` fail, which surfaces as `user_choice_locked`
+with the Windows default-apps entry as the manual path.

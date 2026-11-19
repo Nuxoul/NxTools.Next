@@ -39,6 +39,7 @@ fn request(server: &DeterministicHttpServer, save_directory: PathBuf) -> Downloa
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -85,6 +86,7 @@ fn category_directory_and_duplicate_name_are_reserved_atomically_at_acceptance()
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -683,6 +685,7 @@ async fn download_defaults_merge_at_acceptance_and_explicit_request_context_wins
                 ],
                 cookie: Some("task-cookie=1".into()),
                 referrer: Some("https://task.example/".into()),
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -750,6 +753,7 @@ async fn certificate_policy_is_strict_by_default_and_explicit_opt_in_is_frozen_i
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -845,6 +849,11 @@ shift
 goto loop
 :done
 if not "%format%"=="mp4" exit /b 9
+echo out_time_us=500000
+echo progress=continue
+ping -n 2 127.0.0.1 >nul
+echo out_time_us=1000000
+echo progress=end
 copy /b "%first%"+"%second%" "%output%" >nul
 "#,
     )
@@ -1242,6 +1251,9 @@ async fn selected_dash_video_and_audio_tracks_are_muxed_by_a_bounded_ffmpeg_proc
         audio_representation_id: Some("a128".into()),
     }));
 
+    let events = engine
+        .take_event_receiver()
+        .expect("attach finishing event receiver");
     let task_id = engine
         .submit(dash_request, RequestOrigin::Ui)
         .expect("submit selected DASH video and audio");
@@ -1259,6 +1271,30 @@ async fn selected_dash_video_and_audio_tracks_are_muxed_by_a_bounded_ffmpeg_proc
     assert_eq!(
         std::fs::read(destination.join("muxed.mp4")).expect("read muxed DASH artifact"),
         b"VINIT|V0|V1AINIT|A0|A1"
+    );
+    let observed = std::iter::from_fn(|| events.try_recv().ok())
+        .map(|event| serde_json::to_value(event.event).expect("serialize event"))
+        .collect::<Vec<_>>();
+    let mux = observed
+        .iter()
+        .position(|event| event["data"]["progress"]["finishing"]["stage"] == "muxing");
+    let completed_event = observed
+        .iter()
+        .position(|event| event["data"]["task"]["status"] == "completed");
+    assert!(
+        matches!((mux, completed_event), (Some(mux), Some(done)) if mux < done),
+        "mux progress must precede Completed: {observed:?}"
+    );
+    assert!(
+        observed
+            .iter()
+            .any(|event| event["data"]["progress"]["finishing"]["completed"] == 1000000),
+        "FFmpeg clock must reach engine event"
+    );
+    assert!(
+        observed
+            .iter()
+            .any(|event| event["data"]["progress"]["finishing"]["stage"] == "publishing")
     );
 }
 
@@ -3020,6 +3056,69 @@ fn browser_batch_submission_creates_each_task_once_and_replays_by_handoff_identi
     assert!(results.iter().all(|result| result.duplicate));
     assert_eq!(engine.tasks().expect("read tasks after replay").len(), 2);
 }
+#[test]
+fn browser_batch_completion_membership_is_runtime_only_and_excludes_duplicate_handoffs() {
+    let server = DeterministicHttpServer::start();
+    let directory = tempfile::tempdir().expect("create batch directory");
+    let engine = DownloadEngine::open_in_memory().expect("open batch engine");
+    let mut first = request(&server, directory.path().join("artifacts"));
+    first.file_name = Some("first.bin".into());
+    let mut second = first.clone();
+    second.file_name = Some("second.bin".into());
+    let handoff = uuid::Uuid::new_v4();
+    let initial = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: uuid::Uuid::new_v4(),
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserBatchSubmit {
+            submissions: vec![BrowserDownloadSubmission {
+                handoff_id: handoff,
+                request: first.clone(),
+            }],
+        },
+    });
+    let DownloadCommandOutcome::BrowserBatchAccepted { results } = initial.outcome else {
+        panic!("initial handoff rejected");
+    };
+    let original = results[0].task_id.expect("initial task id");
+    let correlation = uuid::Uuid::new_v4();
+    let second_batch = engine.handle_command(DownloadCommandEnvelope {
+        protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
+        request_id: correlation,
+        origin: RequestOrigin::Browser,
+        command: DownloadCommand::BrowserBatchSubmit {
+            submissions: vec![
+                BrowserDownloadSubmission {
+                    handoff_id: handoff,
+                    request: first,
+                },
+                BrowserDownloadSubmission {
+                    handoff_id: uuid::Uuid::new_v4(),
+                    request: second,
+                },
+            ],
+        },
+    });
+    let DownloadCommandOutcome::BrowserBatchAccepted { results } = second_batch.outcome else {
+        panic!("batch rejected");
+    };
+    assert!(results[0].duplicate);
+    assert_eq!(results[0].task_id, Some(original));
+    assert!(!results[1].duplicate);
+    let snapshot = format!(
+        "{:?}",
+        engine.completion_snapshot().expect("completion snapshot")
+    );
+    assert!(
+        snapshot.contains(&correlation.to_string()),
+        "accepted batch identity is missing"
+    );
+    assert_eq!(
+        snapshot.matches(&correlation.to_string()).count(),
+        1,
+        "duplicate joined batch"
+    );
+}
 
 #[test]
 fn browser_batch_rejects_an_empty_payload_as_an_invalid_request() {
@@ -3628,6 +3727,7 @@ fn crash_helper_process() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -3745,19 +3845,26 @@ async fn ranged_task_resumes_persisted_bytes_after_the_engine_is_reopened() {
     let destination = directory.path().join("artifacts");
     let engine = DownloadEngine::open(&database_path).expect("open download engine");
     let mut ranged_request = request(&server, destination.clone());
-    ranged_request.source_url = format!("http://{}/range-resume-required", server.address());
+    ranged_request.source_url = format!(
+        "http://{}/range-resume-required?checkpoint=1",
+        server.address()
+    );
+    ranged_request.speed_limit_bytes_per_second = Some(64 * 1024);
 
     let task_id = engine
         .submit(ranged_request, RequestOrigin::Ui)
         .expect("submit ranged task");
-    wait_for_progress(&engine, task_id).await;
+    wait_for_partial_progress(&engine, task_id, concurrent_fixture_bytes().len() as u64).await;
     engine.pause(task_id).expect("request pause");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(2))
         .await
         .expect("wait for paused task");
     assert_eq!(paused.task.status(), DownloadStatus::Paused);
-    assert!(paused.downloaded_bytes > 0);
+    assert!(
+        paused.downloaded_bytes > 0
+            && paused.downloaded_bytes < concurrent_fixture_bytes().len() as u64
+    );
     let checkpoint = paused.downloaded_bytes;
     drop(engine);
 
@@ -3769,32 +3876,42 @@ async fn ranged_task_resumes_persisted_bytes_after_the_engine_is_reopened() {
     assert_eq!(restored.task.status(), DownloadStatus::Paused);
     assert_eq!(restored.downloaded_bytes, checkpoint);
 
+    reopened
+        .set_task_speed_limit(task_id, None)
+        .expect("remove checkpoint rate limit before resume");
     reopened.resume(task_id).expect("resume persisted task");
     let completed = reopened
         .wait_for_terminal(task_id, Duration::from_secs(2))
         .await
         .expect("wait for resumed task");
     assert_eq!(completed.task.status(), DownloadStatus::Completed);
-    assert_eq!(completed.downloaded_bytes, 16);
+    assert_eq!(
+        completed.downloaded_bytes,
+        concurrent_fixture_bytes().len() as u64
+    );
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin")).expect("read resumed artifact"),
-        b"0123456789abcdef"
+        concurrent_fixture_bytes()
     );
 }
 
 #[tokio::test]
 async fn numbered_retry_keeps_the_original_segment_checkpoint_artifact() {
-    let server = DeterministicHttpServer::start();
+    let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create checkpoint directory");
     let database = directory.path().join("downloads.sqlite3");
     let destination = directory.path().join("artifacts");
     let engine = DownloadEngine::open(&database).expect("open checkpoint engine");
     let mut task_request = request(&server, destination.clone());
-    task_request.source_url = format!("http://{}/range-resume-required", server.address());
+    task_request.source_url = format!(
+        "http://{}/range-resume-required?checkpoint=1",
+        server.address()
+    );
+    task_request.speed_limit_bytes_per_second = Some(64 * 1024);
     let task_id = engine
         .submit(task_request, RequestOrigin::Ui)
         .expect("start ranged transfer");
-    wait_for_progress(&engine, task_id).await;
+    wait_for_partial_progress(&engine, task_id, concurrent_fixture_bytes().len() as u64).await;
     engine.pause(task_id).expect("pause checkpoint");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(2))
@@ -3803,7 +3920,7 @@ async fn numbered_retry_keeps_the_original_segment_checkpoint_artifact() {
     assert_eq!(paused.task.status(), DownloadStatus::Paused);
     let original_temp = paused.temporary_path.expect("durable partial file");
     let checkpoint = paused.downloaded_bytes;
-    assert!(checkpoint > 0 && checkpoint < 16);
+    assert!(checkpoint > 0 && checkpoint < concurrent_fixture_bytes().len() as u64);
     std::fs::write(destination.join("engine-fixture.bin"), b"foreign bytes")
         .expect("occupy old destination");
     drop(engine);
@@ -3818,6 +3935,9 @@ async fn numbered_retry_keeps_the_original_segment_checkpoint_artifact() {
         Some(nxtools_download::DownloadFaultCode::DestinationExists)
     );
     let command_id = uuid::Uuid::new_v4();
+    engine
+        .set_task_speed_limit(task_id, None)
+        .expect("remove checkpoint rate limit before retry");
     let result = engine.handle_command(DownloadCommandEnvelope {
         protocol_version: DOWNLOAD_COMMAND_PROTOCOL_VERSION,
         request_id: command_id,
@@ -3847,7 +3967,7 @@ async fn numbered_retry_keeps_the_original_segment_checkpoint_artifact() {
     );
     assert_eq!(
         std::fs::read(destination.join("engine-fixture (1).bin")).expect("numbered bytes"),
-        b"0123456789abcdef"
+        concurrent_fixture_bytes()
     );
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin")).expect("foreign file"),
@@ -4035,29 +4155,31 @@ async fn range_ignored_after_another_segment_progress_restarts_cleanly_as_a_sing
 
 #[tokio::test]
 async fn changed_resource_after_a_checkpoint_fails_without_publishing_or_discarding_progress() {
-    let server = DeterministicHttpServer::start();
+    let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create engine directory");
     let database_path = directory.path().join("downloads.sqlite3");
     let destination = directory.path().join("artifacts");
     let engine = DownloadEngine::open(&database_path).expect("open download engine");
     let mut request = request(&server, destination.clone());
-    request.source_url = format!("http://{}/range-mutable", server.address());
+    request.source_url = format!("http://{}/range-mutable?checkpoint=1", server.address());
+    request.speed_limit_bytes_per_second = Some(64 * 1024);
 
     let task_id = engine
         .submit(request, RequestOrigin::Ui)
         .expect("submit mutable task");
-    wait_for_progress(&engine, task_id).await;
+    wait_for_partial_progress(&engine, task_id, concurrent_fixture_bytes().len() as u64).await;
     engine.pause(task_id).expect("pause mutable task");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(2))
         .await
         .expect("wait for paused task");
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
     let checkpoint = paused.downloaded_bytes;
     let temporary_path = paused
         .temporary_path
         .clone()
         .expect("temporary artifact is tracked");
-    assert!(checkpoint > 0);
+    assert!(checkpoint > 0 && checkpoint < concurrent_fixture_bytes().len() as u64);
     server.advance_resource_revision();
     drop(engine);
 
@@ -4076,29 +4198,34 @@ async fn changed_resource_after_a_checkpoint_fails_without_publishing_or_discard
 
 #[tokio::test]
 async fn crash_window_bytes_ahead_of_sqlite_checkpoint_are_safely_overwritten_on_resume() {
-    let server = DeterministicHttpServer::start();
+    let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create crash recovery directory");
     let database_path = directory.path().join("downloads.sqlite3");
     let destination = directory.path().join("artifacts");
     let engine = DownloadEngine::open(&database_path).expect("open download engine");
     let mut ranged_request = request(&server, destination.clone());
-    ranged_request.source_url = format!("http://{}/range-resume-required", server.address());
+    ranged_request.source_url = format!(
+        "http://{}/range-resume-required?checkpoint=1",
+        server.address()
+    );
+    ranged_request.speed_limit_bytes_per_second = Some(64 * 1024);
 
     let task_id = engine
         .submit(ranged_request, RequestOrigin::Ui)
         .expect("submit crash-window task");
-    wait_for_progress(&engine, task_id).await;
+    wait_for_partial_progress(&engine, task_id, concurrent_fixture_bytes().len() as u64).await;
     engine.pause(task_id).expect("pause at durable checkpoint");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(2))
         .await
         .expect("wait for durable pause");
+    assert_eq!(paused.task.status(), DownloadStatus::Paused);
     let checkpoint = paused.downloaded_bytes;
     let temporary_path = paused
         .temporary_path
         .clone()
         .expect("temporary artifact is tracked");
-    assert!(checkpoint > 0 && checkpoint < 16);
+    assert!(checkpoint > 0 && checkpoint < concurrent_fixture_bytes().len() as u64);
     drop(engine);
 
     let mut artifact = std::fs::OpenOptions::new()
@@ -4109,7 +4236,10 @@ async fn crash_window_bytes_ahead_of_sqlite_checkpoint_are_safely_overwritten_on
         .seek(std::io::SeekFrom::Start(checkpoint))
         .expect("seek past durable checkpoint");
     artifact
-        .write_all(&vec![0xff; 16 - checkpoint as usize])
+        .write_all(&vec![
+            0xff;
+            concurrent_fixture_bytes().len() - checkpoint as usize
+        ])
         .expect("write uncheckpointed crash-window bytes");
     artifact.sync_all().expect("sync simulated crash bytes");
     drop(artifact);
@@ -4137,6 +4267,9 @@ async fn crash_window_bytes_ahead_of_sqlite_checkpoint_are_safely_overwritten_on
     assert_eq!(recovered.task.status(), DownloadStatus::Paused);
     assert_eq!(recovered.downloaded_bytes, checkpoint);
 
+    reopened
+        .set_task_speed_limit(task_id, None)
+        .expect("remove checkpoint rate limit before recovery");
     reopened.resume(task_id).expect("resume recovered task");
     let completed = reopened
         .wait_for_terminal(task_id, Duration::from_secs(2))
@@ -4150,7 +4283,7 @@ async fn crash_window_bytes_ahead_of_sqlite_checkpoint_are_safely_overwritten_on
     );
     assert_eq!(
         std::fs::read(destination.join("engine-fixture.bin")).expect("read recovered artifact"),
-        b"0123456789abcdef"
+        concurrent_fixture_bytes()
     );
 }
 
@@ -4243,11 +4376,21 @@ async fn task_can_resume_after_network_disconnect_exhausts_the_current_attempt()
     wait_for_progress(&engine, task_id).await;
     server.set_network_available(false);
     let failed = engine
-        .wait_for_terminal(task_id, Duration::from_secs(5))
+        .wait_for_terminal(task_id, Duration::from_secs(30))
         .await
         .expect("wait for disconnected task failure");
     assert_eq!(failed.task.status(), DownloadStatus::Failed);
-    assert_eq!(failed.downloaded_bytes, 0);
+    assert!(
+        failed.downloaded_bytes > 0
+            && failed.downloaded_bytes < concurrent_fixture_bytes().len() as u64
+    );
+    let retained = failed
+        .temporary_path
+        .as_ref()
+        .expect("retained interrupted artifact");
+    let prefix = std::fs::read(retained).expect("read retained prefix");
+    let written = failed.downloaded_bytes as usize;
+    assert_eq!(&prefix[..written], &concurrent_fixture_bytes()[..written]);
     assert!(
         failed.error.as_ref().is_some_and(|fault| fault.retryable),
         "network disconnect must remain retryable: {:?}",
@@ -4358,11 +4501,12 @@ async fn persisted_resume_restarts_safely_when_if_range_is_incompatible_with_cdn
         server.address()
     );
     request.connection_limit = Some(4);
+    request.speed_limit_bytes_per_second = Some(64 * 1024);
 
     let task_id = engine
         .submit(request, RequestOrigin::Ui)
         .expect("submit conditional-incompatible task");
-    wait_for_progress(&engine, task_id).await;
+    wait_for_partial_progress(&engine, task_id, concurrent_fixture_bytes().len() as u64).await;
     engine
         .pause(task_id)
         .expect("pause conditional-incompatible task");
@@ -4376,6 +4520,9 @@ async fn persisted_resume_restarts_safely_when_if_range_is_incompatible_with_cdn
     drop(engine);
 
     let reopened = DownloadEngine::open(&database_path).expect("reopen download engine");
+    reopened
+        .set_task_speed_limit(task_id, None)
+        .expect("remove checkpoint rate limit before resume");
     reopened
         .resume(task_id)
         .expect("resume conditional-incompatible task");
@@ -4583,6 +4730,7 @@ async fn global_and_task_speed_limits_survive_engine_restart() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(4),
                 speed_limit_bytes_per_second: None,
@@ -4653,7 +4801,7 @@ async fn dynamic_rebalance_splits_a_slow_tail_without_overlapping_output() {
 }
 
 #[tokio::test]
-async fn dynamic_segment_policy_controls_the_real_slot_release_split_path() {
+async fn stored_adaptive_policy_does_not_disable_http_claim_bounded_tail_splits() {
     let server = DeterministicHttpServer::start_concurrent();
     let directory = tempfile::tempdir().expect("create engine directory");
     let engine = DownloadEngine::open_in_memory().expect("open download engine");
@@ -4705,10 +4853,9 @@ async fn dynamic_segment_policy_controls_the_real_slot_release_split_path() {
             DownloadStatus::Completed,
             "{label}"
         );
-        assert_eq!(
-            server.dynamic_range_attempts() - attempts_before,
-            2,
-            "{label} must keep the original two ranges without splitting"
+        assert!(
+            server.dynamic_range_attempts() - attempts_before >= 4,
+            "{label} remains serialized policy, not an HTTP planner split gate"
         );
         assert_eq!(
             std::fs::read(destination.join(format!("{label}.bin"))).expect("read policy fixture"),
@@ -4797,11 +4944,12 @@ async fn concurrent_ranges_resume_all_persisted_segments_after_engine_restart() 
     let mut request = request(&server, destination.clone());
     request.source_url = format!("http://{}/range-concurrent", server.address());
     request.connection_limit = Some(4);
+    request.speed_limit_bytes_per_second = Some(64 * 1024);
 
     let task_id = engine
         .submit(request, RequestOrigin::Ui)
         .expect("submit concurrent task");
-    wait_for_progress(&engine, task_id).await;
+    wait_for_partial_progress(&engine, task_id, concurrent_fixture_bytes().len() as u64).await;
     engine.pause(task_id).expect("pause concurrent task");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(4))
@@ -4820,6 +4968,9 @@ async fn concurrent_ranges_resume_all_persisted_segments_after_engine_restart() 
         .expect("persisted task exists");
     assert_eq!(restored.task.status(), DownloadStatus::Paused);
     assert_eq!(restored.downloaded_bytes, checkpoint);
+    reopened
+        .set_task_speed_limit(task_id, None)
+        .expect("remove checkpoint rate limit before resume");
 
     reopened.resume(task_id).expect("resume concurrent task");
     let completed = reopened
@@ -5412,6 +5563,40 @@ async fn wait_for_progress(engine: &DownloadEngine, task_id: nxtools_download::D
         tokio::time::sleep(Duration::from_millis(5)).await;
     }
 }
+async fn wait_for_partial_progress(
+    engine: &DownloadEngine,
+    task_id: nxtools_download::DownloadTaskId,
+    total_bytes: u64,
+) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(6);
+    loop {
+        let snapshot = engine
+            .task(task_id)
+            .expect("read checkpoint task")
+            .expect("checkpoint task exists");
+        assert!(
+            !matches!(
+                snapshot.task.status(),
+                DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+            ),
+            "task ended before a partial checkpoint; status={:?}, error={:?}",
+            snapshot.task.status(),
+            snapshot.error
+        );
+        if snapshot.downloaded_bytes > 0 {
+            assert!(snapshot.downloaded_bytes < total_bytes);
+            return;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "task did not publish partial progress; status={:?}, error={:?}",
+            snapshot.task.status(),
+            snapshot.error
+        );
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+}
+
 #[test]
 fn compact_snapshot_rebuilds_list_and_keeps_detail_selected_task_only() {
     let server = DeterministicHttpServer::start();
@@ -5921,4 +6106,29 @@ async fn ref06_existing_http_hls_dash_waiters_wake_without_restarting_tasks() {
             None
         );
     }
+}
+
+#[test]
+fn finishing_progress_unknown_duration_is_event_only_and_backward_compatible() {
+    let task_id = nxtools_download::DownloadTaskId::new();
+    let legacy = serde_json::json!({
+        "task_id": task_id, "downloaded_bytes": 22, "total_bytes": null,
+        "bytes_per_second": 0, "active_connections": 0
+    });
+    let mut progress: nxtools_download::DownloadProgress =
+        serde_json::from_value(legacy.clone()).expect("legacy progress event");
+    assert_eq!(progress.finishing, None);
+    assert_eq!(
+        serde_json::to_value(&progress).expect("unchanged transfer event"),
+        legacy
+    );
+    progress.finishing = Some(nxtools_download::DownloadFinishingProgress {
+        stage: nxtools_download::DownloadFinishingStage::Muxing,
+        completed: 123_000,
+        total: None,
+    });
+    let wire = serde_json::to_value(&progress).expect("unknown media duration event");
+    assert_eq!(wire["downloaded_bytes"], 22);
+    assert_eq!(wire["finishing"]["total"], serde_json::Value::Null);
+    assert_eq!(wire["finishing"]["stage"], "muxing");
 }

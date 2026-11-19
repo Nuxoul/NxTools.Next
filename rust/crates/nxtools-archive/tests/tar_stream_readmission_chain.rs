@@ -153,6 +153,7 @@ fn original_tar_stream_coordinator_readmits_only_after_actual_cleanup() {
                         browser: serde_json::from_value(context["browser"].clone())
                             .expect("original binding"),
                         ordinals: vec![0],
+                        strip_prefix: None,
                     }),
                 });
             }

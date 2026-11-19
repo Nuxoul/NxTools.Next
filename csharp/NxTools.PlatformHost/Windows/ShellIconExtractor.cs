@@ -12,6 +12,7 @@ internal static class ShellIconExtractor
     private const uint ShgfiSmallIcon = 0x000000001;
     private const uint ShgfiUseFileAttributes = 0x000000010;
     private const uint ShgfiSystemIconIndex = 0x000004000;
+    private const int ShilExtraLarge = 2;
     private const int ShilJumbo = 4;
     private const uint ImageListDrawTransparent = 0x00000001;
     private const uint FileAttributeNormal = 0x00000080;
@@ -19,6 +20,11 @@ internal static class ShellIconExtractor
     private const string FolderTypeTarget = "nxtools-folder-type:directory";
     private const string FileTypePrefix = "nxtools-file-type:.";
     private static readonly Guid ImageListInterfaceId = new("46EB5926-582E-4017-9FDF-E8998DAA0950");
+    private static readonly Lazy<bool> ShellImageListWarmup = new(InitializeShellImageList,
+        LazyThreadSafetyMode.ExecutionAndPublication);
+
+    internal static bool ShellImageListInitialized =>
+        ShellImageListWarmup.IsValueCreated && ShellImageListWarmup.Value;
 
     internal static WindowsCommandResult ExtractOnSta(
         ExtractShellIconCommand command,
@@ -107,7 +113,7 @@ internal static class ShellIconExtractor
             target.IconIndex,
             command.Size,
             lastWriteTicks,
-            target.IconIndex is null && command.Size > 32 ? targetType + "/image-list" : targetType);
+            target.IconIndex is null && command.Size > 32 ? targetType + "/image-list-v2" : targetType);
         string? extractionError = null;
         int? nativeErrorCode = null;
         var cacheHitOrCreated = (cache ?? IconCache.Shared).TryGetOrCreate(key, destination =>
@@ -190,11 +196,13 @@ internal static class ShellIconExtractor
         ShgfiIcon | (size <= 20 ? ShgfiSmallIcon : ShgfiLargeIcon)
         | (target.UseFileAttributes ? ShgfiUseFileAttributes : 0);
 
+    internal static int ImageListSizeFor(uint size) => size <= 48 ? ShilExtraLarge : ShilJumbo;
+
     private static IntPtr ExtractShellIcon(ShellIconTarget target, uint size)
     {
         if (size > 32)
         {
-            var highResolution = ExtractHighResolutionShellIcon(target);
+            var highResolution = ExtractHighResolutionShellIcon(target, size);
             if (highResolution != IntPtr.Zero) return highResolution;
         }
         var flags = ShellIconFlags(target, size);
@@ -207,14 +215,85 @@ internal static class ShellIconExtractor
         return result == IntPtr.Zero ? IntPtr.Zero : info.IconHandle;
     }
 
-    private static IntPtr ExtractHighResolutionShellIcon(ShellIconTarget target)
+    internal static bool HasSmallArtworkOnJumboCanvas(System.Windows.Media.Imaging.BitmapSource bitmap)
     {
+        if (bitmap.PixelWidth <= 48 || bitmap.PixelHeight <= 48) return false;
+        var pixels = new byte[bitmap.PixelWidth * bitmap.PixelHeight * 4];
+        var bgra = new System.Windows.Media.Imaging.FormatConvertedBitmap(bitmap,
+            System.Windows.Media.PixelFormats.Bgra32, null, 0);
+        bgra.CopyPixels(pixels, bitmap.PixelWidth * 4, 0);
+        var left = bitmap.PixelWidth;
+        var top = bitmap.PixelHeight;
+        var right = -1;
+        var bottom = -1;
+        for (var y = 0; y < bitmap.PixelHeight; y++)
+        for (var x = 0; x < bitmap.PixelWidth; x++)
+        {
+            if (pixels[(y * bitmap.PixelWidth + x) * 4 + 3] == 0) continue;
+            left = Math.Min(left, x);
+            right = Math.Max(right, x);
+            top = Math.Min(top, y);
+            bottom = Math.Max(bottom, y);
+        }
+        return right >= 0 && right - left + 1 <= 48 && bottom - top + 1 <= 48;
+    }
+
+    private static IntPtr ExtractHighResolutionShellIcon(ShellIconTarget target, uint size)
+    {
+        _ = ShellImageListWarmup.Value;
         var flags = ShgfiSystemIconIndex | (target.UseFileAttributes ? ShgfiUseFileAttributes : 0);
         if (SHGetFileInfo(target.Path, target.FileAttributes, out var info,
                 (uint)Marshal.SizeOf<ShFileInfo>(), flags) == IntPtr.Zero)
             return IntPtr.Zero;
+        return SelectImageListIcon(info.IconIndex, size, ExtractImageListIcon,
+            HasSmallArtwork, icon => _ = DestroyIcon(icon));
+    }
+
+    internal static IntPtr SelectImageListIcon(int index, uint size,
+        Func<int, int, IntPtr> extract, Func<IntPtr, bool> hasSmallArtwork, Action<IntPtr> destroy)
+    {
+        var listSize = ImageListSizeFor(size);
+        var icon = extract(index, listSize);
+        if (icon != IntPtr.Zero && listSize == ShilJumbo && hasSmallArtwork(icon))
+        {
+            var extraLarge = extract(index, ShilExtraLarge);
+            if (extraLarge != IntPtr.Zero)
+            {
+                destroy(icon);
+                return extraLarge;
+            }
+        }
+        return icon;
+    }
+
+    private static bool HasSmallArtwork(IntPtr icon)
+    {
+        try
+        {
+            var bitmap = System.Windows.Interop.Imaging.CreateBitmapSourceFromHIcon(
+                icon, System.Windows.Int32Rect.Empty,
+                System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
+            return HasSmallArtworkOnJumboCanvas(bitmap);
+        }
+        catch (ExternalException) { return false; }
+    }
+
+    private static bool InitializeShellImageList()
+    {
+        if (SHGetFileInfo("nxtools-file", FileAttributeNormal, out var info,
+                (uint)Marshal.SizeOf<ShFileInfo>(), ShgfiSystemIconIndex | ShgfiUseFileAttributes)
+            == IntPtr.Zero)
+            return false;
+        var icon = ExtractImageListIcon(info.IconIndex, ShilExtraLarge);
+        if (icon == IntPtr.Zero) return false;
+        _ = DestroyIcon(icon);
+        return true;
+    }
+
+    private static IntPtr ExtractImageListIcon(int index, int imageListSize)
+    {
         var interfaceId = ImageListInterfaceId;
-        var status = SHGetImageList(ShilJumbo, ref interfaceId, out var imageList);
+        var status = SHGetImageList(imageListSize, ref interfaceId, out var imageList);
         if (imageList == IntPtr.Zero) return IntPtr.Zero;
         try
         {
@@ -223,7 +302,7 @@ internal static class ShellIconExtractor
             var table = Marshal.ReadIntPtr(imageList);
             var getIcon = Marshal.GetDelegateForFunctionPointer<ImageListGetIcon>(
                 Marshal.ReadIntPtr(table, 10 * IntPtr.Size));
-            var iconStatus = getIcon(imageList, info.IconIndex, ImageListDrawTransparent, out var icon);
+            var iconStatus = getIcon(imageList, index, ImageListDrawTransparent, out var icon);
             if (iconStatus >= 0) return icon;
             if (icon != IntPtr.Zero) _ = DestroyIcon(icon);
             return IntPtr.Zero;
@@ -244,7 +323,6 @@ internal static class ShellIconExtractor
             : (large ?? small)?[0] ?? IntPtr.Zero;
     }
 
-
     internal static ShellIconTarget? ResolveIconTarget(string target)
     {
         // Reserved type targets are parsed before environment expansion, filesystem probes,
@@ -258,6 +336,8 @@ internal static class ShellIconExtractor
         {
             return null;
         }
+        if (synthetic == "nxtools-file-type:generic")
+            return new ShellIconTarget("nxtools-file", null, true, FileAttributeNormal);
         if (synthetic.StartsWith("nxtools-file-type:", StringComparison.Ordinal))
         {
             if (!synthetic.StartsWith(FileTypePrefix, StringComparison.Ordinal)) return null;

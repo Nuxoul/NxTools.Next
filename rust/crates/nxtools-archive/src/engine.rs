@@ -100,7 +100,7 @@ impl<'password> ArchiveEngine<'password> {
             Some(crate::ArchiveModificationRefusal::BackendMissing)
         };
         snapshot.capabilities = ArchiveCapabilities {
-            split_read: !snapshot.revision.volumes.is_empty(),
+            split_read: snapshot.capabilities.split_read,
             ..ArchiveCapabilities::opened(snapshot.format, refusal)
         };
         control.checkpoint()?;
@@ -336,7 +336,7 @@ impl<'password> ArchiveEngine<'password> {
                 capabilities: ArchiveCapabilities {
                     test: true,
                     extract: true,
-                    split_read: true,
+                    split_read: set.files.len() > 1,
                     ..Default::default()
                 },
                 entries: entries.into(),
@@ -635,7 +635,7 @@ impl<'password> ArchiveEngine<'password> {
             ..snapshot.clone()
         };
         projected.capabilities = ArchiveCapabilities {
-            split_read: !projected.revision.volumes.is_empty(),
+            split_read: snapshot.capabilities.split_read,
             ..ArchiveCapabilities::opened(
                 projected.format,
                 self.modification_eligibility(&projected, control).err(),
@@ -875,7 +875,7 @@ impl<'password> ArchiveEngine<'password> {
             };
         let mut file = open_snapshot(&snapshot, &source_limits, control)?;
         ensure_revision(&mut file, &snapshot.revision, control)?;
-        if !snapshot.backend_safe && !request.plan.isolated_browser_entry {
+        if !snapshot.backend_safe && request.plan.full_archive() {
             return Err(ArchiveError::OutputCollision);
         }
         let total = request.plan.total_bytes();
@@ -1087,14 +1087,10 @@ impl<'password> ArchiveEngine<'password> {
         });
         for entry in directories {
             control.checkpoint()?;
-            let name = entry.display_path.replace('\\', "/");
-            let name = name.trim_end_matches('/');
-            let relative = request
-                .plan
-                .subfolder()
-                .map_or_else(|| name.to_owned(), |root| format!("{root}/{name}"));
-            entry.metadata.validate()?;
-            output.finalize_directory_metadata(&relative, entry.metadata)?;
+            if let Some(relative) = request.plan.directory_output_path(entry)? {
+                entry.metadata.validate()?;
+                output.finalize_directory_metadata(&relative, entry.metadata)?;
+            }
         }
         control.source_delete_finish(
             &lifecycle,
@@ -1222,13 +1218,24 @@ pub(crate) fn open_snapshot(
         .iter()
         .map(|volume| volume.path.to_string_lossy().into_owned())
         .collect();
-    let mut set =
-        crate::zip_container::discover(&snapshot.revision.path, limits, control, Some(&paths))?
-            .ok_or(ArchiveError::SourceChanged)?;
+    // A bound source family includes encoded headers/prefixes, not selected output bytes.
+    let source_limits = ResourceLimits {
+        max_output_bytes: limits
+            .max_output_bytes
+            .max(ResourceLimits::default().max_output_bytes),
+        ..*limits
+    };
+    let mut set = crate::zip_container::discover(
+        &snapshot.revision.path,
+        &source_limits,
+        control,
+        Some(&paths),
+    )?
+    .ok_or(ArchiveError::SourceChanged)?;
     if volume_revision(&mut set, control)? != snapshot.revision {
         return Err(ArchiveError::SourceChanged);
     }
-    crate::zip_container::normalize(&mut set, limits, control)
+    crate::zip_container::normalize(&mut set, &source_limits, control)
 }
 
 fn is_tar(file: &mut File, path: &Path) -> Result<bool> {

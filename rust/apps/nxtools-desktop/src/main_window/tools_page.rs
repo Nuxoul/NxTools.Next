@@ -257,22 +257,31 @@ pub(crate) fn render_tools(
                         .gap_3()
                         .child(entry)
                         .child(currency_settings::render_card(this, window, cx))
-                        .child(render_raw_join(this, cx))
-                        .child(floating_assistant_settings::render_card(this, window, cx)),
+                        .child(floating_assistant_settings::render_card(this, window, cx))
+                        .child(markdown_reader_card(theme, cx)),
                 ),
         )
         .into_any_element()
 }
 
-fn render_raw_join(this: &MainWindow, cx: &mut Context<MainWindow>) -> AnyElement {
-    ListItem::new("tool-raw-join-item")
-        .debug_selector(|| "tool-raw-join-tile".into())
-        .accessibility_label("普通编号文件合并工具")
+const MARKDOWN_READER_CARD: ToolCard = ToolCard {
+    id: "tool-markdown-reader",
+    title: "Markdown 阅读器",
+    description: "配置 Markdown 阅读器、默认排版与 Windows 文件关联",
+    icon: MaterialIcon::TextFields,
+};
+
+fn markdown_reader_card(theme: Theme, cx: &mut Context<MainWindow>) -> ListItem {
+    let enabled = crate::tools::markdown_reader::enabled(cx);
+    ListItem::new(MARKDOWN_READER_CARD.id)
+        .debug_selector(|| "tool-markdown-reader-card".into())
+        .tooltip(|window, cx| Tooltip::new(MARKDOWN_READER_CARD.description).build(window, cx))
+        .accessibility_label("Markdown 阅读器")
         .w(px(180.0))
         .h(px(160.0))
         .flex_none()
         .rounded_lg()
-        .bg(this.theme.surface)
+        .bg(theme.surface)
         .child(
             div()
                 .size_full()
@@ -281,38 +290,28 @@ fn render_raw_join(this: &MainWindow, cx: &mut Context<MainWindow>) -> AnyElemen
                 .items_center()
                 .justify_center()
                 .gap_2()
-                .child(Label::new("普通编号文件合并"))
-                .child(Label::new("按序连接 · 保留源文件"))
                 .child(
-                    Button::new("tool-raw-join-open")
-                        .debug_selector(|| "tool-raw-join-open".into())
-                        .label("打开…")
+                    Icon::new(MARKDOWN_READER_CARD.icon)
+                        .size(px(32.0))
+                        .text_color(theme.text_secondary),
+                )
+                .child(Label::new(MARKDOWN_READER_CARD.title))
+                .child(tool_status(theme, enabled, "tool-markdown-reader-status-dot"))
+                .child(
+                    Button::new("tool-markdown-reader-configure")
+                        .debug_selector(|| "tool-markdown-reader-configure".into())
+                        .label("配置…")
+                        .accessibility_label("配置 Markdown 阅读器")
+                        .small()
                         .outline()
-                        .with_size(gpui_kit::component::Size::Medium)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            let existing = this
-                                .tool_settings_windows
-                                .get(crate::tools::raw_join::TOOL_ID)
-                                .copied();
-                            let platform = this.platform.clone();
-                            let owner = cx.entity().downgrade();
-                            cx.defer(move |cx| {
-                                let opened = crate::tools::raw_join::open(platform, existing, cx);
-                                let _ = owner.update(cx, |this, cx| {
-                                    if let Some(opened) = opened {
-                                        this.tool_settings_windows
-                                            .insert(crate::tools::raw_join::TOOL_ID, opened);
-                                    } else {
-                                        this.tool_settings_windows
-                                            .remove(crate::tools::raw_join::TOOL_ID);
-                                    }
-                                    cx.notify();
-                                });
+                        .on_click(cx.listener(|_, _, window, cx| {
+                            cx.stop_propagation();
+                            cx.defer_in(window, |this, _, cx| {
+                                open_tool_settings_window(this, MARKDOWN_READER_CARD, cx);
                             });
                         })),
                 ),
         )
-        .into_any_element()
 }
 
 /// Settings for the tool opened from the grid card.
@@ -596,6 +595,7 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
         .map(|application| application.read(cx).link_panel_settings())
         .unwrap_or((false, 6, LinkPanelPosition::Center));
     let clipboard = this.clipboard.clone();
+    let platform = this.platform.clone();
     let window_size = size(px(460.0), px(320.0));
     let window_bounds = WindowBounds::centered(window_size, cx);
     let opened = cx.open_window(
@@ -627,6 +627,11 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
             } else if card.id == floating_assistant_settings::CARD.id {
                 let body = cx.new(|cx| {
                     floating_assistant_settings::FloatingAssistantSettingsBody::new(window, cx)
+                });
+                cx.new(|cx| gpui_kit::base::Root::new(body, window, cx))
+            } else if card.id == MARKDOWN_READER_CARD.id {
+                let body = cx.new(|cx| {
+                    crate::tools::markdown_reader::SettingsView::new(platform, window, cx)
                 });
                 cx.new(|cx| gpui_kit::base::Root::new(body, window, cx))
             } else {

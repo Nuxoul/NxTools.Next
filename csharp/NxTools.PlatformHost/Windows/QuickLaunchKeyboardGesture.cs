@@ -10,6 +10,8 @@ internal sealed class QuickLaunchKeyboardGesture
     private readonly ModifierDoubleTapDetector _right = new(0xA3, 60, 800);
     private QuickLaunchKeyboardConfiguration _configuration = new(true, false, QuickLaunchTriggerKind.DoubleControl, 0);
     private long _appliedResetGeneration = -1;
+    public uint Timestamp { get; private set; }
+    public long Generation => _appliedResetGeneration;
 
     public void Publish(QuickLaunchKeyboardConfiguration configuration) => Volatile.Write(ref _configuration, configuration);
 
@@ -27,6 +29,7 @@ internal sealed class QuickLaunchKeyboardGesture
 
     public bool OnKeyDown(int key, uint timestamp)
     {
+        Timestamp = timestamp;
         if (!PrepareCallback()) return false;
         if (key == 0xA2)
         {

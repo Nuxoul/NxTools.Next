@@ -18,7 +18,7 @@ internal sealed record ArchiveBrowserContext(Guid SnapshotId, string Format, str
     [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] ArchiveTarEditEligibility? TarEdit=null)
 {
     internal bool Valid => SnapshotId != Guid.Empty && Comment is not null && System.Text.Encoding.UTF8.GetByteCount(Comment) <= 65536 &&
-        Format is "Zip" or "SevenZ" or "Rar4" or "Rar5" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd" or "Cab" or "Iso" or "Udf" or "Wim" or "Ar" or "Cpio" or "Lzma" or "Lz4" or "Lz4Block" or "Brotli" &&
+        Format is "Zip" or "SevenZ" or "Rar4" or "Rar5" or "Alz" or "Egg" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd" or "Cab" or "Iso" or "Udf" or "Wim" or "Ar" or "Cpio" or "Lzma" or "Lz4" or "Lz4Block" or "Brotli" &&
         Source is { Native: { Length: > 3 and <= 256 }, Digest: { Length: 32 } } && Source.Native.StartsWith("v1:", StringComparison.Ordinal) &&
         Source.Native.All(c => c < 128 && !char.IsControl(c)) && Source.Digest.All(b => b <= 255);
 }

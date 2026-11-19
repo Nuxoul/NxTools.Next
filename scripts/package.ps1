@@ -280,10 +280,12 @@ if (-not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
     $installerScript = Join-Path $root 'installer\nxtools-next.iss'
     # Migration extracts the original normal-install entries from Inno's single payload.
     # Pin the executable before running it; its original verifier checks the complete signed set.
-    $migrationHostHash = (Get-FileHash -LiteralPath (Join-Path $destination 'NxTools.PlatformHost.exe') -Algorithm SHA256).Hash
+    $migrationHostPath = Join-Path $destination 'NxTools.PlatformHost.exe'
+    $migrationHostHash = (Get-FileHash -LiteralPath $migrationHostPath -Algorithm SHA256).Hash
+    $migrationBootstrapMinimumSequence = 82 # Bump only when Bootstrap compatibility requires a new maintenance generation.
     $migrationInput = Join-Path $root 'artifacts\installer\bootstrap-migration-input.iss'
     [IO.Directory]::CreateDirectory((Split-Path -Parent $migrationInput)) | Out-Null
-    [IO.File]::WriteAllText($migrationInput, ('#define BootstrapMigrationHostSha256 "' + $migrationHostHash + '"' + "`n"), [Text.UTF8Encoding]::new($true))
+    [IO.File]::WriteAllText($migrationInput, ('#define BootstrapMigrationHostSha256 "' + $migrationHostHash + '"' + "`n" + '#define BootstrapMigrationMinimumSequence "' + $migrationBootstrapMinimumSequence + '"' + "`n"), [Text.UTF8Encoding]::new($true))
     & (Join-Path $root 'tests\architecture\trusted-release-sequence.ps1')
     & (Join-Path $root 'tests\architecture\installer-exact-file-rollback.ps1')
     # Real exited-process race must pass in the architecture used by Inno as well as x64.
@@ -329,7 +331,7 @@ if ($restartIndexerServiceOnFailure -and $packageCompleted) {
 if ($CreateDistributionArchive -and -not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
     & python (Join-Path $PSScriptRoot 'package-archive-source.py') `
         --output (Join-Path $root 'artifacts\installer\third_party\archive-worker\archive-worker-source.zip') `
-        --installer (Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.0.exe')
+        --installer (Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.2.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Complete release distribution failed.' }
 }
 }

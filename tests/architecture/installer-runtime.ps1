@@ -95,13 +95,14 @@ exit 0
 $repair=$Scenario.StartsWith('repair-')
 $migration = $Scenario.StartsWith('migration-') -or $repair
 $detectCode = if ($repair) { 11 } elseif ($migration) { 10 } elseif ($Scenario -eq 'detection-failure') { 1 } else { 0 }
-[IO.File]::WriteAllText((Join-Path $work 'bootstrap-migration.ps1'), ('param([string]$ManifestPath,[string]$DiagnosticPath,[string]$CorrelationId)' + "`r`n" + 'if($DiagnosticPath){[IO.File]::WriteAllText($DiagnosticPath,''{"event":"fixture_detection"}'')}' + "`r`nexit $detectCode"))
+ [IO.File]::WriteAllText((Join-Path $work 'bootstrap-migration.ps1'), ('param([string]$ManifestPath,[string]$DiagnosticPath,[string]$CorrelationId,[long]$MinimumBootstrapMaintenanceSequence)' + "`r`n" + 'if($DiagnosticPath){[IO.File]::WriteAllText($DiagnosticPath,''{"event":"fixture_detection"}'')}' + "`r`n" + 'exit ' + $detectCode))
 $payload = Join-Path $work 'payload'; New-Item -ItemType Directory -Path (Join-Path $payload 'nested') -Force | Out-Null
 [IO.File]::WriteAllText((Join-Path $payload 'NxTools.PlatformHost.exe'), 'same-release migration fixture; never executed')
 [IO.File]::WriteAllText((Join-Path $payload 'nested\fixture.txt'), 'nested same-release bytes')
 $payloadHash = (Get-FileHash (Join-Path $payload 'NxTools.PlatformHost.exe')).Hash
 if ($Scenario -in @('migration-tampered','repair-tampered')) { $payloadHash = '0' * 64 }
-$callback = $callback.Replace('{#BootstrapMigrationHostSha256}', $payloadHash)
+ $callback = $callback.Replace('{#BootstrapMigrationHostSha256}', $payloadHash)
+ $callback = $callback.Replace('{#BootstrapMigrationMinimumSequence}', '82')
 $callback = $callback.Replace('{localappdata}\NxTools\NxTools.Next\logs\installer\', $work + '\diagnostics\')
 # Diagnostic argument adaptation is applied below, after scenario-specific helpers are selected.
 $payloadFiles = if ($migration) { 'Source: "' + $payload + '\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs' } else { '' }

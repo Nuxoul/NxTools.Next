@@ -33,6 +33,10 @@ const DELTA_RECORD_SIZE: usize = 56;
 
 #[cfg(test)]
 mod compaction_schedule_tests;
+#[cfg(test)]
+mod initial_allocation_tests;
+#[cfg(all(test, windows))]
+mod initial_profile_tests;
 mod journal;
 #[cfg(all(test, windows))]
 mod measurements;

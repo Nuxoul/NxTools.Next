@@ -1,0 +1,25 @@
+﻿{
+    "observed_at":  "2026-11-11T16:37:48.3298194+08:00",
+    "global_compilers":  [
+
+                         ],
+    "workspace_test_processes":  [
+
+                                 ],
+    "b5_repair_wrappers":  [
+
+                           ],
+    "archive_workers":  [
+
+                        ],
+    "owned_debug_archive_workers":  [
+
+                                    ],
+    "test_owned_tcp":  [
+
+                       ],
+    "b5_completion_pipes":  [
+
+                            ],
+    "lifetime_evidence":  "Real-pump repair fixtures join engine futures and HTTP sockets/listeners. Original B5 resource tests join Download IPC clients/callers/host, assert zero clients/Stopped and post-stop refusal. TestPlatform quit is not physical process exit."
+}

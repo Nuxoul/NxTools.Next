@@ -56,6 +56,9 @@ pub struct ArchiveShellIntegrationCommand {
     pub extensions: Vec<String>,
     #[serde(default = "default_double_click")]
     pub double_click_action: String,
+    /// Claims the per-user class default so Explorer icons and double-click use NxTools.
+    #[serde(default)]
+    pub set_default: bool,
     #[serde(default = "default_menu_layout")]
     pub menu_layout: String,
     #[serde(default = "default_menu_commands")]
@@ -112,6 +115,7 @@ impl ArchiveShellIntegrationCommand {
         }
         if self.action == ArchiveShellIntegrationAction::Apply
             && (self.open_with
+                || self.set_default
                 || (self.classic_cascade
                     && self.menu_commands.iter().any(|command| {
                         !matches!(command.as_str(), "create" | "create_zip" | "create_7z")
@@ -173,6 +177,7 @@ mod tests {
             open_with: false,
             extensions: vec![".zip".into()],
             double_click_action: default_double_click(),
+            set_default: false,
             menu_layout: default_menu_layout(),
             menu_commands: default_menu_commands(),
         }
@@ -239,6 +244,21 @@ mod settings_completion_tests {
         assert_eq!(command.double_click_action, "open");
         assert_eq!(command.menu_layout, "cascade");
         assert_eq!(command.menu_commands, default_menu_commands());
+        assert!(!command.set_default, "legacy wire never claims the default");
+        let mut claim = legacy.clone();
+        claim["open_with"] = serde_json::json!(false);
+        claim["classic_cascade"] = serde_json::json!(false);
+        claim["set_default"] = serde_json::json!(true);
+        let claim: ArchiveShellIntegrationCommand =
+            serde_json::from_value(claim).expect("default claim wire");
+        assert_eq!(claim.validate(), Ok(()));
+        let mut empty = claim.clone();
+        empty.extensions.clear();
+        assert_eq!(
+            empty.validate(),
+            Err("invalid_request"),
+            "a default claim needs at least one extension"
+        );
         for commands in [
             serde_json::json!([]),
             serde_json::json!(["create_zip", "create_7z", "create"]),

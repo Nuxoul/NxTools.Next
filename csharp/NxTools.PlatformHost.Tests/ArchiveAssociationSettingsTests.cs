@@ -74,12 +74,12 @@ internal static class ArchiveAssociationSettingsTests
         var empty = new ArchiveIntegrationIntent(true, false, []) { MenuCommands = [] };
         Check(ArchiveIntegrationPlan.Create(Executable, 1, empty).Changes.Count == 0 &&
             ArchiveSelectionHandlerPlan.Create(Helper, 1, empty).Changes.Count == 0, "empty commands means no empty menu/CLSID writes");
-        Check(ArchiveIntegrationPlan.Create(Executable, 1, empty with { MenuCommands = ["create"] }, Helper).Changes.Count == 10, "create-only needs no archive extension");
+        Check(ArchiveIntegrationPlan.Create(Executable, 1, empty with { MenuCommands = ["create"] }, Helper).Changes.Count == 12, "create-only includes both menu icons and needs no archive extension");
         var seven = new ArchiveIntegrationIntent(true, false, [".zip"]) { MenuCommands = ArchiveSelectionHandlerPlan.Commands.Select(command => command.Command).ToArray() };
         var allPlan = ArchiveSelectionHandlerPlan.Create(Helper, 1, seven);
-        Check(allPlan.Changes.Count(change => change.Target.ValueName == "DelegateExecute") == 8 &&
+        Check(allPlan.Changes.Count(change => change.Target.ValueName == "DelegateExecute") == 12 &&
             allPlan.Changes.Count(change => change.Target.KeyPath.EndsWith(@"\LocalServer32")) == 9 &&
-            allPlan.Changes.Count(change => change.Target.ValueName == "ExplorerCommandHandler") == 4, "nine finite identities / six archive and three source commands");
+            allPlan.Changes.All(change => change.Target.ValueName != "ExplorerCommandHandler"), "nine finite local-server identities / six archive and three source commands");
         foreach (var command in ArchiveSelectionHandlerPlan.Commands)
         {
             var verb = command.Command switch
@@ -142,6 +142,27 @@ internal static class ArchiveAssociationSettingsTests
         var emptyStore = new FakeArchiveIntegrationStore();
         var empty = Service(emptyStore, new MemoryLedger(), true, _ => throw new InvalidOperationException()).Execute(command with { OpenWith = false, MenuCommands = [] }, Guid.NewGuid());
         Check(empty.State == "not_applied" && emptyStore.OperationCount == 0, "empty service plan neither approves helper nor writes");
+        foreach (var layout in new[] { "cascade", "flat" })
+        {
+            var quickCommand = command with { MenuLayout = layout, OpenWith = false, MenuCommands = ["create_zip", "create_7z", "create"] };
+            var currentPlan = ArchiveSelectionHandlerPlan.Create(Helper, 1, quickCommand.ToIntent());
+            var legacyChanges = currentPlan.Changes.Where(change =>
+                !change.Target.KeyPath.Contains("08create-zip") && !change.Target.KeyPath.Contains("09create-7z")).ToList();
+            foreach (var parent in new[] { @"Software\Classes\*\shell\NxTools.ArchiveSelection", @"Software\Classes\Directory\shell\NxTools.ArchiveSelection" })
+                foreach (var quick in ArchiveSelectionHandlerPlan.Commands.Where(value => value.Command is "create_zip" or "create_7z"))
+                {
+                    var key = layout == "cascade" ? parent + @"\shell\" + quick.KeyId : parent + "." + quick.KeyId;
+                    legacyChanges.Add(new(new(key, "ExplorerCommandHandler", layout == "cascade" ? parent : key), ArchiveRegistryValue.String(quick.Clsid.ToString("B").ToUpperInvariant())));
+                }
+            var upgradeStore = new FakeArchiveIntegrationStore();
+            var upgradeLedger = new MemoryLedger { Facts = ArchiveIntegrationTransaction.Apply(upgradeStore, currentPlan with { Changes = legacyChanges }) };
+            var upgradeService = Service(upgradeStore, upgradeLedger, true, _ => new FakeLease());
+            var replaced = upgradeService.Execute(quickCommand with { Action = "apply" }, Guid.NewGuid());
+            Check(replaced.State == "applied" && replaced.Removed == legacyChanges.Count, "Apply replaces the earlier ledger through the original exact revert");
+            Check(legacyChanges.Where(change => change.Target.ValueName == "ExplorerCommandHandler").All(change => upgradeStore.Value(change.Target) is null), "legacy ExplorerCommandHandler values removed by replacement");
+            Check(upgradeLedger.Facts!.Values.Count(value => value.Target.ValueName == "DelegateExecute") == 6 &&
+                upgradeLedger.Facts.Values.All(value => value.Target.ValueName != "ExplorerCommandHandler"), "reapplied ledger contains only grouped delegates");
+        }
         return Task.CompletedTask;
     }
 

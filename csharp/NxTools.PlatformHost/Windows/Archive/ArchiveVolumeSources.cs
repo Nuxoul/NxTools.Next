@@ -6,7 +6,7 @@ namespace NxTools.PlatformHost.Windows.Archive;
 
 // The only owner of every source lease in a read operation. No path is handed to a decoder
 // until the entire deterministic family has been acquired and checked under these leases.
-internal sealed class ArchiveVolumeSources : IDisposable
+internal sealed partial class ArchiveVolumeSources : IDisposable
 {
     private const int MaxVolumes = 1024;
     private readonly List<ArchiveSourceLease> leases = [];
@@ -18,7 +18,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
     internal ArchiveSourceLease Primary => leases[0];
     internal ArchiveSourceLease Requested { get; }
 
-    private ArchiveVolumeSources(string first, ulong maxMetadata, ulong maxEncoded, bool sevenzOutputPreflight, bool rarOutputPreflight, bool tarStreamOutputPreflight, bool zipOutputPreflight)
+    private ArchiveVolumeSources(string first, ulong maxMetadata, ulong maxEncoded, bool sevenzOutputPreflight, bool rarOutputPreflight, bool tarStreamOutputPreflight, bool zipOutputPreflight, bool alzegOutputPreflight)
     {
         try
         {
@@ -39,8 +39,12 @@ internal sealed class ArchiveVolumeSources : IDisposable
             var rarWidth=rarPart?Path.GetFileName(first)[(Path.GetFileName(first).LastIndexOf(".part",StringComparison.OrdinalIgnoreCase)+5)..^4].Length:1;
             if (rarPart) first = ResolveSibling(rarStem + ".part" + 1.ToString("D"+rarWidth) + ".rar");
             if (continuous) first = ResolveSibling(first);
-            maxEncoded = Add(first, maxEncoded, sevenzOutputPreflight, rarOutputPreflight, tarStreamOutputPreflight ? maxMetadata : 0, zipOutputPreflight ? maxMetadata : 0);
-            if (continuous)
+            maxEncoded = Add(first, maxEncoded, sevenzOutputPreflight, rarOutputPreflight, tarStreamOutputPreflight ? maxMetadata : 0, zipOutputPreflight ? maxMetadata : 0, alzegOutputPreflight, deferEncoded: zipOutputPreflight);
+            var alzeg = AcquireAlzeg(maxMetadata, maxEncoded);
+            var sfx = !alzeg && AcquireSfx(maxMetadata, maxEncoded, zipOutputPreflight);
+            var framed = alzeg || sfx;
+            if (zipOutputPreflight && !sfx) CheckEncoded(maxEncoded);
+            if (continuous && !framed)
             {
                 using var stream = File.OpenRead(PrimaryPath);
                 Span<byte> signature = stackalloc byte[32];
@@ -63,7 +67,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
                     if (actualLength != expectedLength) throw new ArchiveOutputException("invalid_source");
                 } else ValidateContinuousZip(actualLength, maxMetadata);
             }
-            else if (suffix.Equals(".zip", StringComparison.OrdinalIgnoreCase) || zipPart)
+            else if (!framed && (suffix.Equals(".zip", StringComparison.OrdinalIgnoreCase) || zipPart))
             {
                 var disks = ZipDiskCount(PrimaryPath, maxMetadata);
                 if (disks > 1)
@@ -87,7 +91,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
                 }
                 else if (zipPart) throw new ArchiveOutputException("missing_volume");
             }
-            else if (suffix.Equals(".rar", StringComparison.OrdinalIgnoreCase))
+            else if (!framed && suffix.Equals(".rar", StringComparison.OrdinalIgnoreCase))
             {
                 var next = RarNext(PrimaryPath, maxMetadata, out var isVolume, out var modern);
                 if (rarPart && !isVolume) throw new ArchiveOutputException("invalid_source");
@@ -120,7 +124,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
         }
         catch { Dispose(); throw; }
     }
-    internal static ArchiveVolumeSources Open(string path, ulong maxMetadata, ulong maxEncoded, bool sevenzOutputPreflight = false, bool rarOutputPreflight = false, bool tarStreamOutputPreflight = false, bool zipOutputPreflight = false) => new(path, maxMetadata, maxEncoded, sevenzOutputPreflight, rarOutputPreflight, tarStreamOutputPreflight, zipOutputPreflight);
+    internal static ArchiveVolumeSources Open(string path, ulong maxMetadata, ulong maxEncoded, bool sevenzOutputPreflight = false, bool rarOutputPreflight = false, bool tarStreamOutputPreflight = false, bool zipOutputPreflight = false, bool alzegOutputPreflight = false) => new(path, maxMetadata, maxEncoded, sevenzOutputPreflight, rarOutputPreflight, tarStreamOutputPreflight, zipOutputPreflight, alzegOutputPreflight);
     internal string Identity() { Verify(); return admissionIdentity!; }
     private string IdentityNow()
     {
@@ -143,7 +147,7 @@ internal sealed class ArchiveVolumeSources : IDisposable
     internal ReadOnlyMemory<byte>? CaptureZoneIdentifier(Func<bool, uint, uint>? flagsProbe = null) => Primary.CaptureZoneIdentifier(flagsProbe);
     public void Dispose() { foreach (var lease in leases) lease.Dispose(); leases.Clear(); paths.Clear(); }
 
-    private ulong Add(string path, ulong maxEncoded, bool sevenzOutputPreflight = false, bool rarOutputPreflight = false, ulong tarStreamMetadata = 0, ulong zipMetadata = 0)
+    private ulong Add(string path, ulong maxEncoded, bool sevenzOutputPreflight = false, bool rarOutputPreflight = false, ulong tarStreamMetadata = 0, ulong zipMetadata = 0, bool alzegOutputPreflight = false, bool deferEncoded = false)
     {
         if (paths.Count >= MaxVolumes || paths.Any(value => string.Equals(value, path, StringComparison.OrdinalIgnoreCase)))
             throw new ArchiveOutputException("resource_limit");
@@ -192,7 +196,15 @@ internal sealed class ArchiveVolumeSources : IDisposable
                 || signature.SequenceEqual("PK\x05\x06"u8) || signature.SequenceEqual("PK\x01\x02"u8)))
                 maxEncoded = Math.Max(maxEncoded, zipMetadata);
         }
-        CheckEncoded(maxEncoded);
+        if (alzegOutputPreflight && paths.Count == 1) {
+            // Source-only finite admission reaches the original declared-output preflight.
+            // The held family, actual decoder memory and approved output remain separate.
+            using var source = File.OpenRead(path);
+            Span<byte> signature = stackalloc byte[4];
+            if (source.Read(signature) == 4 && (signature.SequenceEqual("ALZ\x01"u8) || signature.SequenceEqual("EGGA"u8)))
+                maxEncoded = Math.Max(maxEncoded, ArchiveWorkerBudget.Capture(new { }).max_output_bytes);
+        }
+        if (!deferEncoded) CheckEncoded(maxEncoded);
         return maxEncoded;
     }
     private void CheckEncoded(ulong limit)

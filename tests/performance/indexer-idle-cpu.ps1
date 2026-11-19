@@ -59,74 +59,38 @@ if ($service.StartName -ne 'LocalSystem') {
     throw "Service '$ServiceName' runs as '$($service.StartName)', expected LocalSystem."
 }
 
+. (Join-Path $PSScriptRoot 'indexer-desktop-probe.ps1')
+$cacheRoot = Join-Path $env:ProgramData 'NxTools\NxTools.Next\indexer'
+$baseBefore = @(Get-ChildItem $cacheRoot -Filter '*.idx' | Sort-Object Name | ForEach-Object {
+    [pscustomobject]@{ Name = $_.Name; Length = $_.Length; LastWriteTicks = $_.LastWriteTimeUtc.Ticks }
+})
 if ($RestartService) {
+    if ($baseBefore.Count -eq 0) { throw 'Restart acceptance requires an existing persisted base.' }
     Restart-Service -Name $ServiceName -Force
     (Get-Service -Name $ServiceName).WaitForStatus('Running', [TimeSpan]::FromSeconds(20))
 }
-
 $service = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
 if (-not $service -or $service.State -ne 'Running' -or $service.ProcessId -eq 0) {
     throw "Service '$ServiceName' is not running."
 }
-
 $processId = [uint32]$service.ProcessId
-$pipe = [System.IO.Pipes.NamedPipeClientStream]::new(
-    '.',
-    'nxtools-next-indexer-v1',
-    [System.IO.Pipes.PipeDirection]::InOut,
-    [System.IO.Pipes.PipeOptions]::Asynchronous)
-$pipe.Connect(3000)
-$writer = [System.IO.StreamWriter]::new(
-    $pipe,
-    [System.Text.UTF8Encoding]::new($false),
-    4096,
-    $true)
-$writer.AutoFlush = $true
-$reader = [System.IO.StreamReader]::new(
-    $pipe,
-    [System.Text.UTF8Encoding]::new($false),
-    $false,
-    4096,
-    $true)
-$hello = @{
-    protocol_version = 1
-    id = [guid]::NewGuid().ToString()
-    correlation_id = $null
-    type = 'hello'
-    payload = @{
-        client_name = 'indexer_idle_cpu_probe'
-        client_version = '0.1.0'
-        capabilities = @('index_status', 'file_search')
+$search = Invoke-IndexerDesktopSearch -Query 'NxTools.Indexer.exe' -ExpectedPath $expectedExecutable -TimeoutMs ($ReadyTimeoutSeconds * 1000)
+"AUTHENTICATED_DESKTOP_PID=$($search.DesktopPid)"
+"SAMPLED_PHASE=search_verified"
+if ($RestartService) {
+    $baseAfter = @(Get-ChildItem $cacheRoot -Filter '*.idx' | Sort-Object Name | ForEach-Object {
+        [pscustomobject]@{ Name = $_.Name; Length = $_.Length; LastWriteTicks = $_.LastWriteTimeUtc.Ticks }
+    })
+    if ((ConvertTo-Json -InputObject $baseBefore -Compress) -ne (ConvertTo-Json -InputObject $baseAfter -Compress)) {
+        throw 'Service restart replaced a persisted base instead of restoring it.'
     }
-} | ConvertTo-Json -Compress -Depth 8
-$writer.WriteLine($hello)
-$null = $reader.ReadLine()
-$initialStatus = ($reader.ReadLine() | ConvertFrom-Json).payload.data
-"INITIAL_PHASE=$($initialStatus.phase)"
-"INITIAL_INDEXED_ITEMS=$($initialStatus.indexed_items)"
-
-$status = $initialStatus
-$readyDeadline = [DateTime]::UtcNow.AddSeconds($ReadyTimeoutSeconds)
-while ($status.phase -ne 'ready' -and [DateTime]::UtcNow -lt $readyDeadline) {
-    $remaining = [Math]::Max(1, [int]($readyDeadline - [DateTime]::UtcNow).TotalMilliseconds)
-    $read = $reader.ReadLineAsync()
-    if (-not $read.Wait($remaining) -or $null -eq $read.Result) {
-        break
+    foreach ($base in $baseAfter) {
+        $delta = Join-Path $cacheRoot ([IO.Path]::ChangeExtension($base.Name, '.delta'))
+        if (-not (Test-Path $delta) -or (Get-Item $delta).Length -eq 0) { throw 'A restored base has no persisted delta.' }
     }
-    $frame = $read.Result | ConvertFrom-Json
-    if ($frame.type -eq 'indexer_event' -and $frame.payload.event -eq 'status') {
-        $status = $frame.payload.data
-    }
+    "RESTORED_BASE_FILES=$($baseAfter.Count)"
+    "PERSISTED_DELTA_FILES=$($baseAfter.Count)"
 }
-if ($status.phase -ne 'ready') {
-    $reader.Dispose()
-    $writer.Dispose()
-    $pipe.Dispose()
-    throw "Indexer did not become ready within $ReadyTimeoutSeconds seconds; phase=$($status.phase), indexed_items=$($status.indexed_items)."
-}
-"SAMPLED_PHASE=$($status.phase)"
-"SAMPLED_INDEXED_ITEMS=$($status.indexed_items)"
-
 Start-Sleep -Seconds $WarmupSeconds
 $idSamples = (Get-Counter '\Process(*)\ID Process').CounterSamples
 $instance = $idSamples |
@@ -188,18 +152,13 @@ $averageWriteKiB = ($samples | Measure-Object WriteKiBPerSecond -Average).Averag
 "IO_SCOPE=Process logical file/IPC counters, not physical-disk attribution"
 
 if ($AssertRegression -and $average -ge $AverageCpuThresholdPercent) {
-    $reader.Dispose()
-    $writer.Dispose()
-    $pipe.Dispose()
     throw "Indexer idle CPU regression: normalized average was $([Math]::Round($average, 2))%, threshold is $AverageCpuThresholdPercent%."
 }
 if ($AssertRegression -and ($averageReadKiB + $averageWriteKiB) -ge $AverageIoThresholdKiBPerSecond) {
-    $reader.Dispose()
-    $writer.Dispose()
-    $pipe.Dispose()
     throw "Indexer idle I/O regression: process read+write average $([Math]::Round($averageReadKiB + $averageWriteKiB, 2)) KiB/s, threshold $AverageIoThresholdKiBPerSecond KiB/s."
 }
 
-$reader.Dispose()
-$writer.Dispose()
-$pipe.Dispose()
+$finalService = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'"
+if ($finalService.State -ne 'Running' -or $finalService.ProcessId -ne $processId) {
+    throw 'Indexer service process changed during idle sampling.'
+}

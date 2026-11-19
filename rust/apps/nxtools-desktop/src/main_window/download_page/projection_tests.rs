@@ -115,6 +115,7 @@ fn synthetic_tasks(count: usize) -> Vec<DownloadEngineTask> {
                     headers: Vec::new(),
                     cookie: Some("synthetic-only".repeat(128)),
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -318,11 +319,13 @@ fn audit11_real_render_bounds_payload_and_resource_work(cx: &mut TestAppContext)
                     active_connections: 1,
                     segments: (0..128)
                         .map(|segment_index| DownloadSegmentProgress {
+                            start_byte: None,
                             segment_index,
                             downloaded_bytes: 1,
                             total_bytes: Some(8),
                         })
                         .collect(),
+                    finishing: None,
                 })
                 .collect();
             app.replace_progress_for_test(progress);

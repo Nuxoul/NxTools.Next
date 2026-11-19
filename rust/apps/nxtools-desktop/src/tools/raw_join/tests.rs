@@ -541,14 +541,18 @@ fn ref18_picker_single_selection_identity_and_focus_use_original_forwarder(
 }
 
 #[gpui_kit::test]
-fn ref18_other_tools_tile_opens_reuses_and_retires_real_window(cx: &mut TestAppContext) {
+fn ref18_archive_menu_opens_reuses_and_retires_real_window(cx: &mut TestAppContext) {
+    use crate::archive::ArchiveBrowser;
     use crate::main_window::{MainWindow, MainWindowShellContext};
     use crate::notifications::NotificationCenter;
     use nxtools_core::SystemSettings;
+    use nxtools_protocol::archive_browser::{ArchiveBrowserContext, ArchiveSourceBinding};
+
     cx.update(gpui_kit::init);
     cx.executor().allow_parking();
+
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
-    let (_, surface) = cx.add_window_view(move |window, cx| {
+    let (_, tools_surface) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(920.), px(480.)));
         let main = cx.new(|cx| {
             MainWindow::new(
@@ -567,30 +571,87 @@ fn ref18_other_tools_tile_opens_reuses_and_retires_real_window(cx: &mut TestAppC
         });
         gpui_kit::base::Root::new(main, window, cx)
     });
-    let handle = surface.update(|window, _| window.window_handle());
-    let mut surface = VisualTestContext::from_window(handle, cx);
-    draw(&mut surface);
-    click(&mut surface, "main-module-其他工具");
-    let tile = surface
-        .debug_bounds("tool-raw-join-tile")
-        .expect("official catalog tile");
-    assert_eq!(tile.size, size(px(180.), px(160.)));
-    assert_eq!(
-        surface
-            .debug_bounds("tool-raw-join-open")
-            .expect("outlined Open")
-            .size
-            .height,
-        px(32.)
+    let tools_handle = tools_surface.update(|window, _| window.window_handle());
+    let mut tools_surface = VisualTestContext::from_window(tools_handle, cx);
+    draw(&mut tools_surface);
+    click(&mut tools_surface, "main-module-其他工具");
+    assert!(
+        tools_surface.debug_bounds("tool-raw-join-tile").is_none(),
+        "the ordinary numbered join is no longer an Other Tools tile"
     );
-    click(&mut surface, "tool-raw-join-open");
-    let Target(first_view, first) = surface.update(|_, cx| cx.global::<Target>().clone());
-    click(&mut surface, "tool-raw-join-open");
-    let Target(_, reused) = surface.update(|_, cx| cx.global::<Target>().clone());
+
+    let (bridge, _server) = platform_bridge(32);
+    let bridge = Rc::new(bridge);
+    let (_, browser_surface) = cx.add_window_view(move |window, cx| {
+        window.resize(size(px(920.), px(480.)));
+        let view = cx.new(|cx| {
+            let mut view = ArchiveBrowser::new(
+                std::path::PathBuf::from(r"C:\synthetic\sample.zip"),
+                Uuid::new_v4(),
+                WeakEntity::new_invalid(),
+                window,
+                cx,
+            );
+            view.configure_drag(
+                bridge,
+                ArchiveBrowserContext {
+                    snapshot_id: Uuid::new_v4(),
+                    format: "Zip".into(),
+                    comment: String::new(),
+                    source: ArchiveSourceBinding {
+                        native: "v1:synthetic".into(),
+                        digest: [0; 32],
+                        size: 1,
+                        modified_unix_ns: 1,
+                    },
+                    sevenz_edit: None,
+                    tar_edit: None,
+                },
+                1,
+                0,
+                false,
+            );
+            view
+        });
+        gpui_kit::base::Root::new(view, window, cx)
+    });
+    let browser_handle = browser_surface.update(|window, _| window.window_handle());
+    let mut browser_surface = VisualTestContext::from_window(browser_handle, cx);
+    draw(&mut browser_surface);
+
+    let click_join_menu = |surface: &mut VisualTestContext| {
+        click(surface, "archive-file-menu");
+        let item = surface.update(|window, _| {
+            gpui_kit::base::test_support::snapshots(window)
+                .iter()
+                .find(|node| {
+                    node.role() == Some(gpui_kit::Role::MenuItem)
+                        && node.label() == Some("合并分卷文件（.001）…")
+                })
+                .map(|node| node.bounds())
+                .expect("official PopupMenu entry beside New Archive")
+        });
+        assert!(item.size.height >= px(26.), "default Medium menu row");
+        surface.simulate_click(item.center(), gpui_kit::Modifiers::default());
+        draw(surface);
+    };
+
+    click_join_menu(&mut browser_surface);
+    let Target(first_view, first) = browser_surface.update(|_, cx| cx.global::<Target>().clone());
+    {
+        let first_entity = first_view.upgrade().expect("opened raw join view");
+        assert!(
+            first_entity.read_with(&browser_surface, |view, _| view.platform.is_some()),
+            "the Archive Browser entrance keeps the original PlatformBridge backend"
+        );
+    }
+    click_join_menu(&mut browser_surface);
+    let Target(_, reused) = browser_surface.update(|_, cx| cx.global::<Target>().clone());
     assert_eq!(
         first, reused,
-        "existing-window activation uses the deferred path"
+        "the deferred menu entrance reuses the live window"
     );
+
     let mut child = VisualTestContext::from_window(first, cx);
     draw(&mut child);
     let close = child
@@ -598,18 +659,16 @@ fn ref18_other_tools_tile_opens_reuses_and_retires_real_window(cx: &mut TestAppC
         .expect("real Close hitbox")
         .center();
     child.simulate_click(close, gpui_kit::Modifiers::default());
-    surface.run_until_parked();
+    browser_surface.run_until_parked();
     assert!(
-        surface.update(
+        browser_surface.update(
             |_, cx| first_view.upgrade().is_none() && first.update(cx, |_, _, _| ()).is_err()
         )
     );
-    click(&mut surface, "tool-raw-join-open");
-    let Target(_, reopened) = surface.update(|_, cx| cx.global::<Target>().clone());
-    assert_ne!(
-        first, reopened,
-        "closed mapped window is replaced, not activated"
-    );
+
+    click_join_menu(&mut browser_surface);
+    let Target(_, reopened) = browser_surface.update(|_, cx| cx.global::<Target>().clone());
+    assert_ne!(first, reopened, "a closed menu-owned window is replaced");
 }
 
 fn focus_dialog_button(surface: &mut VisualTestContext, label: &'static str) {

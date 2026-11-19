@@ -450,6 +450,11 @@ impl DeterministicHttpServer {
         self.dynamic_range_attempts.load(Ordering::Acquire)
     }
 
+    pub fn active_connection_workers(&self) -> usize {
+        // The fixture and listener own two clones; each connection owns one.
+        Arc::strong_count(&self.dynamic_range_attempts).saturating_sub(2)
+    }
+
     pub fn set_network_available(&self, available: bool) {
         self.network_available.store(available, Ordering::Release);
     }
@@ -1032,18 +1037,58 @@ fn serve_connection(
             )
         }
         "/range" => serve_range(&mut stream, method, headers.get("range")),
+        "/title-case-headers" => {
+            let accepted = [
+                ("host", "Host"),
+                ("user-agent", "User-Agent"),
+                ("accept", "Accept"),
+                ("cookie", "Cookie"),
+                ("referer", "Referer"),
+                ("range", "Range"),
+                ("if-range", "If-Range"),
+                ("accept-encoding", "Accept-Encoding"),
+                ("x-fixture-context", "X-Fixture-Context"),
+            ]
+            .iter()
+            .all(|&(name, wire_name)| {
+                !headers.contains_key(name)
+                    || request.split("\r\n").skip(1).any(|line| {
+                        line.split_once(':')
+                            .is_some_and(|(name, _)| name == wire_name)
+                    })
+            }) && headers.get("user-agent").map(String::as_str)
+                == Some("header-case-fixture/1.0")
+                && headers.get("accept").map(String::as_str) == Some("application/octet-stream")
+                && headers.get("cookie").map(String::as_str) == Some("fixture-cookie=1")
+                && headers.get("referer").map(String::as_str) == Some("https://task.example/")
+                && headers.get("x-fixture-context").map(String::as_str) == Some("preserved");
+            if accepted {
+                serve_range(&mut stream, method, headers.get("range"));
+            } else {
+                write_response(&mut stream, 403, "Forbidden", &[], b"", Some(0));
+            }
+        }
         "/range-if-range-incompatible" => serve_if_range_incompatible(
             &mut stream,
             method,
             headers.get("range"),
             headers.get("if-range"),
         ),
-        "/range-resume-required" => serve_resume_required(
+        "/range-resume-required" | "/range-resume-required?replacement=1" => serve_resume_required(
             &mut stream,
             method,
             headers.get("range"),
             headers.get("if-range"),
             resume_transfer_started,
+            BODY,
+        ),
+        "/range-resume-required?checkpoint=1" => serve_resume_required(
+            &mut stream,
+            method,
+            headers.get("range"),
+            headers.get("if-range"),
+            resume_transfer_started,
+            &concurrent_fixture_bytes(),
         ),
         "/range-probe-only" => serve_probe_only_range(
             &mut stream,
@@ -1064,8 +1109,15 @@ fn serve_connection(
             true,
         ),
         "/range-mutable" => {
-            serve_mutable_range(&mut stream, method, headers.get("range"), revision)
+            serve_mutable_range(&mut stream, method, headers.get("range"), revision, BODY)
         }
+        "/range-mutable?checkpoint=1" => serve_mutable_range(
+            &mut stream,
+            method,
+            headers.get("range"),
+            revision,
+            &concurrent_fixture_bytes(),
+        ),
         "/range-concurrent" => serve_concurrent_range(
             &mut stream,
             method,
@@ -1472,6 +1524,7 @@ fn serve_resume_required(
     range: Option<&String>,
     if_range: Option<&String>,
     transfer_started: &AtomicBool,
+    body: &[u8],
 ) {
     let common = [
         ("Accept-Ranges", "bytes"),
@@ -1479,20 +1532,21 @@ fn serve_resume_required(
         ("Last-Modified", "Mon, 27 Jul 2026 00:00:00 GMT"),
     ];
     if method == "HEAD" {
-        write_response(stream, 200, "OK", &common, b"", Some(BODY.len()));
+        write_response(stream, 200, "OK", &common, b"", Some(body.len()));
         return;
     }
 
     let parsed_range = range.and_then(|value| parse_range(value));
     if parsed_range == Some((0, 0)) {
         let mut headers = common.to_vec();
-        headers.push(("Content-Range", "bytes 0-0/16"));
+        let content_range = format!("bytes 0-0/{}", body.len());
+        headers.push(("Content-Range", content_range.as_str()));
         write_response(
             stream,
             206,
             "Partial Content",
             &headers,
-            &BODY[..1],
+            &body[..1],
             Some(1),
         );
         return;
@@ -1500,7 +1554,7 @@ fn serve_resume_required(
 
     if let Some((start, end)) = parsed_range
         && start <= end
-        && end < BODY.len()
+        && end < body.len()
     {
         if start > 0
             && transfer_started.load(Ordering::Acquire)
@@ -1520,17 +1574,21 @@ fn serve_resume_required(
             write_response(stream, 409, "Conflict", &common, b"restart rejected", None);
             return;
         }
-        let content_range = format!("bytes {start}-{end}/{}", BODY.len());
+        let content_range = format!("bytes {start}-{end}/{}", body.len());
         let mut headers = common.to_vec();
         headers.push(("Content-Range", &content_range));
-        write_slow_response(stream, 206, "Partial Content", &headers, &BODY[start..=end]);
+        if body.len() == BODY.len() {
+            write_slow_response(stream, 206, "Partial Content", &headers, &body[start..=end]);
+        } else {
+            write_throttled_response(stream, 206, "Partial Content", &headers, &body[start..=end]);
+        }
         return;
     }
 
     if transfer_started.swap(true, Ordering::AcqRel) {
         write_response(stream, 409, "Conflict", &common, b"restart rejected", None);
     } else {
-        write_slow_response(stream, 200, "OK", &common, BODY);
+        write_slow_response(stream, 200, "OK", &common, body);
     }
 }
 
@@ -1592,6 +1650,7 @@ fn serve_mutable_range(
     method: &str,
     range: Option<&String>,
     revision: &AtomicU64,
+    body: &[u8],
 ) {
     let revision = revision.load(Ordering::Acquire);
     let etag = format!("\"mutable-v{revision}\"");
@@ -1602,14 +1661,14 @@ fn serve_mutable_range(
         ("Last-Modified", last_modified.as_str()),
     ];
     if method == "HEAD" {
-        write_response(stream, 200, "OK", &common, b"", Some(BODY.len()));
+        write_response(stream, 200, "OK", &common, b"", Some(body.len()));
         return;
     }
     if let Some((start, end)) = range.and_then(|value| parse_range(value))
         && start <= end
-        && end < BODY.len()
+        && end < body.len()
     {
-        let content_range = format!("bytes {start}-{end}/{}", BODY.len());
+        let content_range = format!("bytes {start}-{end}/{}", body.len());
         let mut headers = common.to_vec();
         headers.push(("Content-Range", &content_range));
         if (start, end) == (0, 0) {
@@ -1618,15 +1677,25 @@ fn serve_mutable_range(
                 206,
                 "Partial Content",
                 &headers,
-                &BODY[..1],
+                &body[..1],
                 Some(1),
             );
         } else {
-            write_slow_response(stream, 206, "Partial Content", &headers, &BODY[start..=end]);
+            if body.len() == BODY.len() {
+                write_slow_response(stream, 206, "Partial Content", &headers, &body[start..=end]);
+            } else {
+                write_throttled_response(
+                    stream,
+                    206,
+                    "Partial Content",
+                    &headers,
+                    &body[start..=end],
+                );
+            }
         }
         return;
     }
-    write_response(stream, 200, "OK", &common, BODY, Some(BODY.len()));
+    write_response(stream, 200, "OK", &common, body, Some(body.len()));
 }
 
 pub fn concurrent_fixture_bytes() -> Vec<u8> {

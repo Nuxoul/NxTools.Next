@@ -2,7 +2,7 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { loadBackground } = require("./harness/load-background.cjs");
+const { loadBackground, createControlledHandoffResponder } = require("./harness/load-background.cjs");
 const { createEvent } = require("./harness/chrome-api.cjs");
 
 const url = "https://files.example.test/archive.zip";
@@ -79,6 +79,66 @@ test("L6 actual 32 item batch carries one 4 KiB Cookie each below 256 KiB", asyn
     assert.equal(Object.keys(item.headers).some(name => name.toLowerCase() === "cookie"), false, "Cookie is sent once");
     assert.equal("headerText" in item, false);
   }
+});
+
+test("captured page facts survive popup and independent batch with headers and cookies disabled", async () => {
+  const pageUrl = "https://pages.example.test/article?chapter=3";
+  const pageTitle = "章节".repeat(512);
+  const bg = loadBackground({ desktop: host(), chrome: { tabs: [{ id: 7, url: pageUrl, title: pageTitle }],
+    storage: { includeRequestHeaders: false, includeCookies: false } } });
+  await bg.settle();
+  const details = { requestId: "page-fact", url, tabId: 7, type: "xmlhttprequest",
+    requestHeaders: [{ name: "Referer", value: "https://referrer.example.test/" }] };
+  bg.chrome.api.webRequest.onBeforeSendHeaders.fire(details);
+  bg.chrome.api.webRequest.onResponseStarted.fire({ ...details, statusCode: 200,
+    responseHeaders: [{ name: "content-type", value: "application/zip" }] });
+  await bg.settle();
+  const id = `7:${url}`;
+  assert.equal((await bg.sendRuntimeMessage({ type: "popup_send_resource", resourceId: id }, bg.senders.popup())).ok, true);
+  const single = bg.desktop.requestsOfType("create_task").at(-1).message.payload;
+  assert.equal(single.sourcePageUrl, pageUrl);
+  assert.equal(single.sourcePageTitle, pageTitle);
+  assert.equal(single.referrer, undefined);
+  assert.deepEqual(Object.keys(single.headers), []);
+  assert.equal(single.cookie, undefined);
+  await bg.realm.sendResourcesBatch([id]);
+  const batch = bg.desktop.requestsOfType("create_tasks").at(-1).message.payload.items[0];
+  assert.equal(batch.sourcePageUrl, pageUrl);
+  assert.equal(batch.sourcePageTitle, pageTitle);
+  assert.equal(batch.referrer, undefined);
+  assert.equal(batch.cookie, undefined);
+  assert.equal(JSON.stringify(bg.chrome.storage.local).includes(pageUrl), false);
+  assert.equal(JSON.stringify(bg.chrome.storage.local).includes(pageTitle), false);
+});
+
+test("redirected automatic controlled prepare uses original captured page, never Referer inference", async () => {
+  const original = "https://files.example.test/original.zip";
+  const final = "https://cdn.example.test/final.zip";
+  const pageUrl = "https://pages.example.test/article";
+  const bg = loadBackground({ desktop: { respond: createControlledHandoffResponder({ fallback: host().respond }).respond },
+    chrome: { tabs: [{ id: 7, url: pageUrl, title: "Captured title" }],
+      storage: { includeRequestHeaders: false, includeCookies: false } } });
+  await bg.settle();
+  const details = { requestId: "page-redirect", url: original, tabId: 7, type: "xmlhttprequest" };
+  bg.chrome.api.webRequest.onBeforeSendHeaders.fire({ ...details, requestHeaders: [] });
+  bg.chrome.api.webRequest.onResponseStarted.fire({ ...details, statusCode: 200,
+    responseHeaders: [{ name: "content-type", value: "application/zip" }] });
+  await bg.settle();
+  bg.chrome.api.downloads.onDeterminingFilename.fire({ id: 19, url: original, finalUrl: final,
+    tabId: 7, filename: "final.zip", referrer: "https://other.example.test/referer",
+    startTime: "2026-11-13T00:00:00Z", totalBytes: 2048 }, () => {});
+  await bg.waitFor(() => bg.desktop.requestsOfType("prepare_browser_handoff").length === 1, "controlled prepare");
+  const payload = bg.desktop.requestsOfType("prepare_browser_handoff")[0].message.payload;
+  assert.equal(payload.url, final);
+  assert.equal(payload.sourcePageUrl, pageUrl);
+  assert.equal(payload.sourcePageTitle, "Captured title");
+  assert.equal(payload.cookie, undefined);
+  const unknown = await bg.realm.sendDownloadPayload({ url: final, fileName: "final.zip",
+    contextUrl: "https://other.example.test/referer", headers: { Referer: "https://other.example.test/referer" } });
+  assert.equal(unknown.ok, true);
+  const noPage = bg.desktop.requestsOfType("create_task").at(-1).message.payload;
+  assert.equal("sourcePageUrl" in noPage, false);
+  assert.equal("sourcePageTitle" in noPage, false);
 });
 
 test("L7 popup lifetime reuses one host for ten seconds then releases after one second", async () => {

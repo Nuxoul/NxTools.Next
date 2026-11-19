@@ -768,7 +768,7 @@ fn floating_assistant_disable_invalidates_decode_cache_and_reenable_loads_curren
 #[gpui_kit::test]
 fn runtime_feedback_picker_wait_has_no_false_timeout_and_cancel_is_quiet(cx: &mut TestAppContext) {
     let (owner, endpoint, _directory) = fixture(cx);
-    owner.update(cx, |owner, cx| owner.pick_image(cx));
+    owner.update(cx, |owner, cx| owner.pick_image_from(owner.source_hwnd, cx));
     let request = next(&endpoint);
     cx.executor().advance_clock(Duration::from_secs(601));
     cx.run_until_parked();
@@ -799,7 +799,7 @@ fn runtime_feedback_picker_wait_has_no_false_timeout_and_cancel_is_quiet(cx: &mu
 #[gpui_kit::test]
 fn runtime_feedback_picker_disconnected_reply_cannot_change_new_selection(cx: &mut TestAppContext) {
     let (owner, endpoint, _directory) = fixture(cx);
-    owner.update(cx, |owner, cx| owner.pick_image(cx));
+    owner.update(cx, |owner, cx| owner.pick_image_from(owner.source_hwnd, cx));
     let old = next(&endpoint).id;
     owner.update(cx, |owner, cx| {
         owner.handle(
@@ -811,7 +811,7 @@ fn runtime_feedback_picker_disconnected_reply_cannot_change_new_selection(cx: &m
         )
     });
     owner.update(cx, |owner, _| owner.error = None);
-    owner.update(cx, |owner, cx| owner.pick_image(cx));
+    owner.update(cx, |owner, cx| owner.pick_image_from(owner.source_hwnd, cx));
     let current = next(&endpoint).id;
     owner.update(cx, |owner, cx| {
         owner.handle(

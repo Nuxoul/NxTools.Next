@@ -1,19 +1,22 @@
 use super::*;
 
 #[gpui_kit::test]
-fn default_selection_follows_first_result_across_batches(cx: &mut TestAppContext) {
+fn default_selection_keeps_first_displayed_identity_when_late_result_appends(
+    cx: &mut TestAppContext,
+) {
     cx.update(gpui_kit::init);
     let first = search_result("first", ApplicationSource::IndexedFile);
     let (panel, window) = quick_launch_panel_fixture(cx, vec![first.clone()]);
     panel.update_in(window, |panel, _, cx| {
         panel.replace_results(
-            vec![search_result("better", ApplicationSource::StartMenu), first],
+            vec![first, search_result("better", ApplicationSource::StartMenu)],
             cx,
         );
         assert_eq!(
             panel.selected, 0,
-            "default selection follows the first ranked row"
+            "default selection keeps its published identity"
         );
+        assert_eq!(panel.results[0].entry.id, "first");
     });
 }
 
@@ -39,16 +42,40 @@ fn explicit_selection_survives_batches_including_an_explicit_first_row(cx: &mut 
 #[gpui_kit::test]
 fn new_input_resets_default_before_first_current_batch(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
+    let (_temporary, application, _platform) = quick_launch_application_fixture(cx);
+    let (indexer, endpoint) = crate::runtime::indexer_bridge(8);
+    endpoint.connect_for_test();
+    application.update(cx, |app, _| {
+        app.indexer = Rc::new(indexer);
+        app.index_status = Some(IndexStatus {
+            phase: nxtools_protocol::IndexPhase::Ready,
+            indexed_items: 1,
+            drives: Vec::new(),
+            last_error: None,
+        });
+    });
     let first = search_result("first", ApplicationSource::IndexedFile);
     let second = search_result("second", ApplicationSource::IndexedFile);
     let (panel, window) = quick_launch_panel_fixture(cx, vec![first.clone(), second.clone()]);
     panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
         panel.select_result(1, cx);
         panel.sync_window_content_size("initial", window, cx);
         panel.focus_search(window, cx);
     });
-    window.simulate_input("new-query");
+    panel.update_in(window, |panel, window, cx| {
+        panel
+            .search_input
+            .update(cx, |input, cx| input.replace_all("new-query", window, cx));
+    });
     window.run_until_parked();
+    assert!(matches!(
+        endpoint
+            .try_recv_command_for_test()
+            .expect("current index request")
+            .message,
+        nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(_))
+    ));
     panel.read_with(window, |panel, _| {
         assert!(panel.search_pending);
         assert_eq!(panel.selected, 0, "typing resets the default immediately");
@@ -68,7 +95,7 @@ fn new_input_resets_default_before_first_current_batch(cx: &mut TestAppContext) 
 }
 
 #[gpui_kit::test]
-fn retained_rows_keep_selection_paint_while_execution_stays_blocked(cx: &mut TestAppContext) {
+fn retained_rows_drop_selection_paint_while_execution_stays_blocked(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let (panel, window) = quick_launch_panel_fixture(
         cx,
@@ -90,11 +117,11 @@ fn retained_rows_keep_selection_paint_while_execution_stays_blocked(cx: &mut Tes
         .refresh()
         .expect("paint retained row during query work");
     assert!(
-        window.update(|window, _| window
+        !window.update(|window, _| window
             .painted_quads()
             .iter()
             .any(|quad| { quad.background == gpui_kit::solid_background(selected_color) })),
-        "pending input must not make the default selection disappear"
+        "pending input must not paint retained results as actionable selections"
     );
     panel.update_in(window, |panel, window, cx| {
         panel.move_selection(1, window, cx);

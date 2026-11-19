@@ -26,8 +26,7 @@ mod layout;
 #[cfg(test)]
 mod tests;
 
-pub(crate) const TOOL_ID: &str = "tool-raw-numbered-join";
-const LIMITATION: &str = "仅按顺序连接普通编号文件的字节，不解压、不修复、不转换格式。可检测中间缺卷，但无法证明未知的最后一卷是否缺失；请核对发现的集合。源分卷始终保留。";
+const LIMITATION: &str = "将同一目录中同名的 .001、.002… 文件按编号顺序直接连接成一个新文件。不解析压缩包，也不能判断分卷是否完整；请先核对文件列表。不会删除源文件。";
 
 #[derive(Clone)]
 struct Target(WeakEntity<JoinWindow>, AnyWindowHandle);
@@ -49,6 +48,7 @@ pub(crate) fn open(
     existing: Option<AnyWindowHandle>,
     cx: &mut App,
 ) -> Option<AnyWindowHandle> {
+    let existing = existing.or_else(|| cx.try_global::<Target>().map(|target| target.1));
     if let Some(existing) = existing
         && existing
             .update(cx, |_, window, _| {
@@ -123,9 +123,8 @@ impl JoinWindow {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let source = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("选择同一组的任意 .001 / .002 / … 文件")
-        });
+        let source = cx
+            .new(|cx| InputState::new(window, cx).placeholder("选择任意一个 .001 / .002 / … 文件"));
         let output = cx.new(|cx| {
             InputState::new(window, cx).placeholder("新输出文件的完整路径（不覆盖现有文件）")
         });
@@ -209,7 +208,7 @@ impl JoinWindow {
         }
         let source = self.source.read(cx).value().to_string();
         if !valid_job_path(&source) {
-            self.message = Some("请选择编号分卷的完整路径。".into());
+            self.message = Some("请选择一个 .001 / .002 / … 文件的完整路径。".into());
             cx.notify();
             return;
         }
@@ -272,7 +271,7 @@ impl JoinWindow {
             let closed = closed.clone();
             let output = output.clone();
             dialog
-                .title("确认普通编号文件合并")
+                .title("确认合并这些分卷文件")
                 .child(layout::confirmation(&preview, &output))
                 .footer(
                     DialogFooter::new()
@@ -492,7 +491,7 @@ impl JoinWindow {
                     if active {
                         "连接已断开，输出结果未知。原生端将取消并清理；请核对输出，勿直接重复合并。"
                     } else {
-                        "平台连接已断开，请重新发现分卷。"
+                        "平台连接已断开，请重新查看文件列表。"
                     }
                     .into(),
                 );

@@ -1,0 +1,41 @@
+{
+  "id": "reference-b5-completion-intentions",
+  "name": "reference-b5-completion-intentions",
+  "title": "B5 — Completion intentions",
+  "description": "Implement REF-07 persistent task sleep/hibernate/normal-exit intentions and REF-11 durable queue completion intentions using the original completion coordinator, cancellable countdown, SQLite and typed Windows boundary; preserve B1–B4 and stop for independent acceptance before B6/B7.",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": "reference-b5-completion-intentions",
+  "package": "nxtools-download",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-11-11",
+  "completedAt": "2026-11-11",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-11-reference-b5-completion-intentions/prd.md",
+    ".trellis/tasks/11-11-reference-b5-completion-intentions/reference-review.md",
+    ".trellis/tasks/11-11-reference-b5-completion-intentions/design.md",
+    ".trellis/tasks/11-11-reference-b5-completion-intentions/implement.md",
+    ".trellis/tasks/11-11-reference-b5-completion-intentions/coordinator-acceptance.md"
+  ],
+  "notes": "B5 accepted by coordinator at source, production TestPlatform and owned HTTP/SQLite/writer/pipe boundaries. B5-01/B5-02/B5-03 closed; independent33Rust selections pass with B5 UI26. Three historical lint diagnostics and physical/Release layers remain separate. Next task prompt includes PlatformHost UIA memory root repair before B6; no implementation dispatch.",
+  "meta": {
+    "acceptance_owner": "coordinator",
+    "acceptance_status": "accepted_source_production_testplatform_and_owned_http_sqlite_writer_pipe",
+    "implementation_status": "completed_at_coordinator_accepted_boundaries",
+    "cargo_lane": "released",
+    "handoff_status": "coordinator_accepted_scoped",
+    "coordinator_acceptance": ".trellis/tasks/11-11-reference-b5-completion-intentions/coordinator-acceptance.md",
+    "continuation_status": "implementation_paused_next_prompt_only",
+    "accepted_on": "2026-11-11"
+  }
+}

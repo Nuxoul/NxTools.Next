@@ -75,6 +75,16 @@ pub(crate) struct ExtensionApplication {
 pub(crate) struct ExtensionApplicationGlobal(pub(crate) WeakEntity<ExtensionApplication>);
 impl Global for ExtensionApplicationGlobal {}
 
+#[derive(Clone)]
+pub(crate) struct SettingsRequested {
+    pub(crate) package_id: String,
+    pub(crate) source: gpui_kit::AnyWindowHandle,
+    pub(crate) correlation_id: uuid::Uuid,
+    pub(crate) started: Instant,
+}
+
+impl gpui_kit::EventEmitter<SettingsRequested> for ExtensionApplication {}
+
 pub(crate) type ImportCandidateIdentity = (u64, String, String, String);
 impl ExtensionApplication {
     pub(crate) fn new(
@@ -113,6 +123,36 @@ impl ExtensionApplication {
             storage_management: Default::default(),
         }
     }
+    pub(crate) fn request_settings_for_run(
+        &self,
+        id: uuid::Uuid,
+        source: gpui_kit::AnyWindowHandle,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(run) = self
+            .manual_run(id)
+            .filter(|run| self.can_open_settings_for_run(run))
+        {
+            let request = SettingsRequested {
+                package_id: run.package_id,
+                source,
+                correlation_id: uuid::Uuid::new_v4(),
+                started: Instant::now(),
+            };
+            info!(event = "extension.settings_navigation.accepted", correlation_id = %request.correlation_id, invocation_id = %id, "settings recovery requested");
+            cx.emit(request);
+        }
+    }
+
+    pub(crate) fn can_open_settings_for_run(&self, run: &manual_runs::ManualRun) -> bool {
+        matches!(
+            run.state,
+            manual_runs::ManualState::Failed(nxtools_extensions::RuntimeError::InvalidSettings)
+        ) && self.packages.packages.iter().any(|package| {
+            package.manifest.id == run.package_id && !package.manifest.settings.is_empty()
+        })
+    }
+
     fn notify_operation(
         &self,
         key: impl Into<gpui_kit::SharedString>,

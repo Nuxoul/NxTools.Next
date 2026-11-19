@@ -2,7 +2,8 @@ param(
     [switch]$LibraryOnly,
     [string]$ManifestPath,
     [string]$DiagnosticPath,
-    [string]$CorrelationId
+    [string]$CorrelationId,
+    [long]$MinimumBootstrapMaintenanceSequence
 )
 $ErrorActionPreference = 'Stop'
 
@@ -18,7 +19,7 @@ function Assert-BootstrapRegistration([string]$ExpectedKeyHash, $Registration, [
     }
 }
 
-function Get-BootstrapMigrationDecision([string]$ExpectedKeyHash, $Registration, [string]$ExpectedBootstrap, $MaintenanceState, [string]$ActualHash, [bool]$JournalExists) {
+function Get-BootstrapMigrationDecision([string]$ExpectedKeyHash, $Registration, [string]$ExpectedBootstrap, $MaintenanceState, [string]$ActualHash, [bool]$JournalExists, [long]$ExpectedSequence, [long]$MinimumBootstrapMaintenanceSequence = 0) {
     if ($ExpectedKeyHash -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid installer release key identity.' }
     if ($null -eq $Registration) { return 'skip' }
     Assert-BootstrapRegistration $ExpectedKeyHash $Registration $ExpectedBootstrap
@@ -27,16 +28,24 @@ function Get-BootstrapMigrationDecision([string]$ExpectedKeyHash, $Registration,
         throw 'Updater ownership or original publisher key mismatch; installation stopped.'
     }
     if ($JournalExists) { return 'required' }
-    if ($null -eq $MaintenanceState) { return 'required' }
-    if ($MaintenanceState.ProtocolVersion -ne 1 -or $MaintenanceState.Sequence -le 0 -or
-        ![Guid]::TryParse([string]$MaintenanceState.ReleaseId, [ref]([Guid]::Empty)) -or
-        $MaintenanceState.ManifestSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
-        ![string]::Equals($MaintenanceState.BootstrapSha256, $ActualHash, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'Updater migration state does not match the approved image; installation stopped.'
+    if ($null -ne $MaintenanceState) {
+        if ($MaintenanceState.ProtocolVersion -ne 1 -or $MaintenanceState.Sequence -le 0 -or
+            ![Guid]::TryParse([string]$MaintenanceState.ReleaseId, [ref]([Guid]::Empty)) -or
+            $MaintenanceState.ManifestSha256 -notmatch '^[a-fA-F0-9]{64}$' -or
+            ![string]::Equals($MaintenanceState.BootstrapSha256, $ActualHash, [StringComparison]::OrdinalIgnoreCase)) {
+            throw 'Updater migration state does not match the approved image; installation stopped.'
+        }
     }
     # Approved older bootstraps registered Auto and keep a resident listener. Replace them
     # through explicit same-key maintenance, not a configuration-only ordinary request.
     if ($Registration.Start -ne 3) { return 'required' }
+    if ($MinimumBootstrapMaintenanceSequence -gt 0) {
+        if ($null -eq $MaintenanceState) { return 'required' }
+        if ($MaintenanceState.Sequence -lt $MinimumBootstrapMaintenanceSequence) { return 'required' }
+        return 'skip'
+    }
+    if ($null -eq $MaintenanceState) { return 'required' }
+    if ($MaintenanceState.Sequence -lt $ExpectedSequence) { return 'required' }
     return 'skip'
 }
 
@@ -87,7 +96,21 @@ try {
     $root = Join-Path $env:ProgramData 'NxTools\NxTools.Next\Updater'
     $bootstrap = Join-Path $root 'Bootstrap\NxTools.PlatformHost.exe'
     $markerPath = Join-Path $root 'bootstrap-maintenance-state.json'
-    Assert-BootstrapRegistration $manifest.public_key_sha256 $registration $bootstrap
+    try { Assert-BootstrapRegistration $manifest.public_key_sha256 $registration $bootstrap }
+    catch {
+        $identityMatches = $false
+        if ([string]::Equals($registration.ImagePath, ('"' + $bootstrap + '" --trusted-update-service'), [StringComparison]::OrdinalIgnoreCase) -and
+            [string]::Equals($registration.ObjectName, 'LocalSystem', [StringComparison]::OrdinalIgnoreCase) -and
+            (Test-Path -LiteralPath $bootstrap -PathType Leaf)) {
+            $actualBootstrap = (Get-FileHash -LiteralPath $bootstrap -Algorithm SHA256).Hash
+            $identityMatches = [string]::Equals($registration.NxToolsBootstrapSha256, $actualBootstrap, [StringComparison]::OrdinalIgnoreCase)
+        }
+        if ($identityMatches) {
+            Write-BootstrapDetection 'completed' 'trust_rotation_required'
+            exit 12
+        }
+        throw
+    }
     $script:detectionStage='directory'
     $rootMissing=$false
     try { $null=Get-Item -LiteralPath $root -Force -ErrorAction Stop }
@@ -108,7 +131,7 @@ try {
         $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json
     }
     $script:detectionStage='decision'
-    $decision = Get-BootstrapMigrationDecision $manifest.public_key_sha256 $registration $bootstrap $marker $actual (Test-Path -LiteralPath (Join-Path $root 'bootstrap-maintenance.json'))
+    $decision = Get-BootstrapMigrationDecision $manifest.public_key_sha256 $registration $bootstrap $marker $actual (Test-Path -LiteralPath (Join-Path $root 'bootstrap-maintenance.json')) ([long]$manifest.release_sequence) $MinimumBootstrapMaintenanceSequence
     if ($decision -eq 'required') { Write-BootstrapDetection 'completed' 'migration_required'; exit 10 }
     Write-BootstrapDetection 'completed' 'compatible'
     exit 0

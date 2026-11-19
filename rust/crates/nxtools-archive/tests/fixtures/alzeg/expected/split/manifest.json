@@ -1,0 +1,311 @@
+{
+  "oracle": "CPython struct/raw zlib and format CRC",
+  "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+  "families": [
+    {
+      "first": "split_store.alz",
+      "parts": [
+        "split_store.alz",
+        "split_store.a00",
+        "split_store.a01"
+      ],
+      "physical_sizes": [
+        65536,
+        65536,
+        29128
+      ],
+      "logical_boundaries": [
+        65520,
+        131032,
+        160152
+      ],
+      "members": [
+        {
+          "name": "part0.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "cee0afee",
+          "logical_payload_start": 40,
+          "logical_payload_end": 40040,
+          "physical_boundaries_crossed": 0,
+          "expected": "split_store.alz/0.bin.gz"
+        },
+        {
+          "name": "part1.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "00bd73ad",
+          "logical_payload_start": 40072,
+          "logical_payload_end": 80072,
+          "physical_boundaries_crossed": 1,
+          "expected": "split_store.alz/1.bin.gz"
+        },
+        {
+          "name": "part2.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "18b848e0",
+          "logical_payload_start": 80104,
+          "logical_payload_end": 120104,
+          "physical_boundaries_crossed": 0,
+          "expected": "split_store.alz/2.bin.gz"
+        },
+        {
+          "name": "part3.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "d0333732",
+          "logical_payload_start": 120136,
+          "logical_payload_end": 160136,
+          "physical_boundaries_crossed": 1,
+          "expected": "split_store.alz/3.bin.gz"
+        }
+      ],
+      "bytes": 160000
+    },
+    {
+      "first": "split.alz",
+      "parts": [
+        "split.alz",
+        "split.a00",
+        "split.a01",
+        "split.a02",
+        "split.a03",
+        "split.a04",
+        "split.a05",
+        "split.a06"
+      ],
+      "physical_sizes": [
+        524288,
+        524288,
+        524288,
+        524288,
+        524288,
+        524288,
+        524288,
+        91277
+      ],
+      "logical_boundaries": [
+        524272,
+        1048536,
+        1572800,
+        2097064,
+        2621328,
+        3145592,
+        3669856,
+        3761125
+      ],
+      "members": [
+        {
+          "name": "large.txt",
+          "size": 10485774,
+          "method": 2,
+          "crc32": "dee4d582",
+          "logical_payload_start": 44,
+          "logical_payload_end": 3760075,
+          "physical_boundaries_crossed": 7,
+          "expected": "split.alz/0.bin.gz"
+        },
+        {
+          "name": "repeated.txt",
+          "size": 720,
+          "method": 2,
+          "crc32": "33ab076a",
+          "logical_payload_start": 3760110,
+          "logical_payload_end": 3760164,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/1.bin.gz"
+        },
+        {
+          "name": "뷁테스트.txt",
+          "size": 72,
+          "method": 2,
+          "crc32": "64205eb3",
+          "logical_payload_start": 3760199,
+          "logical_payload_end": 3760268,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/2.bin.gz"
+        },
+        {
+          "name": "한글파일.txt",
+          "size": 56,
+          "method": 2,
+          "crc32": "f223d6ec",
+          "logical_payload_start": 3760303,
+          "logical_payload_end": 3760364,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/3.bin.gz"
+        },
+        {
+          "name": "subdir/nested/deep.txt",
+          "size": 20,
+          "method": 2,
+          "crc32": "aab59c3d",
+          "logical_payload_start": 3760409,
+          "logical_payload_end": 3760431,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/4.bin.gz"
+        },
+        {
+          "name": "subdir/inner.txt",
+          "size": 28,
+          "method": 2,
+          "crc32": "da872f18",
+          "logical_payload_start": 3760470,
+          "logical_payload_end": 3760500,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/5.bin.gz"
+        },
+        {
+          "name": "binary.bin",
+          "size": 1024,
+          "method": 2,
+          "crc32": "b70b4c26",
+          "logical_payload_start": 3760533,
+          "logical_payload_end": 3760813,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/6.bin.gz"
+        },
+        {
+          "name": "empty.txt",
+          "size": 0,
+          "method": 0,
+          "crc32": "00000000",
+          "logical_payload_start": 3760835,
+          "logical_payload_end": 3760835,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/7.bin.gz"
+        },
+        {
+          "name": "euckr_content.txt",
+          "size": 71,
+          "method": 2,
+          "crc32": "3e3e0f3f",
+          "logical_payload_start": 3760875,
+          "logical_payload_end": 3760951,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/8.bin.gz"
+        },
+        {
+          "name": "hello.txt",
+          "size": 131,
+          "method": 2,
+          "crc32": "1b239eb9",
+          "logical_payload_start": 3760983,
+          "logical_payload_end": 3761109,
+          "physical_boundaries_crossed": 0,
+          "expected": "split.alz/9.bin.gz"
+        }
+      ],
+      "bytes": 10487896
+    },
+    {
+      "first": "split_store.vol1.egg",
+      "parts": [
+        "split_store.vol1.egg",
+        "split_store.vol2.egg",
+        "split_store.vol3.egg"
+      ],
+      "physical_sizes": [
+        65536,
+        65536,
+        29327
+      ],
+      "logical_boundaries": [
+        65536,
+        131039,
+        160333
+      ],
+      "members": [
+        {
+          "name": "part0.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "cee0afee",
+          "logical_payload_start": 107,
+          "logical_payload_end": 40107,
+          "physical_boundaries_crossed": 0,
+          "expected": "split_store.alz/0.bin.gz"
+        },
+        {
+          "name": "part1.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "00bd73ad",
+          "logical_payload_start": 40181,
+          "logical_payload_end": 80181,
+          "physical_boundaries_crossed": 1,
+          "expected": "split_store.alz/1.bin.gz"
+        },
+        {
+          "name": "part2.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "18b848e0",
+          "logical_payload_start": 80255,
+          "logical_payload_end": 120255,
+          "physical_boundaries_crossed": 0,
+          "expected": "split_store.alz/2.bin.gz"
+        },
+        {
+          "name": "part3.bin",
+          "size": 40000,
+          "method": 0,
+          "crc32": "d0333732",
+          "logical_payload_start": 120329,
+          "logical_payload_end": 160329,
+          "physical_boundaries_crossed": 1,
+          "expected": "split_store.alz/3.bin.gz"
+        }
+      ],
+      "bytes": 160000
+    },
+    {
+      "first": "split.vol1.egg",
+      "parts": [
+        "split.vol1.egg",
+        "split.vol2.egg",
+        "split.vol3.egg",
+        "split.vol4.egg",
+        "split.vol5.egg",
+        "split.vol6.egg",
+        "split.vol7.egg",
+        "split.vol8.egg"
+      ],
+      "physical_sizes": [
+        524288,
+        524288,
+        524288,
+        524288,
+        524288,
+        524288,
+        524288,
+        90361
+      ],
+      "logical_boundaries": [
+        524288,
+        1048543,
+        1572798,
+        2097053,
+        2621308,
+        3145563,
+        3669818,
+        3760146
+      ],
+      "members": [
+        {
+          "name": "large_10M.txt",
+          "size": 10485774,
+          "method": 1,
+          "crc32": "dee4d582",
+          "logical_payload_start": 111,
+          "logical_payload_end": 3760142,
+          "physical_boundaries_crossed": 7,
+          "expected": "split.alz/0.bin.gz"
+        }
+      ],
+      "bytes": 10485774
+    }
+  ],
+  "cross_format_exact": true
+}

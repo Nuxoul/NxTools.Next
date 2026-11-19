@@ -5,19 +5,24 @@ use nxtools_download::{
     DownloadStatus,
 };
 use nxtools_ipc::{
-    LocalPipeConnection, accept_current_user_pipe, connect_local_pipe, read_bounded_sync_frame,
+    LocalPipeConnection, PipeRetirement, accept_current_user_pipe, connect_local_pipe,
+    read_bounded_sync_frame,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::{
     Arc, Mutex,
-    atomic::{AtomicU8, AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering},
 };
+use std::thread::JoinHandle;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use thiserror::Error;
 
 pub const DOWNLOAD_PIPE_NAME: &str = r"\\.\pipe\nxtools-next-download-v1";
-pub const DOWNLOAD_IPC_PROTOCOL_VERSION: u16 = 2;
+pub const DOWNLOAD_IPC_PROTOCOL_VERSION: u16 = 6;
+const DOWNLOAD_CLIENT_WRITE_TIMEOUT: Duration = Duration::from_secs(2);
+const DOWNLOAD_STOP_WAKE_TIMEOUT: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -86,6 +91,20 @@ pub struct DownloadHostActivity {
     last_activity_unix_ms: Arc<AtomicU64>,
     readiness: Arc<AtomicU8>,
     last_failure_code: Arc<Mutex<Option<String>>>,
+    stop: Arc<AtomicBool>,
+    lifecycle: Arc<Mutex<DownloadHostLifecycle>>,
+}
+
+#[derive(Default)]
+struct DownloadHostLifecycle {
+    next_client_id: u64,
+    clients: HashMap<u64, DownloadClientControl>,
+}
+
+#[derive(Clone)]
+struct DownloadClientControl {
+    retirement: PipeRetirement,
+    subscription: Option<async_channel::Receiver<DownloadEventEnvelope>>,
 }
 
 impl Default for DownloadHostActivity {
@@ -97,6 +116,8 @@ impl Default for DownloadHostActivity {
                 DownloadHostReadiness::Starting,
             ))),
             last_failure_code: Arc::new(Mutex::new(None)),
+            stop: Arc::new(AtomicBool::new(false)),
+            lifecycle: Arc::new(Mutex::new(DownloadHostLifecycle::default())),
         }
     }
 }
@@ -115,17 +136,27 @@ impl DownloadHostActivity {
     }
 
     pub fn set_ready(&self) {
-        self.readiness.store(
+        let _ = self.readiness.compare_exchange(
+            readiness_code(DownloadHostReadiness::Starting),
             readiness_code(DownloadHostReadiness::Ready),
-            Ordering::Release,
+            Ordering::AcqRel,
+            Ordering::Acquire,
         );
     }
 
     pub fn begin_draining(&self) {
-        self.readiness.store(
-            readiness_code(DownloadHostReadiness::Draining),
-            Ordering::Release,
-        );
+        let _ =
+            self.readiness
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+                    match readiness_from_code(current) {
+                        DownloadHostReadiness::Starting | DownloadHostReadiness::Ready => {
+                            Some(readiness_code(DownloadHostReadiness::Draining))
+                        }
+                        DownloadHostReadiness::Draining
+                        | DownloadHostReadiness::Stopped
+                        | DownloadHostReadiness::Failed => None,
+                    }
+                });
     }
 
     pub fn mark_stopped(&self) {
@@ -143,6 +174,87 @@ impl DownloadHostActivity {
             readiness_code(DownloadHostReadiness::Failed),
             Ordering::Release,
         );
+    }
+
+    fn stop_requested(&self) -> bool {
+        self.stop.load(Ordering::Acquire)
+    }
+
+    fn request_stop(&self) -> Result<()> {
+        let controls = {
+            let lifecycle = self
+                .lifecycle
+                .lock()
+                .map_err(|_| anyhow::anyhow!("download host lifecycle lock is poisoned"))?;
+            self.stop.store(true, Ordering::Release);
+            lifecycle.clients.values().cloned().collect::<Vec<_>>()
+        };
+        for control in controls {
+            if let Some(subscription) = control.subscription {
+                subscription.close();
+            }
+            control.retirement.retire();
+        }
+        Ok(())
+    }
+
+    fn register_client(&self, retirement: PipeRetirement) -> Result<Option<RegisteredClient>> {
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .map_err(|_| anyhow::anyhow!("download host lifecycle lock is poisoned"))?;
+        if self.stop.load(Ordering::Acquire) {
+            drop(lifecycle);
+            retirement.retire();
+            return Ok(None);
+        }
+        let client_id = lifecycle.next_client_id;
+        lifecycle.next_client_id = lifecycle.next_client_id.wrapping_add(1);
+        lifecycle.clients.insert(
+            client_id,
+            DownloadClientControl {
+                retirement,
+                subscription: None,
+            },
+        );
+        self.clients.fetch_add(1, Ordering::AcqRel);
+        self.touch();
+        Ok(Some(RegisteredClient {
+            activity: self.clone(),
+            client_id,
+        }))
+    }
+
+    fn register_subscription(
+        &self,
+        client_id: u64,
+        subscription: &async_channel::Receiver<DownloadEventEnvelope>,
+    ) -> Result<bool> {
+        let mut lifecycle = self
+            .lifecycle
+            .lock()
+            .map_err(|_| anyhow::anyhow!("download host lifecycle lock is poisoned"))?;
+        if self.stop.load(Ordering::Acquire) {
+            subscription.close();
+            return Ok(false);
+        }
+        let Some(control) = lifecycle.clients.get_mut(&client_id) else {
+            subscription.close();
+            return Ok(false);
+        };
+        control.subscription = Some(subscription.clone());
+        Ok(true)
+    }
+
+    fn remove_client(&self, client_id: u64) {
+        let removed = match self.lifecycle.lock() {
+            Ok(mut lifecycle) => lifecycle.clients.remove(&client_id).is_some(),
+            Err(poisoned) => poisoned.into_inner().clients.remove(&client_id).is_some(),
+        };
+        if removed {
+            self.clients.fetch_sub(1, Ordering::AcqRel);
+            self.touch();
+        }
     }
 
     fn touch(&self) {
@@ -272,16 +384,74 @@ impl DownloadIpcClient {
     }
 }
 
+pub fn stop_download_host(pipe_name: &str, activity: &DownloadHostActivity) -> Result<()> {
+    activity.request_stop()?;
+    if matches!(
+        activity.readiness(),
+        DownloadHostReadiness::Stopped | DownloadHostReadiness::Failed
+    ) {
+        return Ok(());
+    }
+    match connect_local_pipe(pipe_name, DOWNLOAD_STOP_WAKE_TIMEOUT) {
+        Ok(connection) => {
+            drop(connection);
+            Ok(())
+        }
+        Err(_)
+            if matches!(
+                activity.readiness(),
+                DownloadHostReadiness::Stopped | DownloadHostReadiness::Failed
+            ) =>
+        {
+            Ok(())
+        }
+        Err(error) => Err(error).context("failed to wake the download IPC accept loop"),
+    }
+}
+
 pub fn run_download_host(
     pipe_name: &str,
     engine: DownloadEngine,
     activity: DownloadHostActivity,
 ) -> Result<()> {
     activity.touch();
+    if activity.stop_requested() {
+        activity.mark_stopped();
+        return Ok(());
+    }
     activity.set_ready();
+    let mut client_threads = Vec::new();
+    let accept_result =
+        run_download_accept_loop(pipe_name, &engine, &activity, &mut client_threads);
+    let stop_result = activity.request_stop();
+    let join_result = join_client_threads(&mut client_threads, &activity);
+    if let Err(error) = accept_result {
+        if activity.readiness() != DownloadHostReadiness::Failed {
+            activity.mark_failed("ipc_server_stopped");
+        }
+        let _ = stop_result;
+        let _ = join_result;
+        return Err(error);
+    }
+    stop_result?;
+    join_result?;
+    activity.mark_stopped();
+    Ok(())
+}
+
+fn run_download_accept_loop(
+    pipe_name: &str,
+    engine: &DownloadEngine,
+    activity: &DownloadHostActivity,
+    client_threads: &mut Vec<JoinHandle<()>>,
+) -> Result<()> {
     loop {
+        reap_finished_client_threads(client_threads, activity)?;
+        if activity.stop_requested() {
+            return Ok(());
+        }
         let connection = match accept_current_user_pipe(pipe_name)
-            .with_context(|| format!("failed to accept download client on {pipe_name}"))
+            .context("failed to accept a download IPC client")
         {
             Ok(connection) => connection,
             Err(error) => {
@@ -289,18 +459,71 @@ pub fn run_download_host(
                 return Err(error);
             }
         };
+        let (reader, writer, retirement) = connection
+            .into_retiring(
+                Arc::new(AtomicBool::new(false)),
+                DOWNLOAD_CLIENT_WRITE_TIMEOUT,
+            )
+            .context("failed to prepare a retiring download IPC client")?;
+        let Some(client) = activity.register_client(retirement)? else {
+            return Ok(());
+        };
+        let client_id = client.client_id;
         let engine = engine.clone();
-        let activity = activity.clone();
-        std::thread::Builder::new()
+        let client_activity = activity.clone();
+        let thread = std::thread::Builder::new()
             .name("download-ipc-client".into())
             .spawn(move || {
-                let _client = ConnectedClient::new(activity.clone());
-                if let Err(error) = handle_client(connection, engine, &activity) {
-                    tracing::warn!(%error, "download IPC client disconnected with an error");
+                let _client = client;
+                if handle_client(reader, writer, engine, &client_activity, client_id).is_err()
+                    && !client_activity.stop_requested()
+                {
+                    tracing::warn!(
+                        event = "download.ipc.client_failed",
+                        "download IPC client ended with a transport error"
+                    );
                 }
             })
-            .context("failed to start download IPC client thread")?;
+            .map_err(|error| {
+                activity.mark_failed("ipc_client_spawn_failed");
+                anyhow::Error::new(error).context("failed to start download IPC client thread")
+            })?;
+        client_threads.push(thread);
     }
+}
+
+fn reap_finished_client_threads(
+    client_threads: &mut Vec<JoinHandle<()>>,
+    activity: &DownloadHostActivity,
+) -> Result<()> {
+    let mut index = 0;
+    while index < client_threads.len() {
+        if client_threads[index].is_finished() {
+            let thread = client_threads.swap_remove(index);
+            if thread.join().is_err() {
+                activity.mark_failed("ipc_client_panicked");
+                bail!("download IPC client thread panicked");
+            }
+        } else {
+            index += 1;
+        }
+    }
+    Ok(())
+}
+
+fn join_client_threads(
+    client_threads: &mut Vec<JoinHandle<()>>,
+    activity: &DownloadHostActivity,
+) -> Result<()> {
+    let mut panicked = false;
+    for thread in client_threads.drain(..) {
+        panicked |= thread.join().is_err();
+    }
+    if panicked {
+        activity.mark_failed("ipc_client_panicked");
+        bail!("one or more download IPC client threads panicked");
+    }
+    Ok(())
 }
 
 fn is_mutating_command(command: &DownloadCommand) -> bool {
@@ -312,9 +535,13 @@ fn is_mutating_command(command: &DownloadCommand) -> bool {
             | DownloadCommand::BrowserSubmit { .. }
             | DownloadCommand::BrowserBatchSubmit { .. }
             | DownloadCommand::BrowserOpenDialog { .. }
+            | DownloadCommand::BrowserPrepareHandoff { .. }
+            | DownloadCommand::BrowserAcceptHandoff { .. }
+            | DownloadCommand::BrowserCommitHandoff { .. }
             | DownloadCommand::BrowserOpenBlobDialog { .. }
             | DownloadCommand::BrowserImportBlob { .. }
             | DownloadCommand::BrowserDiscardBlob { .. }
+            | DownloadCommand::ReplacePausedUrl(..)
             | DownloadCommand::Task { .. }
             | DownloadCommand::Batch { .. }
             | DownloadCommand::Queue { .. }
@@ -323,18 +550,20 @@ fn is_mutating_command(command: &DownloadCommand) -> bool {
 }
 
 fn handle_client(
-    mut connection: LocalPipeConnection,
+    mut reader: impl BufRead,
+    mut writer: impl Write,
     engine: DownloadEngine,
     activity: &DownloadHostActivity,
+    client_id: u64,
 ) -> Result<()> {
-    let hello = read_frame(&mut connection.reader)?
-        .context("download IPC client disconnected before handshake")?;
+    let hello =
+        read_frame(&mut reader)?.context("download IPC client disconnected before handshake")?;
     let DownloadIpcFrame::Hello {
         protocol_version, ..
     } = hello
     else {
         write_frame(
-            &mut connection.writer,
+            &mut writer,
             &DownloadIpcFrame::Error {
                 code: DownloadIpcErrorCode::InvalidFrame,
                 message: "the first frame must be hello".into(),
@@ -344,7 +573,7 @@ fn handle_client(
     };
     if protocol_version != DOWNLOAD_IPC_PROTOCOL_VERSION {
         write_frame(
-            &mut connection.writer,
+            &mut writer,
             &DownloadIpcFrame::Error {
                 code: DownloadIpcErrorCode::ProtocolIncompatible,
                 message: format!(
@@ -355,7 +584,7 @@ fn handle_client(
         return Ok(());
     }
     write_frame(
-        &mut connection.writer,
+        &mut writer,
         &DownloadIpcFrame::HelloAck {
             protocol_version: DOWNLOAD_IPC_PROTOCOL_VERSION,
             server_version: env!("CARGO_PKG_VERSION").into(),
@@ -363,11 +592,11 @@ fn handle_client(
         },
     )?;
 
-    while let Some(frame) = read_frame(&mut connection.reader)? {
+    while let Some(frame) = read_frame(&mut reader)? {
         activity.touch();
         let DownloadIpcFrame::Command(command) = frame else {
             write_frame(
-                &mut connection.writer,
+                &mut writer,
                 &DownloadIpcFrame::Error {
                     code: DownloadIpcErrorCode::InvalidFrame,
                     message: "expected a download command".into(),
@@ -390,7 +619,7 @@ fn handle_client(
                     },
                 },
             };
-            write_frame(&mut connection.writer, &DownloadIpcFrame::Result(result))?;
+            write_frame(&mut writer, &DownloadIpcFrame::Result(result))?;
             continue;
         }
         let subscription = if matches!(command.command, DownloadCommand::Subscribe { .. }) {
@@ -405,11 +634,14 @@ fn handle_client(
                 nxtools_download::DownloadCommandOutcome::Accepted { .. }
                     | nxtools_download::DownloadCommandOutcome::Subscribed { .. }
             );
-        write_frame(&mut connection.writer, &DownloadIpcFrame::Result(result))?;
+        write_frame(&mut writer, &DownloadIpcFrame::Result(result))?;
         if should_stream && let Some(events) = subscription {
+            if !activity.register_subscription(client_id, &events)? {
+                return Ok(());
+            }
             while let Ok(event) = events.recv_blocking() {
                 activity.touch();
-                write_frame(&mut connection.writer, &DownloadIpcFrame::Event(event))?;
+                write_frame(&mut writer, &DownloadIpcFrame::Event(event))?;
             }
             return Ok(());
         }
@@ -437,22 +669,14 @@ fn read_frame(reader: &mut impl BufRead) -> Result<Option<DownloadIpcFrame>> {
         .transpose()
 }
 
-struct ConnectedClient {
+struct RegisteredClient {
     activity: DownloadHostActivity,
+    client_id: u64,
 }
 
-impl ConnectedClient {
-    fn new(activity: DownloadHostActivity) -> Self {
-        activity.clients.fetch_add(1, Ordering::AcqRel);
-        activity.touch();
-        Self { activity }
-    }
-}
-
-impl Drop for ConnectedClient {
+impl Drop for RegisteredClient {
     fn drop(&mut self) {
-        self.activity.clients.fetch_sub(1, Ordering::AcqRel);
-        self.activity.touch();
+        self.activity.remove_client(self.client_id);
     }
 }
 
@@ -567,7 +791,7 @@ mod tests {
         write_frame(
             &mut connection.writer,
             &DownloadIpcFrame::Hello {
-                protocol_version: 1,
+                protocol_version: DOWNLOAD_IPC_PROTOCOL_VERSION - 1,
                 client_version: "previous".into(),
                 engine_generation: None,
                 engine_sequence: None,
@@ -603,6 +827,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: None,
             speed_limit_bytes_per_second: None,
@@ -673,6 +898,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: None,
             speed_limit_bytes_per_second: None,
@@ -774,6 +1000,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: None,
                     speed_limit_bytes_per_second: None,
@@ -892,6 +1119,83 @@ mod tests {
             DownloadCommandOutcome::Rejected { fault }
                 if fault.code == DownloadFaultCode::Unavailable && fault.retryable
         ));
+        let handoff_id = uuid::Uuid::new_v4();
+        for command in [
+            DownloadCommand::BrowserPrepareHandoff {
+                handoff_id,
+                request: sample_ipc_request(),
+                open_dialog: false,
+                mode: nxtools_download::DownloadSubmitMode::StartNow,
+            },
+            DownloadCommand::BrowserAcceptHandoff {
+                handoff_id,
+                request: sample_ipc_request(),
+                mode: nxtools_download::DownloadSubmitMode::StartNow,
+                resolution: nxtools_download::DownloadResolutionOptions::default(),
+            },
+            DownloadCommand::BrowserCommitHandoff {
+                handoff_id,
+                task_id: nxtools_download::DownloadTaskId::new(),
+            },
+        ] {
+            assert!(is_mutating_command(&command));
+            let result = client
+                .command(command_envelope(command))
+                .expect("controlled mutation refused while draining");
+            assert!(
+                matches!(result.outcome, DownloadCommandOutcome::Rejected { fault }
+                if fault.code == DownloadFaultCode::Unavailable)
+            );
+        }
+        for command in [
+            DownloadCommand::BrowserAbortHandoff { handoff_id },
+            DownloadCommand::BrowserHandoffStatus { handoff_id },
+        ] {
+            assert!(!is_mutating_command(&command));
+            let result = client
+                .command(command_envelope(command))
+                .expect("controlled cleanup while draining");
+            assert!(
+                matches!(result.outcome, DownloadCommandOutcome::BrowserHandoff {
+                handoff_id: id, state: nxtools_download::BrowserHandoffState::Aborted, ..
+            } if id == handoff_id)
+            );
+        }
+        let task_id = nxtools_download::DownloadTaskId::new();
+        let operation_id = uuid::Uuid::new_v4();
+        let replacement = command_envelope(DownloadCommand::ReplacePausedUrl(
+            nxtools_download::DownloadPausedUrlReplacement {
+                task_id,
+                operation_id,
+                generation: client
+                    .host_snapshot
+                    .as_ref()
+                    .expect("current hello snapshot")
+                    .engine_generation,
+                expected_revision: 0,
+                expected_source_url: "https://example.test/old".into(),
+                source_url: "https://example.test/new".into(),
+            },
+        ));
+        let correlation = replacement.request_id;
+        let result = client.command(replacement).expect("draining relink result");
+        assert_eq!(result.request_id, correlation);
+        assert!(
+            matches!(result.outcome, DownloadCommandOutcome::Rejected { fault } if fault.code == DownloadFaultCode::Unavailable)
+        );
+        let cancel = command_envelope(DownloadCommand::CancelPausedUrlReplacement {
+            task_id,
+            operation_id,
+        });
+        assert!(!is_mutating_command(&cancel.command));
+        let correlation = cancel.request_id;
+        let result = client
+            .command(cancel)
+            .expect("draining candidate cancel result");
+        assert_eq!(result.request_id, correlation);
+        assert!(
+            matches!(result.outcome, DownloadCommandOutcome::Rejected { fault } if fault.code == DownloadFaultCode::InvalidState)
+        );
 
         let snapshot = client
             .command(command_envelope(DownloadCommand::Snapshot {
@@ -913,6 +1217,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: None,
             speed_limit_bytes_per_second: None,
@@ -926,3 +1231,9 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod paused_url_tests;
+
+#[cfg(test)]
+mod completion_tests;

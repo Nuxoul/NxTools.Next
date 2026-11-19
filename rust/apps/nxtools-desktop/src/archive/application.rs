@@ -1532,23 +1532,19 @@ impl ArchiveApplication {
                 })
                 .map(|slot| slot.view.clone());
             if let Some(view) = matching_drag {
+                let owner = cx.entity().downgrade();
                 cx.defer(move |cx| {
                     let located = view
                         .update(cx, |view, cx| view.drag_result(correlation_id, &result, cx))
                         .ok()
                         .flatten();
                     cx.defer(move |cx| {
-                        let _ = cx
-                            .try_global::<ArchiveGlobal>()
-                            .map(|global| global.0.clone())
-                            .map(|owner| {
-                                owner.update(cx, |app, cx| {
-                                    if let Some(drop) = located {
-                                        app.extract_dropped(drop, cx);
-                                    }
-                                    app.flush_job_locations(cx)
-                                })
-                            });
+                        let _ = owner.update(cx, |app, cx| {
+                            if let Some(drop) = located {
+                                app.extract_dropped(drop, cx);
+                            }
+                            app.flush_job_locations(cx)
+                        });
                     });
                 });
                 return;

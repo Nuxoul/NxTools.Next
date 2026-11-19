@@ -50,6 +50,25 @@ impl ManualFeedback {
                     }),
             );
         }
+        if run.is_some_and(|run| self.owner.read(cx).can_open_settings_for_run(run)) {
+            let owner = self.owner.downgrade();
+            let id = self.id;
+            actions = actions.child(
+                Button::new("extension-feedback-open-settings")
+                    .debug_selector(|| "extension-feedback-open-settings".into())
+                    .label("打开扩展设置")
+                    .outline()
+                    .with_size(Size::Medium)
+                    .on_click(move |_, window, cx| {
+                        let source = window.window_handle();
+                        let owner = owner.clone();
+                        cx.defer(move |cx| {
+                            let _ = owner
+                                .update(cx, |app, cx| app.request_settings_for_run(id, source, cx));
+                        });
+                    }),
+            );
+        }
         actions = actions.child(div().flex_none().w_auto().child(DialogClose::new().trigger(
             |button| {
                 button

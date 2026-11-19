@@ -38,7 +38,8 @@ internal sealed record ConfigureClipboardCommand(
     IReadOnlyList<string> ExcludedProcesses,
     ulong MaxTextBytes = 8UL * 1024 * 1024,
     ulong MaxImageBytes = 64UL * 1024 * 1024,
-    ulong MaxImagePixels = 100_000_000);
+    ulong MaxImagePixels = 100_000_000,
+    bool SuppressInFullscreen = true);
 internal sealed record SetClipboardCapturePausedCommand(bool Paused);
 internal sealed record SetClipboardHotKeyRecordingCommand(bool Recording);
 internal sealed record ConfigureQuickLaunchCommand(
@@ -114,7 +115,10 @@ internal sealed record ShowContextMenuCommand(long SourceWindowHandle, uint Sour
 internal sealed record CancelContextMenuCommand(Guid SessionId);
 internal sealed record OpenShellTargetCommand(string Target, string Action);
 internal sealed record OpenDefaultAppsSettingsCommand;
+internal enum MarkdownAssociationAction { Query, Register, Unregister, OpenDefaults }
+internal sealed record MarkdownAssociationCommand(MarkdownAssociationAction Action);
 internal sealed record ShutdownSystemCommand(ushort DelaySeconds);
+internal sealed record SuspendSystemCommand(bool Hibernate);
 internal sealed record ExportBrowserExtensionCommand(string Format, string Destination);
 internal sealed record PickBrowserExtensionExportPathCommand(string Format, long SourceWindowHandle, uint SourceProcessId);
 internal sealed record LaunchProcessCommand(
@@ -147,6 +151,10 @@ internal sealed record PickClipboardArchivePathCommand(string Mode, string Sugge
 internal sealed record PickClipboardStorageDirectoryCommand(string CurrentDirectory, long SourceWindowHandle, uint SourceProcessId);
 internal sealed record PickDirectoryCommand(string CurrentDirectory, string Title, long SourceWindowHandle, uint SourceProcessId);
 internal sealed record PickProgramCommand(string CurrentPath, long SourceWindowHandle, uint SourceProcessId);
+internal sealed record PickMarkdownDocumentCommand(ulong SourceWindowHandle, uint SourceProcessId);
+internal enum MarkdownExportFormat { Html, Pdf }
+internal sealed record PickMarkdownExportCommand(ulong SourceWindowHandle, uint SourceProcessId, MarkdownExportFormat Format, string SuggestedName);
+internal sealed record PrintMarkdownPdfCommand(string HtmlPath, string OutputPath);
 internal sealed record PickExtensionManifestCommand(string CurrentPath, long SourceWindowHandle, uint SourceProcessId);
 internal sealed record PickExtensionRuntimeCommand(string Program, string CurrentPath, long SourceWindowHandle, uint SourceProcessId);
 internal sealed record PickExtensionSettingPathCommand(long SourceWindowHandle, uint SourceProcessId, string Kind, string CurrentPath);
@@ -481,8 +489,29 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
         return new();
     }
 
+    public static MarkdownAssociationCommand ParseMarkdownAssociation(ProtocolEnvelope envelope)
+    {
+        if (envelope.Type != "platform_command" || envelope.Payload.ValueKind != JsonValueKind.Object ||
+            !envelope.Payload.TryGetProperty("command", out var command) || command.ValueKind != JsonValueKind.String ||
+            command.GetString() != "markdown_association" || envelope.Payload.EnumerateObject().Count() != 2 ||
+            !envelope.Payload.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object ||
+            data.EnumerateObject().Count() != 1 || !data.TryGetProperty("action", out var action) || action.ValueKind != JsonValueKind.String)
+            throw new InvalidDataException("Markdown association requires its fixed command and one action.");
+        return new(action.GetString() switch
+        {
+            "query" => MarkdownAssociationAction.Query,
+            "register" => MarkdownAssociationAction.Register,
+            "unregister" => MarkdownAssociationAction.Unregister,
+            "open_defaults" => MarkdownAssociationAction.OpenDefaults,
+            _ => throw new InvalidDataException("Invalid Markdown association action."),
+        });
+    }
+
     public static ShutdownSystemCommand ParseShutdownSystem(ProtocolEnvelope envelope) =>
         Parse<ShutdownSystemCommand>(envelope, "shutdown_system", "Shutdown command payload was empty.");
+
+    public static SuspendSystemCommand ParseSuspendSystem(ProtocolEnvelope envelope) =>
+        Parse<SuspendSystemCommand>(envelope, "suspend_system", "Suspend command payload was empty.");
 
     public static ExportBrowserExtensionCommand ParseExportBrowserExtension(ProtocolEnvelope envelope)
     {
@@ -560,6 +589,28 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
 
     public static PickProgramCommand ParsePickProgram(ProtocolEnvelope envelope) =>
         ParsePicker<PickProgramCommand>(envelope, "pick_program");
+
+    public static PickMarkdownDocumentCommand ParsePickMarkdownDocument(ProtocolEnvelope envelope) =>
+        ParsePicker<PickMarkdownDocumentCommand>(envelope, "pick_markdown_document");
+
+    public static PickMarkdownExportCommand ParsePickMarkdownExport(ProtocolEnvelope envelope)
+    {
+        var owner = ParsePicker<PickMarkdownDocumentCommand>(envelope, "pick_markdown_export");
+        var data = envelope.Payload.GetProperty("data");
+        var format = data.GetProperty("format").GetString() switch
+        {
+            "html" => MarkdownExportFormat.Html,
+            "pdf" => MarkdownExportFormat.Pdf,
+            _ => throw new InvalidDataException("Invalid Markdown export format.")
+        };
+        var suggested = data.GetProperty("suggested_name").GetString();
+        if (suggested is null || suggested.Length > 255 || suggested.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0)
+            throw new InvalidDataException("Invalid Markdown export name.");
+        return new(owner.SourceWindowHandle, owner.SourceProcessId, format, suggested);
+    }
+
+    public static PrintMarkdownPdfCommand ParsePrintMarkdownPdf(ProtocolEnvelope envelope) =>
+        Parse<PrintMarkdownPdfCommand>(envelope, "print_markdown_pdf", "Invalid Markdown PDF payload.");
 
     public static PickExtensionManifestCommand ParsePickExtensionManifest(ProtocolEnvelope envelope)
     {

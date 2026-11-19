@@ -1,0 +1,9 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Exact effects-reviewed checks, one Cargo lane and evidence limits"}
+{"file":".trellis/tasks/11-10-reference-b4-task-operation-visibility/prd.md","reason":"All four B4 acceptance requirements and stop boundary"}
+{"file":".trellis/tasks/11-10-reference-b4-task-operation-visibility/design.md","reason":"Original owners and retained lifecycle/transaction invariants"}
+{"file":".trellis/spec/nxtools-core/backend/database-guidelines.md","reason":"Effective default Header and original locked changed-leaf transaction"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Paused replacement lease/identity/commit and actual written-range projection"}
+{"file":".trellis/spec/nxtools-download-ipc/backend/quality-guidelines.md","reason":"Matched command11/Hello4, required attempt revision, correlation and physical candidate cleanup during draining"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Official controls, deferred window/input ownership and passive real coverage"}
+{"file":".trellis/tasks/11-10-reference-b4-task-operation-visibility/outcomes.md","reason":"Final commands, nonzero counts, preservation, lint attribution and resource exit"}
+{"file":".trellis/tasks/11-10-reference-b4-task-operation-visibility/acceptance-repair.md","reason":"B4-01/B4-02 RED/GREEN, actual held pipe/native-close witnesses and scoped repair handoff"}

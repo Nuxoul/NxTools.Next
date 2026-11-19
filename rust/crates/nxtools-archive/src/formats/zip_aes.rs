@@ -63,13 +63,22 @@ pub(super) fn descriptor(
     }))
 }
 
-enum Cipher {
+pub(crate) enum Cipher {
     A128(aes::Aes128),
     A192(aes::Aes192),
     A256(aes::Aes256),
 }
 impl Cipher {
-    fn stream_block(&self, counter: u128) -> [u8; 16] {
+    pub(crate) fn new(strength: u8, key: &[u8]) -> Result<Self> {
+        match strength {
+            1 => aes::Aes128::new_from_slice(key).map(Self::A128),
+            2 => aes::Aes192::new_from_slice(key).map(Self::A192),
+            3 => aes::Aes256::new_from_slice(key).map(Self::A256),
+            _ => return Err(ArchiveError::UnsupportedEncryption),
+        }
+        .map_err(|_| ArchiveError::UnsupportedEncryption)
+    }
+    pub(crate) fn stream_block(&self, counter: u128) -> [u8; 16] {
         let mut block = counter.to_le_bytes().into();
         match self {
             Self::A128(cipher) => cipher.encrypt_block(&mut block),
@@ -148,21 +157,7 @@ impl<R: Read + Seek> Aes<R> {
         mac.verify_truncated_left(&tag)
             .map_err(|_| ArchiveError::AuthenticationOrDataError)?;
         control.checkpoint()?;
-        let cipher = match descriptor.strength {
-            1 => Cipher::A128(
-                aes::Aes128::new_from_slice(&derived[..key_length])
-                    .map_err(|_| ArchiveError::UnsupportedEncryption)?,
-            ),
-            2 => Cipher::A192(
-                aes::Aes192::new_from_slice(&derived[..key_length])
-                    .map_err(|_| ArchiveError::UnsupportedEncryption)?,
-            ),
-            3 => Cipher::A256(
-                aes::Aes256::new_from_slice(&derived[..key_length])
-                    .map_err(|_| ArchiveError::UnsupportedEncryption)?,
-            ),
-            _ => return Err(ArchiveError::UnsupportedEncryption),
-        };
+        let cipher = Cipher::new(descriptor.strength, &derived[..key_length])?;
         input.seek(SeekFrom::Start(start))?;
         Ok(Self {
             input,

@@ -3,6 +3,10 @@ use crate::extensions::ExtensionApplication;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::form::{Field, Form};
 use gpui_kit::component::setting::{SettingGroup, SettingItem, SettingPage, Settings};
+use gpui_kit::component::{
+    IndexPath, WindowExt,
+    select::{SelectEvent, SelectState},
+};
 #[path = "extensions_settings.rs"]
 mod extensions_settings;
 use extensions_settings::{ChainDraft, PackageSettingsDraft};
@@ -36,6 +40,11 @@ pub(crate) struct ExtensionManagerView {
     import_dialog: Option<crate::extensions::ImportCandidateIdentity>,
     workspace_scroll: gpui_kit::ScrollHandle,
     _search_subscription: Subscription,
+    workspace_tab: workspace::WorkspaceTab,
+    location: Entity<SelectState<Vec<String>>>,
+    _location_subscription: Subscription,
+    activity_failed_only: bool,
+    detail_sheet_open: bool,
     aliases: Entity<InputState>,
     alias_target: Option<(String, String)>,
     selected_package: Option<String>,
@@ -66,6 +75,21 @@ impl ExtensionManagerView {
         let search =
             cx.new(|cx| InputState::new(window, cx).placeholder("搜索扩展名称、功能或关键词"));
         let search_subscription = cx.observe(&search, |_, _, cx| cx.notify());
+        let location = cx.new(|cx| {
+            SelectState::new(
+                workspace::LOCATIONS
+                    .iter()
+                    .map(|(label, _)| (*label).to_owned())
+                    .collect::<Vec<_>>(),
+                Some(IndexPath::default().row(0)),
+                window,
+                cx,
+            )
+        });
+        let location_subscription = cx
+            .subscribe(&location, |_, _, _: &SelectEvent<Vec<String>>, cx| {
+                cx.notify()
+            });
         let aliases = cx.new(|cx| InputState::new(window, cx).placeholder("关键词，以空格分隔"));
         let runtime_path = cx
             .new(|cx| InputState::new(window, cx).placeholder("已安装解释器或包内 EXE 的完整路径"));
@@ -86,6 +110,11 @@ impl ExtensionManagerView {
             import_dialog: None,
             workspace_scroll: Default::default(),
             _search_subscription: search_subscription,
+            workspace_tab: workspace::WorkspaceTab::Installed,
+            location,
+            _location_subscription: location_subscription,
+            activity_failed_only: false,
+            detail_sheet_open: false,
             aliases,
             alias_target: None,
             selected_package: None,
@@ -114,6 +143,31 @@ impl ExtensionManagerView {
         }
     }
 
+    pub(super) fn open_report_settings(
+        &mut self,
+        id: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let state = self.application.read(cx);
+        if state.busy
+            || state.preview.is_some()
+            || self.environment.is_some()
+            || self.chain_draft.is_some()
+            || !state
+                .packages
+                .packages
+                .iter()
+                .any(|package| package.manifest.id == id && !package.manifest.settings.is_empty())
+        {
+            return false;
+        }
+        self.storage_open = false;
+        self.open_settings(id, window, cx);
+        cx.notify();
+        true
+    }
+
     fn open_settings(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
         self.open_package(id.clone());
         self.detail_initial_page = 2;
@@ -131,6 +185,7 @@ impl ExtensionManagerView {
         {
             self.settings_draft = Some(PackageSettingsDraft::new(&package, window, cx));
         }
+        self.reconcile_detail_sheet(window, cx);
     }
     fn open_package(&mut self, id: String) {
         if let Some(draft) = self.settings_draft.take() {
@@ -142,20 +197,85 @@ impl ExtensionManagerView {
         self.detail_initial_page = 0;
         self.draft_error = None;
     }
+    fn should_show_detail(&self, cx: &App) -> bool {
+        !self.storage_open
+            && self.environment.is_none()
+            && self.chain_draft.is_none()
+            && self.selected_package.as_deref().is_some_and(|id| {
+                self.application
+                    .read(cx)
+                    .packages
+                    .packages
+                    .iter()
+                    .any(|p| p.manifest.id == id)
+            })
+    }
+
+    fn reconcile_detail_sheet(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let show = self.should_show_detail(cx);
+        if show == self.detail_sheet_open {
+            return;
+        }
+        self.detail_sheet_open = show;
+        let view = cx.entity().downgrade();
+        window.defer(cx, move |window, cx| {
+            let Some(view_state) = view.upgrade() else {
+                return;
+            };
+            if view_state.read(cx).detail_sheet_open != show
+                || view_state.read(cx).should_show_detail(cx) != show
+            {
+                return;
+            }
+            if !show {
+                window.close_sheet(cx);
+                return;
+            }
+            window.open_sheet(cx, move |sheet, window, cx| {
+                let Some(view_state) = view.upgrade() else {
+                    return sheet;
+                };
+                let Some((title, content, footer)) =
+                    view_state.update(cx, |view, cx| view.detail_content(cx))
+                else {
+                    return sheet;
+                };
+                let on_close = view.clone();
+                sheet
+                    .size(window.viewport_size().width.min(px(420.0)))
+                    .resizable(false)
+                    .overlay_closable(false)
+                    .title(div().min_w_0().line_clamp(1).child(title))
+                    .child(content)
+                    .footer(footer)
+                    .on_close(move |_, _, cx| {
+                        let on_close = on_close.clone();
+                        cx.defer(move |cx| {
+                            let _ = on_close.update(cx, |view, cx| {
+                                view.detail_sheet_open = false;
+                                view.selected_package = None;
+                                cx.notify();
+                            });
+                        });
+                    })
+            });
+        });
+    }
 }
 
 impl Render for ExtensionManagerView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.reconcile_import_dialog(window, cx);
         self.reconcile_trust_dialog(window, cx);
+        self.reconcile_detail_sheet(window, cx);
         if self.storage_open {
             return self.render_storage(cx);
         }
         if self.environment.is_some() {
             return self.render_environment(cx);
         }
-        if let Some(editor) = self.render_w9_editor(window, cx) {
-            return editor;
+        if self.chain_draft.is_some() {
+            return self.render_chain(window, cx);
         }
         self.render_workspace(window, cx)
     }
@@ -205,6 +325,31 @@ fn write_zip(path: &std::path::Path, manifest: &[u8]) {
 }
 
 #[cfg(test)]
+fn click_management(surface: &mut gpui_kit::VisualTestContext, label: &str, keyboard: bool) {
+    surface.update(|window, cx| window.draw(cx).clear(cx));
+    let trigger = surface
+        .debug_bounds("extension-management")
+        .expect("management trigger");
+    surface.simulate_click(trigger.center(), gpui_kit::Modifiers::default());
+    surface.run_until_parked();
+    surface.update(|window, cx| window.draw(cx).clear(cx));
+    let bounds = surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .into_iter()
+            .find(|node| node.label() == Some(label))
+            .expect("management item")
+            .bounds()
+    });
+    if keyboard {
+        surface.simulate_mouse_move(bounds.center(), None, gpui_kit::Modifiers::default());
+        surface.simulate_keystrokes("enter");
+    } else {
+        surface.simulate_click(bounds.center(), gpui_kit::Modifiers::default());
+    }
+    surface.run_until_parked();
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use gpui_kit::{TestAppContext, size};
@@ -226,7 +371,7 @@ mod tests {
         surface.update(|window, cx| window.draw(cx).clear(cx));
         for selector in [
             "extension-import-open",
-            "extension-environment-open",
+            "extension-management",
             "extension-empty-action",
         ] {
             assert_eq!(
@@ -513,11 +658,24 @@ mod tests {
                 .packages[0]
                 .enabled
         );
+        window.refresh().expect("workspace package");
+        let manage = window
+            .debug_bounds("extension-manage-example.web")
+            .expect("manage package");
+        window.simulate_click(manage.center(), gpui_kit::Modifiers::default());
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        window.run_until_parked();
         for enabled in [true, false] {
-            window.refresh().expect("package row");
-            let toggle = window
-                .debug_bounds("extension-toggle-example.web")
-                .expect("toggle");
+            if !enabled {
+                extensions_settings::tests::select_page(window, "来源");
+            }
+            window.refresh().expect("package details");
+            let selector = if enabled {
+                "extension-next-example.web"
+            } else {
+                "extension-detail-toggle"
+            };
+            let toggle = window.debug_bounds(selector).expect("explicit toggle");
             window.simulate_click(toggle.center(), gpui_kit::Modifiers::default());
             wait_for_idle(&observer, window);
             assert_eq!(
@@ -529,12 +687,6 @@ mod tests {
                 enabled
             );
         }
-        window.refresh().expect("workspace package");
-        let manage = window
-            .debug_bounds("extension-manage-example.web")
-            .expect("manage package");
-        window.simulate_click(manage.center(), gpui_kit::Modifiers::default());
-        window.run_until_parked();
         extensions_settings::tests::select_page(window, "命令与工具");
         window.refresh().expect("edit action");
         let edit = window
@@ -582,7 +734,7 @@ mod tests {
                 .aliases["web"],
             ["lookup"]
         );
-        extensions_settings::tests::select_page(window, "信任与启用");
+        extensions_settings::tests::select_page(window, "来源");
         window.refresh().expect("remove row");
         let remove = window
             .debug_bounds("extension-remove-example.web")

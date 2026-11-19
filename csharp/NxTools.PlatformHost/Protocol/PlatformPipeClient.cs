@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Collections.Concurrent;
 using System.Threading.Channels;
+using System.Windows.Forms;
 using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Windows;
 
@@ -15,7 +16,10 @@ namespace NxTools.PlatformHost.Protocol;
 internal sealed class PlatformPipeClient(
     string pipeName,
     WindowsPlatformAdapter platformAdapter,
-    IPlatformLog log)
+    IPlatformLog log,
+    Func<OpenFileDialog, IWin32Window, string[]>? presentMarkdownDialog = null,
+    Func<SaveFileDialog, IWin32Window, string?>? presentMarkdownExport = null,
+    Func<Stream, string, CancellationToken, Task<bool>>? renderMarkdownPdf = null)
 {
     private static readonly TimeSpan ReconnectDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReconnectLogInterval = TimeSpan.FromSeconds(30);
@@ -134,6 +138,7 @@ internal sealed class PlatformPipeClient(
             throw new InvalidDataException("Desktop returned an invalid handshake acknowledgement.");
         }
 
+        platformAdapter.BindDesktopInputPeer(desktopProcessId);
         var keyboardHealthAccepted = AcceptsKeyboardHealth(acknowledgement);
         platformAdapter.DiscardQueuedEventsForNewSession();
         var keyboardHealthSnapshot = platformAdapter.QuickLaunchKeyboardHealthSnapshot;
@@ -254,6 +259,7 @@ internal sealed class PlatformPipeClient(
 
         var completed = await Task.WhenAny(tasks);
         await session.CancelAsync();
+        platformAdapter.BindDesktopInputPeer(0);
         archiveRead.Stop();
         archiveVirtualDrag.Stop();
         floatingAssistant.Stop();
@@ -261,6 +267,7 @@ internal sealed class PlatformPipeClient(
         archiveJob.Stop();
         rawJoin.Stop();
         platformAdapter.CancelCurrentShellContextWork();
+        platformAdapter.CancelCurrentDirectoryContextWork();
         commandDispatcher.BeginDrain();
         try
         {
@@ -425,11 +432,19 @@ internal sealed class PlatformPipeClient(
                 }
                 if (commandName is "pick_extension_setting_path" or "pick_directory" or "pick_program" or
                     "pick_extension_manifest" or "pick_extension_runtime" or "pick_clipboard_archive_path" or
-                    "pick_clipboard_storage_directory" or "pick_browser_extension_export_path")
+                    "pick_clipboard_storage_directory" or "pick_browser_extension_export_path" or "pick_markdown_document" or
+                    "pick_markdown_export")
                 {
                     try { ValidatePickerPeer(envelope, desktopProcessId); }
                     catch (Exception error) when (error is InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException or FormatException)
                     {
+                        if (commandName == "pick_markdown_document")
+                            WriteCommandDiagnostic("warning", "markdown.reader.picker.terminal", ResolveDiagnosticCorrelationId(envelope),
+                                new Dictionary<string, object?> { ["category"] = "picker_invalid_peer", ["count"] = 0,
+                                    ["native_error_code"] = 87, ["elapsed_ms"] = 0 });
+                        else if (commandName == "pick_markdown_export")
+                            MarkdownDocumentPicker.WriteExportDiagnostic(log, ResolveDiagnosticCorrelationId(envelope),
+                                "terminal", "picker_invalid_peer", 87, 0);
                         await outgoing.WriteAsync(CreateCommandResultEnvelope(envelope, new WindowsCommandResult(false, "picker_invalid_peer", NativeErrorCode: 87)), cancellationToken);
                         continue;
                     }
@@ -505,6 +520,8 @@ internal sealed class PlatformPipeClient(
             "pick_extension_setting_path" => PlatformCommandParser.ParsePickExtensionSettingPath(envelope).SourceProcessId,
             "pick_directory" => PlatformCommandParser.ParsePickDirectory(envelope).SourceProcessId,
             "pick_program" => PlatformCommandParser.ParsePickProgram(envelope).SourceProcessId,
+            "pick_markdown_document" => PlatformCommandParser.ParsePickMarkdownDocument(envelope).SourceProcessId,
+            "pick_markdown_export" => PlatformCommandParser.ParsePickMarkdownExport(envelope).SourceProcessId,
             "pick_extension_manifest" => PlatformCommandParser.ParsePickExtensionManifest(envelope).SourceProcessId,
             "pick_extension_runtime" => PlatformCommandParser.ParsePickExtensionRuntime(envelope).SourceProcessId,
             "pick_clipboard_archive_path" => PlatformCommandParser.ParsePickClipboardArchivePath(envelope).SourceProcessId,
@@ -558,6 +575,11 @@ internal sealed class PlatformPipeClient(
                 envelope,
                 commandName,
                 receivedFields);
+            AddCompletionSystemActionDiagnosticFields(
+                envelope,
+                commandName,
+                null,
+                receivedFields);
             WriteCommandDiagnostic(
                 "info",
                 "command.received",
@@ -583,11 +605,20 @@ internal sealed class PlatformPipeClient(
                 error);
             return;
         }
+        catch (Exception error) when (commandName == "print_markdown_pdf" &&
+            error is InvalidDataException or JsonException or InvalidOperationException or KeyNotFoundException)
+        {
+            MarkdownPdfPrinter.WriteDiagnostic(log, diagnosticCorrelationId, "terminal", "invalid_request", 87,
+                Stopwatch.GetElapsedTime(started).TotalMilliseconds);
+            result = new(false, "invalid_request", NativeErrorCode: 87);
+        }
         catch (Exception error)
         {
-            var safeNativeCommand = IsPickerCommand(commandName) || commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
+            var safeNativeCommand = IsPickerCommand(commandName) || commandName is "show_context_menu" or "cancel_context_menu" or
+                "prepare_notification_window" or "print_markdown_pdf";
             result = safeNativeCommand
                 ? new WindowsCommandResult(false, IsPickerCommand(commandName) ? "picker_failed" :
+                    commandName == "print_markdown_pdf" ? "render_failed" :
                     commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
                     error is Win32Exception nativeError ? nativeError.NativeErrorCode : error.HResult)
                 : CreateCommandFailureResult(error);
@@ -627,6 +658,11 @@ internal sealed class PlatformPipeClient(
                 commandName,
                 completedFields);
             AddResultNavigationDiagnosticFields(
+                commandName,
+                result,
+                completedFields);
+            AddCompletionSystemActionDiagnosticFields(
+                envelope,
                 commandName,
                 result,
                 completedFields);
@@ -845,6 +881,46 @@ internal sealed class PlatformPipeClient(
         }
     }
 
+    private static void AddCompletionSystemActionDiagnosticFields(
+        ProtocolEnvelope envelope,
+        string commandName,
+        WindowsCommandResult? result,
+        Dictionary<string, object?> fields)
+    {
+        string? action = commandName switch
+        {
+            "shutdown_system" => "shutdown",
+            "suspend_system" => ReadSuspendAction(envelope),
+            _ => null
+        };
+        if (action is null)
+        {
+            return;
+        }
+        fields["action"] = action;
+        if (result is not null)
+        {
+            fields["terminal"] = result.Success ? "succeeded" : "failed";
+        }
+    }
+
+    private static string? ReadSuspendAction(ProtocolEnvelope envelope)
+    {
+        try
+        {
+            var hibernate = envelope.Payload
+                .GetProperty("data")
+                .GetProperty("hibernate");
+            return hibernate.ValueKind is JsonValueKind.True or JsonValueKind.False
+                ? hibernate.GetBoolean() ? "hibernate" : "sleep"
+                : null;
+        }
+        catch (Exception error) when (error is KeyNotFoundException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
     private async Task<WindowsCommandResult> ExecutePlatformCommandAsync(
         ProtocolEnvelope envelope,
         string commandName,
@@ -939,7 +1015,7 @@ internal sealed class PlatformPipeClient(
             "set_window_position" => platformAdapter.SetWindowPosition(
                 PlatformCommandParser.ParseSetWindowPosition(envelope)),
             "activate_window" => platformAdapter.ActivateWindow(
-                PlatformCommandParser.ParseActivateWindow(envelope)),
+                PlatformCommandParser.ParseActivateWindow(envelope), diagnosticCorrelationId, desktopProcessId),
             "begin_window_resize" => platformAdapter.BeginWindowResize(
                 PlatformCommandParser.ParseBeginWindowResize(envelope)),
             "begin_window_move" => platformAdapter.BeginWindowMove(
@@ -956,10 +1032,14 @@ internal sealed class PlatformPipeClient(
                 PlatformCommandParser.ParseOpenDefaultAppsSettings(envelope),
                 diagnosticCorrelationId,
                 cancellationToken),
+            "markdown_association" => platformAdapter.MarkdownAssociation(
+                PlatformCommandParser.ParseMarkdownAssociation(envelope), diagnosticCorrelationId, cancellationToken),
             "play_system_notification_sound" => platformAdapter.PlaySystemNotificationSound(),
             "read_system_proxy" => SystemProxySnapshotReader.Read(diagnosticCorrelationId, log),
             "shutdown_system" => platformAdapter.ShutdownSystem(
                 PlatformCommandParser.ParseShutdownSystem(envelope)),
+            "suspend_system" => platformAdapter.SuspendSystem(
+                PlatformCommandParser.ParseSuspendSystem(envelope)),
             "pick_browser_extension_export_path" => platformAdapter.PickBrowserExtensionExportPath(
                 PlatformCommandParser.ParsePickBrowserExtensionExportPath(envelope), diagnosticCorrelationId, cancellationToken),
             "export_browser_extension" => platformAdapter.ExportBrowserExtension(
@@ -1001,6 +1081,15 @@ internal sealed class PlatformPipeClient(
             "pick_program" => platformAdapter.PickProgram(
                 PlatformCommandParser.ParsePickProgram(envelope),
                 cancellationToken),
+            "pick_markdown_document" => MarkdownDocumentPicker.Pick(
+                PlatformCommandParser.ParsePickMarkdownDocument(envelope), diagnosticCorrelationId, log,
+                cancellationToken, presentMarkdownDialog),
+            "pick_markdown_export" => MarkdownDocumentPicker.PickExport(
+                PlatformCommandParser.ParsePickMarkdownExport(envelope), diagnosticCorrelationId, log,
+                cancellationToken, presentMarkdownExport),
+            "print_markdown_pdf" => MarkdownPdfPrinter.Print(
+                PlatformCommandParser.ParsePrintMarkdownPdf(envelope), diagnosticCorrelationId, log,
+                cancellationToken, renderMarkdownPdf),
             "pick_extension_manifest" => platformAdapter.PickExtensionManifest(
                 PlatformCommandParser.ParsePickExtensionManifest(envelope),
                 cancellationToken,

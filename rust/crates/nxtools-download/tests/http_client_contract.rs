@@ -22,6 +22,7 @@ fn request(server: &DeterministicHttpServer, path: &str) -> DownloadRequest {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -47,6 +48,93 @@ fn single_stream_probe(request: &DownloadRequest) -> DownloadProbe {
         resolution: None,
         server_observation: None,
     }
+}
+
+#[tokio::test]
+async fn http1_title_case_headers_preserve_context_across_probe_and_transfers() {
+    let _guard = HTTP_CONTRACT_GATE.lock().await;
+    let server = DeterministicHttpServer::start_concurrent();
+    let directory = tempfile::tempdir().expect("create download destination");
+    let mut request = request(&server, "/title-case-headers");
+    request.save_directory = directory.path().to_path_buf();
+    request.file_name = Some("header-case.bin".into());
+    request.headers = [
+        ("user-agent", "header-case-fixture/1.0"),
+        ("accept", "application/octet-stream"),
+        ("x-fixture-context", "preserved"),
+    ]
+    .into_iter()
+    .map(|(name, value)| nxtools_download::DownloadRequestHeader {
+        name: name.into(),
+        value: value.into(),
+    })
+    .collect();
+    request.cookie = Some("fixture-cookie=1".into());
+    request.referrer = Some("https://task.example/".into());
+    let client = HttpDownloadClient::new().expect("create HTTP client");
+    let probe = client
+        .probe(&request)
+        .await
+        .expect("probe accepts title-case headers with unchanged context");
+    assert_eq!(probe.total_bytes, Some(16));
+    assert!(probe.supports_ranges);
+
+    let outcome = client
+        .download(
+            &request,
+            &probe,
+            DownloadTaskId::new(),
+            &DownloadTransferControl::new(),
+            |_| {},
+        )
+        .await
+        .expect("single-stream request preserves header presentation and values");
+    let DownloadTransferOutcome::Completed {
+        final_path,
+        downloaded_bytes,
+    } = outcome
+    else {
+        panic!("single-stream transfer must complete");
+    };
+    assert_eq!(downloaded_bytes, 16);
+    assert_eq!(
+        tokio::fs::read(final_path)
+            .await
+            .expect("read completed file"),
+        b"0123456789abcdef"
+    );
+
+    let artifact = SegmentedArtifact::create(directory.path().join("segment.part"), 16)
+        .await
+        .expect("create segmented artifact");
+    let segment =
+        DownloadSegment::new(0, 0, 15, 0, DownloadSegmentState::Active).expect("valid segment");
+    let outcome = client
+        .download_segment(
+            DownloadSegmentTransferRequest::new(
+                DownloadTransferContext::new(DownloadTaskId::new(), uuid::Uuid::new_v4()),
+                &request,
+                &probe,
+                &segment,
+                &artifact,
+                &DownloadSegmentTransferControl::new(DownloadTransferControl::new()),
+            ),
+            |_| {},
+        )
+        .await
+        .expect("segment request preserves header presentation and values");
+    assert_eq!(
+        outcome,
+        DownloadSegmentTransferOutcome::Completed {
+            downloaded_bytes: 16
+        }
+    );
+    assert_eq!(
+        tokio::fs::read(artifact.path())
+            .await
+            .expect("read segmented artifact"),
+        b"0123456789abcdef"
+    );
 }
 
 #[tokio::test]
@@ -184,6 +272,7 @@ async fn pause_before_single_stream_preparation_creates_no_files() {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -229,6 +318,7 @@ async fn cancel_before_single_stream_preparation_creates_no_files() {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,

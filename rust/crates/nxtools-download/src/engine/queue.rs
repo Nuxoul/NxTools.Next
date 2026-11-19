@@ -100,6 +100,81 @@ impl DownloadEngine {
                 );
                 self.queue(&queue_id)?
             }
+            DownloadQueueAction::SetCompletionIntention {
+                queue_id,
+                intention,
+                baseline,
+            } => {
+                let started = Instant::now();
+                let _scheduler = self
+                    .inner
+                    .scheduler_gate
+                    .lock()
+                    .map_err(|_| DownloadEngineError::LockPoisoned)?;
+                let result = self
+                    .inner
+                    .store
+                    .set_queue_completion_intention(&queue_id, intention, baseline);
+                match result {
+                    Ok(queue) => {
+                        info!(event = "download.queue.intention_accepted", %correlation_id,
+                            generation = self.inner.session_generation, queue_id,
+                            action = ?queue.completion_intention.action, open_directory = queue.completion_intention.open_directory,
+                            elapsed_ms = started.elapsed().as_millis(), "queue intention persisted");
+                        queue
+                    }
+                    Err(error) => {
+                        warn!(event = "download.queue.intention_failed", %correlation_id,
+                            generation = self.inner.session_generation, queue_id,
+                            elapsed_ms = started.elapsed().as_millis(), "queue intention not persisted");
+                        return Err(error.into());
+                    }
+                }
+            }
+            DownloadQueueAction::AssignTasks { queue_id, task_ids } => {
+                let mut scheduler = self
+                    .inner
+                    .scheduler_gate
+                    .lock()
+                    .map_err(|_| DownloadEngineError::LockPoisoned)?;
+                self.inner.check_admission()?;
+                if !task_ids.is_empty() {
+                    self.inner.next_work_revision()?;
+                }
+                {
+                    let tasks = self.inner.lock_tasks()?;
+                    let mut sources = HashSet::new();
+                    for id in &task_ids {
+                        let state = tasks
+                            .get(id)
+                            .ok_or(DownloadEngineError::TaskNotFound(*id))?;
+                        if is_active_download_status(state.task.status()) {
+                            return Err(DownloadEngineError::InvalidAction {
+                                task_id: *id,
+                                action: "assign_queue",
+                                status: state.task.status(),
+                            });
+                        }
+                        let source = self.inner.store.queue_id_for_task(*id)?;
+                        if source != queue_id {
+                            sources.insert(source);
+                        }
+                    }
+                    let moved = self.inner.store.assign_queue_tasks(&queue_id, &task_ids)?;
+                    if moved != 0 {
+                        let revision = self.inner.bump_work_revision();
+                        for source in sources {
+                            scheduler.insert(source, revision);
+                        }
+                    }
+                }
+                let queue = self.queue(&queue_id)?;
+                if let Err(error) = self.schedule_queue_locked(&queue_id, correlation_id) {
+                    warn!(event = "download.queue.refill_deferred", %correlation_id,
+                        queue_id, error = %error, "assigned queue remains eligible for refill");
+                }
+                queue
+            }
             DownloadQueueAction::SetMaxConcurrent {
                 queue_id,
                 max_concurrent_tasks,
@@ -130,11 +205,16 @@ impl DownloadEngine {
                 queue
             }
             DownloadQueueAction::SetSchedule { queue_id, schedule } => {
-                return self
-                    .set_queue_schedule_correlated(&queue_id, schedule, correlation_id)
-                    .map(|queue| DownloadCommandOutcome::QueueChanged { queue });
+                self.set_queue_schedule_correlated(&queue_id, schedule, correlation_id)?
             }
         };
+        let sequence = self.inner.event_sequencer.current();
+        self.inner.emit(DownloadEvent::SnapshotRequired {
+            expected_sequence: sequence,
+            observed_sequence: sequence,
+            expected_generation: Some(self.inner.session_generation),
+            observed_generation: Some(self.inner.session_generation),
+        });
         Ok(DownloadCommandOutcome::QueueChanged { queue })
     }
 
@@ -237,6 +317,9 @@ impl DownloadEngine {
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        if self.inner.draining.load(Ordering::SeqCst) {
+            return Ok(0);
+        }
         let mut changed_count = 0_usize;
         for queue in self.inner.store.load_queues()? {
             let Some(daily) = queue.schedule.as_ref() else {
@@ -296,6 +379,13 @@ impl DownloadEngine {
                 state.task.status(),
                 DownloadStatus::Created | DownloadStatus::Paused
             ) || self.inner.store.is_queue_task_user_paused(task_id)?
+            {
+                continue;
+            }
+            if self
+                .inner
+                .store
+                .is_controlled_browser_handoff_held_task(task_id)?
             {
                 continue;
             }
@@ -409,6 +499,9 @@ impl DownloadEngine {
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
         let queue = self.queue(queue_id)?;
+        if self.inner.draining.load(Ordering::SeqCst) {
+            return Ok(());
+        }
         if !queue.is_running {
             return Ok(());
         }
@@ -460,6 +553,10 @@ impl DownloadEngine {
                     continue;
                 }
                 let mut committed = state.clone();
+                self.inner.next_work_revision()?;
+                if committed.task.completion_attempt() == 0 {
+                    committed.task.set_completion_attempt(1);
+                }
                 let next = if committed.task.status() == DownloadStatus::Created {
                     DownloadStatus::Probing
                 } else {
@@ -487,6 +584,7 @@ impl DownloadEngine {
                     &committed.transfer,
                     false,
                 )?;
+                self.inner.bump_work_revision();
                 *state = committed;
                 state.task.clone()
             };
@@ -533,6 +631,9 @@ impl DownloadEngine {
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
         let mut released_task_ids = Vec::new();
+        if self.inner.draining.load(Ordering::SeqCst) {
+            return Ok(0);
+        }
         {
             let mut tasks = self.inner.lock_tasks()?;
             for (task_id, state) in tasks.iter_mut() {
@@ -543,6 +644,21 @@ impl DownloadEngine {
                     continue;
                 }
                 if self.inner.store.is_queue_task_eligible(*task_id)? {
+                    continue;
+                }
+                if self
+                    .inner
+                    .store
+                    .is_controlled_browser_handoff_held_task(*task_id)?
+                {
+                    continue;
+                }
+                if self
+                    .inner
+                    .store
+                    .controlled_browser_handoff_start_now(*task_id)?
+                    == Some(false)
+                {
                     continue;
                 }
                 let mut committed = state.clone();
@@ -565,16 +681,12 @@ impl DownloadEngine {
                 "delayed download became queue-eligible"
             );
         }
-        if !released_task_ids.is_empty()
-            && let Err(error) = self.schedule_queue_locked("default", correlation_id)
-        {
-            warn!(
-                event = "download.schedule.delayed_admission_deferred",
-                %correlation_id,
-                released_count = released_task_ids.len(),
-                error = %error,
-                "due delayed downloads remain eligible for a later queue refill"
-            );
+        for queue in self.inner.store.load_queues()? {
+            if let Err(error) = self.schedule_queue_locked(&queue.id, correlation_id) {
+                warn!(event = "download.schedule.delayed_admission_deferred", %correlation_id,
+                    queue_id = queue.id, released_count = released_task_ids.len(),
+                    error = %error, "due delayed downloads remain eligible for later refill");
+            }
         }
         drop(_scheduler);
         self.refresh_delayed_schedule_wake()?;

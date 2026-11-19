@@ -15,7 +15,7 @@ use tracing::{info, warn};
 use crate::downloads::DownloadApplication;
 use crate::theme::Theme;
 use crate::ui::metrics::{PROGRESS_TRACK_HEIGHT, RADIUS_CONTROL, SPACING_4, SPACING_8};
-use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
+use crate::ui::typography::{LINE_HEIGHT_LABEL, TEXT_LABEL, UI_MONO_FONT_FAMILY};
 
 const TASKBAR_OVERLAY_MAX_LANES: usize = 8;
 const TASKBAR_OVERLAY_LANE_HEIGHT: f32 = 2.0;
@@ -902,7 +902,6 @@ fn taskbar_metrics_element(
         .gap(px(SPACING_8))
         .overflow_hidden()
         .whitespace_nowrap()
-        .font_family(UI_FONT_FAMILY)
         .text_size(px(TEXT_LABEL))
         .line_height(px(LINE_HEIGHT_LABEL))
         .text_color(theme.text_secondary)

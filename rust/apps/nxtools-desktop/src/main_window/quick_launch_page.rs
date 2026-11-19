@@ -471,13 +471,6 @@ impl MainWindow {
                         "点击字段开始录制；Esc 或失焦取消",
                         false,
                     ),
-                    item(
-                        QuickLaunchSettingsPage::General,
-                        1,
-                        "全屏游戏中暂不呼出",
-                        "仅 Direct3D 独占全屏；无边框全屏仍可呼出速启",
-                        false,
-                    ),
                     item(QuickLaunchSettingsPage::General, 2, "键盘动作", "", false),
                     row_setting,
                     entrance_setting,
@@ -796,24 +789,6 @@ impl MainWindow {
                 });
             },
         );
-        let suppress_exclusive_fullscreen = self.quick_launch.clone();
-        let suppress_exclusive_fullscreen_enabled = settings.suppress_in_exclusive_fullscreen;
-        let suppress_exclusive_fullscreen_control = compact_toggle(
-            theme,
-            "quick-launch-exclusive-fullscreen-suppression",
-            "全屏游戏中暂不呼出",
-            suppress_exclusive_fullscreen_enabled,
-            move |requested, _window, cx| {
-                let requested = *requested;
-                let quick_launch = suppress_exclusive_fullscreen.clone();
-                cx.defer(move |cx| {
-                    let _ = quick_launch.update(cx, |application, cx| {
-                        application.set_exclusive_fullscreen_suppression(requested, cx);
-                    });
-                });
-            },
-        );
-
         let refresh_volumes = self.quick_launch.clone();
         let refresh_volumes_control = action_button(
             "quick-launch-refresh-volumes",
@@ -1215,7 +1190,6 @@ impl MainWindow {
         };
         match (selected_page, slot) {
             (QuickLaunchSettingsPage::General, 0) => hotkey_control,
-            (QuickLaunchSettingsPage::General, 1) => suppress_exclusive_fullscreen_control,
             (QuickLaunchSettingsPage::General, _) => div()
                 .debug_selector(|| "quick-find-shortcuts".into())
                 .flex()
@@ -1391,14 +1365,13 @@ mod layout_tests {
         let hotkey = window
             .debug_bounds("quick-launch-hotkey-field")
             .expect("original recorder");
-        let toggle = window
-            .debug_bounds("quick-launch-exclusive-fullscreen-suppression")
-            .expect("real Switch");
-        for bounds in [hotkey, toggle] {
-            assert!(bounds.left() >= host.left() && bounds.right() <= host.right());
-            assert!(bounds.top() >= host.top() && bounds.bottom() <= host.bottom());
-        }
-        assert_eq!(toggle.size.height, px(32.0));
+        assert!(
+            window
+                .debug_bounds("quick-launch-exclusive-fullscreen-suppression")
+                .is_none()
+        );
+        assert!(hotkey.left() >= host.left() && hotkey.right() <= host.right());
+        assert!(hotkey.top() >= host.top() && hotkey.bottom() <= host.bottom());
         let help = window
             .debug_bounds("quick-settings-全局呼出热键-help")
             .expect("Kit help");

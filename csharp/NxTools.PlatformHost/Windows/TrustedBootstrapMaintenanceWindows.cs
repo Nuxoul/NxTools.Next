@@ -14,6 +14,32 @@ internal static class TrustedBootstrapMaintenanceWindows
 {
     private static string Root => Path.Combine(IndexerServiceInstaller.ProtectedProductDirectory(), "Updater");
     private static string Bootstrap => Path.Combine(Root, "Bootstrap", "NxTools.PlatformHost.exe");
+    internal static int Rotate(IPlatformLog log)
+    {
+        var correlation = Guid.NewGuid();
+        if (!new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator)) return 5;
+        try
+        {
+            IndexerServiceInstaller.ValidateProductChildDirectory("Updater");
+            IndexerServiceInstaller.ValidateProductChildDirectory("Updater", "Bootstrap");
+            IndexerServiceInstaller.ValidateProductChildDirectory("Updater", "Releases");
+            var publicKey = Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64);
+            using var release = TrustedReleaseManifest.VerifyPackage(AppContext.BaseDirectory, publicKey, 0);
+            using var caller = IndexerServiceInstaller.TrustedBinary.Open(Environment.ProcessPath!,
+                release.Files.Single(file => file.Path == "NxTools.PlatformHost.exe").Sha256);
+            new TrustedBootstrapMaintenance(Root, publicKey, new Service(), log).Rotate(AppContext.BaseDirectory, correlation);
+            return 0;
+        }
+        catch (Exception error)
+        {
+            try { log.Write("error", "trusted_update.rotation_rejected", correlation,
+                new Dictionary<string, object?> { ["native_error_code"] = error is Win32Exception native ? native.NativeErrorCode : error.HResult,
+                    ["exception_type"] = error.GetType().Name }); } catch { }
+            return 1;
+        }
+    }
+
+
     internal static int Run(IPlatformLog log)
     {
         var correlation = Guid.NewGuid();
@@ -69,10 +95,28 @@ internal static class TrustedBootstrapMaintenanceWindows
             using var file = IndexerServiceInstaller.TrustedBinary.Open(Bootstrap, hash);
             using var key = Open(true); key.SetValue("NxToolsBootstrapSha256", hash, RegistryValueKind.String);
         }
+        public void SetTrustIdentity(string expectedBootstrapHash, string expectedPublicKeyHash,
+            string newBootstrapHash, string newPublicKeyHash)
+        {
+            using var key = Open(true);
+            if (!string.Equals(key.GetValue("ImagePath") as string, $"\"{Bootstrap}\" --trusted-update-service", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(key.GetValue("ObjectName") as string, "LocalSystem", StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(key.GetValue("NxToolsBootstrapSha256") as string, expectedBootstrapHash, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(key.GetValue("NxToolsUpdateKeySha256") as string, expectedPublicKeyHash, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Updater registration changed during trust rotation.");
+            using var file = IndexerServiceInstaller.TrustedBinary.Open(Bootstrap, newBootstrapHash);
+            key.SetValue("NxToolsBootstrapSha256", newBootstrapHash, RegistryValueKind.String);
+            key.SetValue("NxToolsUpdateKeySha256", newPublicKeyHash, RegistryValueKind.String);
+            approvedKey = newPublicKeyHash;
+        }
+        public void SetTrustKeyHash(string hash)
+        {
+            ValidateFixedRegistration();
+            using var key = Open(true); key.SetValue("NxToolsUpdateKeySha256", hash, RegistryValueKind.String);
+        }
         public void Start()
         {
             ValidateFixedRegistration();
-            // This is an explicitly elevated maintenance boundary, never the user Request path.
             TrustedUpdateBroker.ConfigureDemandStart();
             using var service = new ServiceController(TrustedUpdateBroker.ServiceName);
             service.Refresh();
@@ -101,10 +145,10 @@ internal static class TrustedBootstrapMaintenanceWindows
             using var key = Open(false);
             var currentKey = key.GetValue("NxToolsUpdateKeySha256") as string;
             var embeddedKey = Convert.ToHexString(SHA256.HashData(Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64)));
+            var acceptedKey = approvedKey ?? embeddedKey;
             if (!string.Equals(key.GetValue("ImagePath") as string, $"\"{Bootstrap}\" --trusted-update-service", StringComparison.OrdinalIgnoreCase) ||
                 !string.Equals(key.GetValue("ObjectName") as string, "LocalSystem", StringComparison.OrdinalIgnoreCase) ||
-                !string.Equals(currentKey, embeddedKey, StringComparison.OrdinalIgnoreCase) ||
-                approvedKey is not null && !string.Equals(currentKey, approvedKey, StringComparison.OrdinalIgnoreCase))
+                !string.Equals(currentKey, acceptedKey, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Updater registration changed during maintenance.");
             IndexerServiceInstaller.ValidateProductChildDirectory("Updater", "Bootstrap");
         }

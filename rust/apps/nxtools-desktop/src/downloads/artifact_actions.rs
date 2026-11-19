@@ -2,7 +2,6 @@
 // and delete confirmation stay on the same DownloadApplication entity.
 use super::*;
 
-const DOWNLOAD_OPEN_WITH_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const DOWNLOAD_ARTIFACT_ACTION_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone, Copy)]
@@ -11,6 +10,7 @@ pub(super) struct PendingDownloadArtifactAction {
     task_id: DownloadTaskId,
     action: ShellOpenAction,
     window: Option<TaskWindowIdentity>,
+    source_page: bool,
     started_at: Instant,
 }
 
@@ -23,7 +23,22 @@ enum ArtifactActionFailure {
 }
 
 impl ArtifactActionFailure {
-    fn presentation(self, action: ShellOpenAction) -> (&'static str, &'static str) {
+    fn presentation(
+        self,
+        action: ShellOpenAction,
+        source_page: bool,
+    ) -> (&'static str, &'static str) {
+        if source_page {
+            return (
+                "无法打开浏览器",
+                match self {
+                    Self::QueueRejected => "浏览器操作未能排入队列，请重试。",
+                    Self::Timeout => "Windows 未能确认浏览器已打开，请重试。",
+                    Self::Disconnected => "Windows 连接已断开，请重新点击在浏览器中打开。",
+                    Self::Native => "Windows 未能打开浏览器，请重试。",
+                },
+            );
+        }
         let reveal = action == ShellOpenAction::SelectInExplorer;
         let title = if reveal {
             "无法打开所在文件夹"
@@ -47,10 +62,11 @@ fn show_artifact_action_failure(
     notifications: &Entity<NotificationCenter>,
     task_id: DownloadTaskId,
     action: ShellOpenAction,
+    source_page: bool,
     failure: ArtifactActionFailure,
     cx: &mut Context<DownloadApplication>,
 ) {
-    let (title, message) = failure.presentation(action);
+    let (title, message) = failure.presentation(action, source_page);
     notifications.update(cx, |notifications, cx| {
         notifications.show_error(
             format!("download-artifact-open-{}", task_id.as_uuid()),
@@ -110,6 +126,33 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) {
         self.open_task_artifact_with_window(task_id, action, Some(window), cx);
+    }
+
+    pub(crate) fn open_task_source_in_browser(
+        &mut self,
+        task_id: DownloadTaskId,
+        cx: &mut Context<Self>,
+    ) {
+        if self
+            .pending_artifact_actions
+            .values()
+            .any(|pending| pending.task_id == task_id)
+        {
+            return;
+        }
+        let Some(task) = self.task(task_id) else {
+            return;
+        };
+        let target = task.task.request().source_url.clone();
+        let pending = PendingDownloadArtifactAction {
+            correlation_id: uuid::Uuid::new_v4(),
+            task_id,
+            action: ShellOpenAction::Open,
+            window: None,
+            source_page: true,
+            started_at: Instant::now(),
+        };
+        self.dispatch_task_shell_action(pending, target, cx);
     }
 
     fn open_task_artifact_with_window(
@@ -196,8 +239,26 @@ impl DownloadApplication {
             task_id,
             action,
             window,
+            source_page: false,
             started_at,
         };
+        self.dispatch_task_shell_action(pending, path, cx);
+    }
+
+    fn dispatch_task_shell_action(
+        &mut self,
+        pending: PendingDownloadArtifactAction,
+        path: String,
+        cx: &mut Context<Self>,
+    ) {
+        let PendingDownloadArtifactAction {
+            correlation_id,
+            task_id,
+            action,
+            window,
+            source_page,
+            started_at,
+        } = pending;
         let command_id = correlation_id;
         self.pending_artifact_actions.insert(command_id, pending);
         match self.platform.send_command_with_id(
@@ -215,20 +276,20 @@ impl DownloadApplication {
                     task_id = %task_id.as_uuid(),
                     ?action,
                     from_task_window = window.is_some(),
+                    source_page,
                     "download artifact Shell action accepted"
                 );
-                let timeout = if action == ShellOpenAction::OpenWith {
-                    DOWNLOAD_OPEN_WITH_TIMEOUT
-                } else {
-                    DOWNLOAD_ARTIFACT_ACTION_TIMEOUT
-                };
-                cx.spawn(async move |this, cx| {
-                    cx.background_executor().timer(timeout).await;
-                    let _ = this.update(cx, |application, cx| {
-                        application.artifact_action_timed_out(command_id, cx);
-                    });
-                })
-                .detach();
+                if action != ShellOpenAction::OpenWith {
+                    cx.spawn(async move |this, cx| {
+                        cx.background_executor()
+                            .timer(DOWNLOAD_ARTIFACT_ACTION_TIMEOUT)
+                            .await;
+                        let _ = this.update(cx, |application, cx| {
+                            application.artifact_action_timed_out(command_id, cx);
+                        });
+                    })
+                    .detach();
+                }
             }
             Err(error) => {
                 self.pending_artifact_actions.remove(&command_id);
@@ -249,6 +310,7 @@ impl DownloadApplication {
                     &self.notifications,
                     task_id,
                     action,
+                    source_page,
                     ArtifactActionFailure::QueueRejected,
                     cx,
                 );
@@ -278,6 +340,7 @@ impl DownloadApplication {
             &self.notifications,
             pending.task_id,
             pending.action,
+            pending.source_page,
             ArtifactActionFailure::Timeout,
             cx,
         );
@@ -299,6 +362,7 @@ impl DownloadApplication {
                 &self.notifications,
                 pending.task_id,
                 pending.action,
+                pending.source_page,
                 ArtifactActionFailure::Disconnected,
                 cx,
             );
@@ -373,6 +437,7 @@ impl DownloadApplication {
                 &self.notifications,
                 pending.task_id,
                 pending.action,
+                pending.source_page,
                 ArtifactActionFailure::Native,
                 cx,
             );
@@ -584,7 +649,7 @@ mod feedback_tests {
             ArtifactActionFailure::Disconnected,
             ArtifactActionFailure::Native,
         ] {
-            let (_, message) = failure.presentation(ShellOpenAction::SelectInExplorer);
+            let (_, message) = failure.presentation(ShellOpenAction::SelectInExplorer, false);
             assert!(
                 !message.contains("完成窗口") && !message.contains("前台"),
                 "list error must describe target operation, not unrelated window/focus: {message}"

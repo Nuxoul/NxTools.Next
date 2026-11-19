@@ -1,0 +1,440 @@
+{
+  "oracle": "independent CPython struct/raw-zlib/CRC, hashlib, PyCryptodome AES and vector-qualified specification LEA",
+  "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+  "fixtures": [
+    {
+      "fixture": "posix.egg",
+      "origin": "unchanged pinned unegg CC0 Android producer",
+      "members": [
+        {
+          "index": 0,
+          "file_id": 0,
+          "name": "notes.txt",
+          "raw_name_hex": "6e6f7465732e747874",
+          "kind": "File",
+          "size": 54,
+          "windows": null,
+          "posix": {
+            "mode": 33200,
+            "uid": 10121,
+            "gid": 1023,
+            "mtime": 1785088885
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x1ee922e5"
+          ],
+          "short_method": null,
+          "blocks": [
+            {
+              "header": 81,
+              "offset": 103,
+              "packed": 39,
+              "expanded": 54,
+              "crc32": "96e10d03"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/posix.egg-0.bin.gz"
+        },
+        {
+          "index": 1,
+          "file_id": 1,
+          "name": "hello.txt",
+          "raw_name_hex": "68656c6c6f2e747874",
+          "kind": "File",
+          "size": 25,
+          "windows": null,
+          "posix": {
+            "mode": 33200,
+            "uid": 10121,
+            "gid": 1023,
+            "mtime": 1785088885
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x1ee922e5"
+          ],
+          "short_method": null,
+          "blocks": [
+            {
+              "header": 205,
+              "offset": 227,
+              "packed": 27,
+              "expanded": 25,
+              "crc32": "6c7b95e7"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/posix.egg-1.bin.gz"
+        },
+        {
+          "index": 2,
+          "file_id": 2,
+          "name": "mydir/inner.txt",
+          "raw_name_hex": "6d796469722f696e6e65722e747874",
+          "kind": "File",
+          "size": 19,
+          "windows": null,
+          "posix": {
+            "mode": 33200,
+            "uid": 10121,
+            "gid": 1023,
+            "mtime": 1785088885
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x1ee922e5"
+          ],
+          "short_method": null,
+          "blocks": [
+            {
+              "header": 323,
+              "offset": 345,
+              "packed": 21,
+              "expanded": 19,
+              "crc32": "b3010a13"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/posix.egg-2.bin.gz"
+        }
+      ],
+      "files": 3,
+      "materializable_bytes": 98
+    },
+    {
+      "fixture": "spec_egg_kind_headers.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "index": 0,
+          "file_id": 0,
+          "name": "regular.txt",
+          "raw_name_hex": "726567756c61722e747874",
+          "kind": "File",
+          "size": 39,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": {
+            "mode": 33184,
+            "uid": 1000,
+            "gid": 1000,
+            "mtime": 1577836800
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x1ee922e5",
+            "0x2c86950b"
+          ],
+          "short_method": null,
+          "blocks": [
+            {
+              "header": 99,
+              "offset": 121,
+              "packed": 39,
+              "expanded": 39,
+              "crc32": "ed62b713"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/spec_egg_kind_headers.egg-0.bin.gz"
+        },
+        {
+          "index": 1,
+          "file_id": 1,
+          "name": "empty-directory",
+          "raw_name_hex": "656d7074792d6469726563746f7279",
+          "kind": "Directory",
+          "size": 0,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 128
+          },
+          "posix": {
+            "mode": 16872,
+            "uid": 1000,
+            "gid": 1000,
+            "mtime": 1577836800
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x2c86950b",
+            "0x1ee922e5"
+          ],
+          "short_method": null,
+          "blocks": [],
+          "expected_gzip": "expected/kinds-short/spec_egg_kind_headers.egg-1.bin.gz"
+        },
+        {
+          "index": 2,
+          "file_id": 2,
+          "name": "posix-link-first",
+          "raw_name_hex": "706f7369782d6c696e6b2d6669727374",
+          "kind": "Link",
+          "size": 11,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": {
+            "mode": 41471,
+            "uid": 1000,
+            "gid": 1000,
+            "mtime": 1577836800
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x1ee922e5",
+            "0x2c86950b"
+          ],
+          "short_method": null,
+          "blocks": [
+            {
+              "header": 331,
+              "offset": 353,
+              "packed": 11,
+              "expanded": 11,
+              "crc32": "8982f1e8"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/spec_egg_kind_headers.egg-2.bin.gz"
+        },
+        {
+          "index": 3,
+          "file_id": 3,
+          "name": "windows-link-first",
+          "raw_name_hex": "77696e646f77732d6c696e6b2d6669727374",
+          "kind": "Link",
+          "size": 11,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 8
+          },
+          "posix": {
+            "mode": 33184,
+            "uid": 1000,
+            "gid": 1000,
+            "mtime": 1577836800
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x2c86950b",
+            "0x1ee922e5"
+          ],
+          "short_method": null,
+          "blocks": [
+            {
+              "header": 452,
+              "offset": 474,
+              "packed": 11,
+              "expanded": 11,
+              "crc32": "8982f1e8"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/spec_egg_kind_headers.egg-3.bin.gz"
+        },
+        {
+          "index": 4,
+          "file_id": 4,
+          "name": "posix-fifo-first",
+          "raw_name_hex": "706f7369782d6669666f2d6669727374",
+          "kind": "Special",
+          "size": 0,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": {
+            "mode": 4480,
+            "uid": 1000,
+            "gid": 1000,
+            "mtime": 1577836800
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x1ee922e5",
+            "0x2c86950b"
+          ],
+          "short_method": null,
+          "blocks": [],
+          "expected_gzip": "expected/kinds-short/spec_egg_kind_headers.egg-4.bin.gz"
+        },
+        {
+          "index": 5,
+          "file_id": 5,
+          "name": "windows-fifo-last",
+          "raw_name_hex": "77696e646f77732d6669666f2d6c617374",
+          "kind": "Special",
+          "size": 0,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": {
+            "mode": 4480,
+            "uid": 1000,
+            "gid": 1000,
+            "mtime": 1577836800
+          },
+          "headers": [
+            "0xa8591ac",
+            "0x2c86950b",
+            "0x1ee922e5"
+          ],
+          "short_method": null,
+          "blocks": [],
+          "expected_gzip": "expected/kinds-short/spec_egg_kind_headers.egg-5.bin.gz"
+        }
+      ],
+      "files": 1,
+      "materializable_bytes": 39
+    },
+    {
+      "fixture": "spec_egg_short_1.egg",
+      "origin": "project-owned specification fixture; full HMAC deliberately absent",
+      "members": [
+        {
+          "index": 0,
+          "file_id": 0,
+          "name": "short.txt",
+          "raw_name_hex": "73686f72742e747874",
+          "kind": "File",
+          "size": 540,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": null,
+          "headers": [
+            "0xa8591ac",
+            "0x2c86950b",
+            "0x8d1470f"
+          ],
+          "short_method": 1,
+          "blocks": [
+            {
+              "header": 88,
+              "offset": 110,
+              "packed": 68,
+              "expanded": 540,
+              "crc32": "03c34a10"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/spec_egg_short_1.egg-0.bin.gz"
+        }
+      ],
+      "files": 1,
+      "materializable_bytes": 540
+    },
+    {
+      "fixture": "spec_egg_short_2.egg",
+      "origin": "project-owned specification fixture; full HMAC deliberately absent",
+      "members": [
+        {
+          "index": 0,
+          "file_id": 0,
+          "name": "short.txt",
+          "raw_name_hex": "73686f72742e747874",
+          "kind": "File",
+          "size": 540,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": null,
+          "headers": [
+            "0xa8591ac",
+            "0x2c86950b",
+            "0x8d1470f"
+          ],
+          "short_method": 2,
+          "blocks": [
+            {
+              "header": 96,
+              "offset": 118,
+              "packed": 68,
+              "expanded": 540,
+              "crc32": "03c34a10"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/spec_egg_short_2.egg-0.bin.gz"
+        }
+      ],
+      "files": 1,
+      "materializable_bytes": 540
+    },
+    {
+      "fixture": "spec_egg_short_5.egg",
+      "origin": "project-owned specification fixture; full HMAC deliberately absent",
+      "members": [
+        {
+          "index": 0,
+          "file_id": 0,
+          "name": "short.txt",
+          "raw_name_hex": "73686f72742e747874",
+          "kind": "File",
+          "size": 540,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": null,
+          "headers": [
+            "0xa8591ac",
+            "0x2c86950b",
+            "0x8d1470f"
+          ],
+          "short_method": 5,
+          "blocks": [
+            {
+              "header": 88,
+              "offset": 110,
+              "packed": 68,
+              "expanded": 540,
+              "crc32": "03c34a10"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/spec_egg_short_5.egg-0.bin.gz"
+        }
+      ],
+      "files": 1,
+      "materializable_bytes": 540
+    },
+    {
+      "fixture": "spec_egg_short_6.egg",
+      "origin": "project-owned specification fixture; full HMAC deliberately absent",
+      "members": [
+        {
+          "index": 0,
+          "file_id": 0,
+          "name": "short.txt",
+          "raw_name_hex": "73686f72742e747874",
+          "kind": "File",
+          "size": 540,
+          "windows": {
+            "ticks": 132223104000000000,
+            "attributes": 0
+          },
+          "posix": null,
+          "headers": [
+            "0xa8591ac",
+            "0x2c86950b",
+            "0x8d1470f"
+          ],
+          "short_method": 6,
+          "blocks": [
+            {
+              "header": 96,
+              "offset": 118,
+              "packed": 68,
+              "expanded": 540,
+              "crc32": "03c34a10"
+            }
+          ],
+          "expected_gzip": "expected/kinds-short/spec_egg_short_6.egg-0.bin.gz"
+        }
+      ],
+      "files": 1,
+      "materializable_bytes": 540
+    }
+  ]
+}

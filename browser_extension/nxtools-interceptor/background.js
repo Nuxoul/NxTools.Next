@@ -20,6 +20,7 @@ const BACKGROUND_DEPENDENCIES = [
   "bg/tab-bridge.js",
   "bg/capture.js",
   "bg/handoff.js",
+  "bg/browser-handoff.js",
   "bg/resource-choices.js",
   "bg/link-collection.js",
   "bg/popup-state.js",
@@ -45,6 +46,7 @@ void getSettings();
 void getCapturePaused();
 void loadPersistentResources();
 void ensureDispositionNamesRestored();
+void restoreBrowserHandoffs();
 void activeTab().then((tab) => {
   if (tab?.id && /^https?:/i.test(tab.url || "")) {
     void injectContentBridge(tab.id, tab.url || "");
@@ -161,6 +163,7 @@ if (determiningFilenameEvent?.addListener) {
     return true;
   });
 } else if (chrome.downloads.onCreated?.addListener) {
+  registerFirefoxResponseHandoff();
   chrome.downloads.onCreated.addListener((downloadItem) => {
     void interceptBrowserDownload(downloadItem, { eraseBrowserHistory: true });
   });

@@ -1,0 +1,23 @@
+{
+  "batch": "B5 — Completion intentions",
+  "scope": ["REF-07", "REF-11"],
+  "acceptance_owner": "coordinator",
+  "acceptance_status": "not_accepted",
+  "evidence_root": "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4",
+  "full_result_ledger": "b5-verification.json",
+  "full_result_fields": ["preservation", "focused", "behavioral_red", "prerequisites", "native_fixture", "quality", "source_gates"],
+  "preservation_groups": 33,
+  "passing_preservation_groups": 32,
+  "failed_preservation_groups": [{"stem":"b5-final-archive-job","LIST":129,"RUN":129,"PASS":122,"FAIL":7,"SKIP":0,"not_run":0,"list_exit":0,"run_exit":101,"reason":"Existing mandatory C# native wire exports absent; unchanged Archive code"}],
+  "counts_are_not_additive": true,
+  "b5_desktop": {"LIST":22,"RUN":22,"PASS":22,"FAIL":0,"SKIP":0,"not_run":0,"list_exit":0,"run_exit":0},
+  "download_completion": {"LIST":9,"RUN":9,"PASS":9,"FAIL":0,"SKIP":0,"not_run":0,"list_exit":0,"run_exit":0},
+  "platformhost_safe_fixtures": {"LIST":2,"RUN":2,"PASS":2,"FAIL":0,"SKIP":0,"not_run":0,"list_exit":0,"run_exit":0,"effects":"Fixture; original typed fake; no actual power APIs"},
+  "quality_exits": {"format":0,"clippy-nxtools-core":0,"clippy-nxtools-download":0,"clippy-nxtools-download-ipc":0,"clippy-nxtools-ipc":0,"clippy-nxtools-protocol":101,"clippy-nxtools-desktop":101,"clippy-nxtools-cli":0,"clippy-nxtools-browser-host":0,"check":0},
+  "quality_attribution": "Three unchanged historical expressions; see limitations.md and b5-baseline-attribution.json",
+  "source_gate_exits": {"spec-contracts":0,"gpui-component-catalog":0,"gpui-release-contracts":0,"markdown-editor-contracts":0,"download-ui-lifecycle":0},
+  "resource_audit": "b5-final-resources.json",
+  "path_audit": "b5-path-audit-results.json",
+  "record_audit": "b5-final-record-audit.json",
+  "physical_power_or_current_desktop_exit_performed": false
+}

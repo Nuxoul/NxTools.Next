@@ -45,8 +45,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-local.
 
 | 材料 | 路径 / 作用 |
 | --- | --- |
-| 发布私钥 PEM | `C:\Users\Administrator\.nxtools-release-keys\nxtools-next-release.pem` |
-| 原序号账本 | `C:\Users\Administrator\.nxtools-release-keys\nxtools-next-release.pem.release-sequence.json` |
+| 发布私钥 PEM | `D:\NxTools-private-release-keys\nxtools-next-release.pem` |
+| 原序号账本 | `D:\NxTools-private-release-keys\nxtools-next-release.pem.release-sequence.json` |
 | 序号锁 | 同账本路径加 `.lock`，由原预约脚本管理，不要删除 |
 | 公共信任锚 | `csharp/NxTools.PlatformHost/Generated/UpdateTrust.g.cs`，只含公开 SPKI，不是私钥 |
 | 原发布预约器 | `scripts/reserve-release-sequence.ps1` |
@@ -72,7 +72,7 @@ $env:NXTOOLS_RELEASE_SIGNING_KEY = 'E:\secure\nxtools-next-release.pem'
 若缺失，停止并恢复材料，不能重置计数或靠生成新 PEM 继续升级原受信安装。
 
 当前公开锚 SHA256（不是秘密）：
-`03e979d5c6babda29aa217b7ce72268aab12870bda46a9072397fe52ba083b69`
+`a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`
 
 ## 3. 序号怎么取
 
@@ -88,7 +88,7 @@ $env:NXTOOLS_RELEASE_SIGNING_KEY = 'E:\secure\nxtools-next-release.pem'
 
 ```powershell
 .\scripts\package.ps1 -Configuration Release `
-  -SigningKeyPath 'C:\Users\Administrator\.nxtools-release-keys\nxtools-next-release.pem' `
+  -SigningKeyPath 'D:\NxTools-private-release-keys\nxtools-next-release.pem' `
   -ReleaseSequence <严格递增的新序号>
 ```
 
@@ -113,11 +113,11 @@ $env:RUSTFLAGS='-C codegen-units=256'
 
 ## 5. 输出、日志、核验
 
-- 安装包：`artifacts/installer/NxTools.Next-setup-0.7.0.exe`
+- 安装包：`artifacts/installer/NxTools.Next-setup-0.7.2.exe`
 - 散装包：`artifacts/win-x64/`
 - 签名清单：`NxTools.release.json` / `NxTools.release.sig`
 - 对应源码材料：`artifacts/installer/third_party/archive-worker/` 下的 LGPL 许可证、对应源码及离线重构建说明，仍由原入口生成；不改变受信任安装清单或生产身份校验。Python 要求 3.11+；材料生成失败不得交付缺材料的包。
-- 外层完整分发 ZIP 默认不生成。仅显式传入 `-CreateDistributionArchive` 时生成 `artifacts/installer/NxTools.Next-release-0.7.0.zip`，包含正常安装器与上述材料；对外再分发时同时提供对应源码和许可证。普通重新打包只交付安装器，不把历史 ZIP 当成本次产物。
+- 外层完整分发 ZIP 默认不生成。仅显式传入 `-CreateDistributionArchive` 时生成 `artifacts/installer/NxTools.Next-release-0.7.2.zip`，包含正常安装器与上述材料；对外再分发时同时提供对应源码和许可证。普通重新打包只交付安装器，不把历史 ZIP 当成本次产物。
 - SHA256：安装包旁 `.sha256`
 - 统一入口的本地 `status.json`：序号、实际成功／失败、安装包哈希、大小、文件核验计数及 Authenticode。
 - 同目录 `package.log`（stdout）、`package.stderr.log`（原生 stderr）和 `previous-package` / `previous-installer` 保留原始过程和旧包。
@@ -125,6 +125,10 @@ $env:RUSTFLAGS='-C codegen-units=256'
 
 原签名器在打包时使用生产验证器验证签名；统一入口额外逐项核对清单文件大小／SHA256，
 并写安装包 SHA256。不能把 Authenticode `NotSigned` 与内部发布签名混为一谈。
+
+产品发布版本0.7.2统一记录在Rust工作区、C#程序集、正常/维护安装器与浏览器扩展清单；
+桌面EXE文件版本由Cargo版本派生。`python tests/architecture/product-version.tests.py` 检查这些当前定义、
+第一方锁文件版本和发布文件名的一致性；构建后仍需读回实际EXE与包内扩展版本。扩展ID/公钥和协议版本不随此更新改变。
 包装器失败后可能留下不完整输出：不要安装，读本次日志；备份只用于恢复与证据，不能绕过防降级。
 
 原安装器会跑隔离场景；其中预期取消／失败场景的非零退出码不等于总体失败，检查 `pass=True` 和最终脚本退出码。

@@ -342,6 +342,7 @@ fn phase_d_test_after_create_failure_preserves_committed_output(cx: &mut gpui_ki
         test_after_create: true,
         name: "created.zip".into(),
         volume_bytes: None,
+        self_extracting: false,
     });
     let id = owner.update(cx, |app, cx| {
         app.submit_job(input, completion(), cx).expect("create")
@@ -5528,3 +5529,6 @@ fn ref17_create_remember_keeps_concurrent_untouched_create_leaves(
     assert_eq!(saved.exclude_patterns, ["concurrent.tmp"]);
     assert!(!saved.show_tree && saved.keep_create_progress_open);
 }
+
+#[path = "jobs_ref20_tests.rs"]
+mod ref20;

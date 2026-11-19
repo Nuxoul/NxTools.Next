@@ -13,6 +13,8 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::{Animation, AnimationExt, EntityInputHandler as _, ease_out_quint};
 use nxtools_protocol::SetWindowBoundsCenteredCommand;
 
+mod template;
+
 /// Translates raw engine failure text into guidance the user can act on.
 /// The engine strings stay canonical for logs; only the surfaced message is
 /// humanized.
@@ -95,10 +97,18 @@ impl NewDownloadView {
                 default_connection_limit: self.default_connection_limit,
                 default_adaptive_segment_policy: self.default_adaptive_segment_policy,
                 categories: self.categories.clone(),
-                initial_source: self
-                    .external_request
-                    .clone()
-                    .map(NewDownloadInitialSource::Download),
+                initial_source: match (&self.external_request, &self.controlled_handoff) {
+                    (Some(request), Some(context)) => {
+                        Some(NewDownloadInitialSource::ControlledDownload {
+                            request: request.clone(),
+                            context: context.clone(),
+                        })
+                    }
+                    (Some(request), None) => {
+                        Some(NewDownloadInitialSource::Download(request.clone()))
+                    }
+                    (None, _) => None,
+                },
             },
             theme: self.theme,
             url: self.url.read(cx).value().to_string(),
@@ -156,6 +166,10 @@ pub(crate) enum NewDownloadInitialSource {
         correlation_id: uuid::Uuid,
     },
     Download(DownloadRequest),
+    ControlledDownload {
+        request: DownloadRequest,
+        context: ControlledBrowserDialogContext,
+    },
     Blob(BrowserBlobDialogContext),
 }
 
@@ -174,6 +188,99 @@ pub(crate) struct BrowserBlobDialogContext {
     pub(crate) handoff_id: uuid::Uuid,
     pub(crate) blob: BrowserBlob,
     pub(crate) save_directory: PathBuf,
+}
+
+#[derive(Clone)]
+pub(crate) struct ControlledBrowserDialogContext {
+    pub(crate) correlation_id: uuid::Uuid,
+    pub(crate) handoff_id: uuid::Uuid,
+    lifecycle: Rc<RefCell<ControlledBrowserDialogLifecycle>>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ControlledBrowserDialogPhase {
+    Active,
+    Held,
+    Aborted,
+}
+
+struct ControlledBrowserDialogLifecycle {
+    phase: ControlledBrowserDialogPhase,
+    owner: Option<AnyWindowHandle>,
+}
+
+impl ControlledBrowserDialogContext {
+    pub(crate) fn new(correlation_id: uuid::Uuid, handoff_id: uuid::Uuid) -> Self {
+        Self {
+            correlation_id,
+            handoff_id,
+            lifecycle: Rc::new(RefCell::new(ControlledBrowserDialogLifecycle {
+                phase: ControlledBrowserDialogPhase::Active,
+                owner: None,
+            })),
+        }
+    }
+
+    fn bind_initial_owner(&self, window: AnyWindowHandle) {
+        let mut lifecycle = self.lifecycle.borrow_mut();
+        if lifecycle.phase == ControlledBrowserDialogPhase::Active && lifecycle.owner.is_none() {
+            lifecycle.owner = Some(window);
+        }
+    }
+
+    pub(crate) fn transfer_owner(&self, source: AnyWindowHandle, target: AnyWindowHandle) -> bool {
+        let mut lifecycle = self.lifecycle.borrow_mut();
+        if lifecycle.phase != ControlledBrowserDialogPhase::Active {
+            return false;
+        }
+        if lifecycle.owner == Some(target) {
+            return true;
+        }
+        if lifecycle.owner != Some(source) {
+            return false;
+        }
+        lifecycle.owner = Some(target);
+        true
+    }
+
+    pub(crate) fn is_active_owner(&self, window: AnyWindowHandle) -> bool {
+        let lifecycle = self.lifecycle.borrow();
+        lifecycle.phase == ControlledBrowserDialogPhase::Active && lifecycle.owner == Some(window)
+    }
+
+    pub(crate) fn claim_abort_for_window(&self, window: AnyWindowHandle) -> bool {
+        let mut lifecycle = self.lifecycle.borrow_mut();
+        if lifecycle.phase != ControlledBrowserDialogPhase::Active
+            || lifecycle.owner != Some(window)
+        {
+            return false;
+        }
+        lifecycle.phase = ControlledBrowserDialogPhase::Aborted;
+        lifecycle.owner = None;
+        true
+    }
+
+    pub(crate) fn claim_abort(&self) -> bool {
+        let mut lifecycle = self.lifecycle.borrow_mut();
+        if lifecycle.phase != ControlledBrowserDialogPhase::Active {
+            return false;
+        }
+        lifecycle.phase = ControlledBrowserDialogPhase::Aborted;
+        lifecycle.owner = None;
+        true
+    }
+
+    pub(crate) fn mark_held(&self, window: AnyWindowHandle) -> bool {
+        let mut lifecycle = self.lifecycle.borrow_mut();
+        if lifecycle.phase != ControlledBrowserDialogPhase::Active
+            || lifecycle.owner != Some(window)
+        {
+            return false;
+        }
+        lifecycle.phase = ControlledBrowserDialogPhase::Held;
+        lifecycle.owner = None;
+        true
+    }
 }
 
 /// Owned stage data only: input/select entities remain bound to their original window.
@@ -299,7 +406,9 @@ pub(crate) struct NewDownloadView {
     pub(crate) default_adaptive_segment_policy: nxtools_download::DownloadAdaptiveSegmentPolicy,
     pub(crate) external_request: Option<DownloadRequest>,
     pub(crate) external_blob: Option<BrowserBlobDialogContext>,
+    pub(crate) controlled_handoff: Option<ControlledBrowserDialogContext>,
     pub(crate) confirmed_request: Option<DownloadRequest>,
+    pub(crate) template_preview: Option<template::TemplatePreview>,
     pub(crate) submission_idempotency_key: uuid::Uuid,
     pub(crate) probe: Option<DownloadProbe>,
     pub(crate) selected_hls_variant: Option<usize>,
@@ -337,7 +446,16 @@ impl NewDownloadView {
             initial_source,
         } = init;
         let external_request = match initial_source.as_ref() {
-            Some(NewDownloadInitialSource::Download(request)) => Some(request.clone()),
+            Some(
+                NewDownloadInitialSource::Download(request)
+                | NewDownloadInitialSource::ControlledDownload { request, .. },
+            ) => Some(request.clone()),
+            _ => None,
+        };
+        let controlled_handoff = match initial_source.as_ref() {
+            Some(NewDownloadInitialSource::ControlledDownload { context, .. }) => {
+                Some(context.clone())
+            }
             _ => None,
         };
         let external_blob = match initial_source.as_ref() {
@@ -346,7 +464,10 @@ impl NewDownloadView {
         };
         let initial_url = match initial_source.as_ref() {
             Some(NewDownloadInitialSource::Url { url, .. }) => url.clone(),
-            Some(NewDownloadInitialSource::Download(request)) => request.source_url.clone(),
+            Some(
+                NewDownloadInitialSource::Download(request)
+                | NewDownloadInitialSource::ControlledDownload { request, .. },
+            ) => request.source_url.clone(),
             Some(NewDownloadInitialSource::Blob(context)) => {
                 format!("Blob · 已安全接收 · {} 字节", context.blob.size)
             }
@@ -495,8 +616,31 @@ impl NewDownloadView {
                 cx,
             )
         });
+        if let Some(context) = controlled_handoff.as_ref() {
+            let closing_window = window.window_handle();
+            context.bind_initial_owner(closing_window);
+            let closing_context = context.clone();
+            let closing_application = application.downgrade();
+            window.on_window_should_close(cx, move |_, cx| {
+                if closing_context.claim_abort_for_window(closing_window) {
+                    let context = closing_context.clone();
+                    let application = closing_application.clone();
+                    cx.defer(move |cx| {
+                        let _ = application.update(cx, |application, cx| {
+                            application.abort_controlled_browser_handoff(
+                                &context,
+                                "window_closed",
+                                cx,
+                            );
+                        });
+                    });
+                }
+                true
+            });
+        }
         Self {
             handoff_staged: false,
+            template_preview: None,
             handoff_pending: false,
             hydrating_stage: false,
             theme: Theme::zed_dark(),
@@ -526,6 +670,7 @@ impl NewDownloadView {
             default_connection_limit,
             default_adaptive_segment_policy,
             external_request,
+            controlled_handoff,
             external_blob: external_blob.clone(),
             confirmed_request: None,
             submission_idempotency_key: uuid::Uuid::new_v4(),
@@ -609,6 +754,42 @@ impl NewDownloadView {
         });
     }
 
+    pub(crate) fn transfer_controlled_handoff_owner(
+        &self,
+        source: AnyWindowHandle,
+        target: AnyWindowHandle,
+    ) -> bool {
+        self.controlled_handoff
+            .as_ref()
+            .is_none_or(|context| context.transfer_owner(source, target))
+    }
+
+    fn abort_controlled_handoff(&mut self, reason: &'static str, cx: &mut Context<Self>) {
+        let Some(context) = self.controlled_handoff.clone() else {
+            return;
+        };
+        if !context.claim_abort() {
+            return;
+        }
+        let application = self.application.downgrade();
+        cx.defer(move |cx| {
+            let _ = application.update(cx, |application, cx| {
+                application.abort_controlled_browser_handoff(&context, reason, cx);
+            });
+        });
+    }
+
+    fn cancel_download(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .controlled_handoff
+            .as_ref()
+            .is_some_and(|context| context.is_active_owner(window.window_handle()))
+        {
+            self.abort_controlled_handoff("user_cancelled", cx);
+        }
+        window.remove_window();
+    }
+
     fn default_enter_key_down(
         &mut self,
         event: &gpui_kit::KeyDownEvent,
@@ -630,6 +811,7 @@ impl NewDownloadView {
             || self.schedule_popover_open
             || self.submitting
             || self.probing
+            || self.template_preview.is_some()
             || self.handoff_pending
             || (self.confirmed_window_pending(window) && !self.handoff_staged)
         {
@@ -667,7 +849,10 @@ impl NewDownloadView {
     }
 
     pub(crate) fn request(&self, cx: &App) -> Result<DownloadRequest, String> {
-        let url = self.url.read(cx).value().trim().to_owned();
+        self.request_for_source(self.url.read(cx).value().trim().to_owned(), cx)
+    }
+
+    fn request_for_source(&self, url: String, cx: &App) -> Result<DownloadRequest, String> {
         let directory = self.directory.read(cx).value().trim().to_owned();
         let file_name = self.file_name.read(cx).value().trim().to_owned();
         if url.is_empty() || directory.is_empty() {
@@ -683,6 +868,7 @@ impl NewDownloadView {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(self.default_connection_limit),
             speed_limit_bytes_per_second: None,
@@ -760,6 +946,23 @@ impl NewDownloadView {
     }
 
     pub(crate) fn begin_probe(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(context) = self.controlled_handoff.as_ref()
+            && !context.is_active_owner(window.window_handle())
+        {
+            self.notify_validation_failure("浏览器接管已结束，请从浏览器重新发起此下载".into(), cx);
+            return;
+        }
+        if self.controlled_handoff.is_some() && self.url.read(cx).value().contains(['{', '}']) {
+            self.abort_controlled_handoff("unsupported_template", cx);
+            self.notify_validation_failure(
+                "浏览器接管的单个下载不支持 URL 模板，请使用普通新建下载。".into(),
+                cx,
+            );
+            return;
+        }
+        if self.try_template_preview(window, cx) {
+            return;
+        }
         self.begin_probe_with_mode(
             nxtools_download::DownloadResolutionMode::Resolve,
             window,
@@ -803,6 +1006,7 @@ impl NewDownloadView {
         let request = match self.request(cx) {
             Ok(request) => request,
             Err(error) => {
+                self.abort_controlled_handoff("probe_validation_failed", cx);
                 self.notify_validation_failure(humanize_download_fault(&error), cx);
                 self.confirmed_request = None;
                 self.probe = None;
@@ -993,6 +1197,7 @@ impl NewDownloadView {
     }
 
     pub(super) fn finish_probe_failure(&mut self, message: String, cx: &mut Context<Self>) {
+        self.abort_controlled_handoff("probe_failed", cx);
         self.probing = false;
         self.error = None;
         let application = self.application.clone();
@@ -1115,6 +1320,7 @@ impl NewDownloadView {
             self.probe_generation = self.probe_generation.wrapping_add(1).max(1);
             self.confirmed_target_height = None;
             self.confirmed_gate_expired = false;
+            self.abort_controlled_handoff("confirmed_url_changed", cx);
             self.notify_validation_failure("下载地址已变更，请重新探测".into(), cx);
             return;
         };
@@ -1143,6 +1349,60 @@ impl NewDownloadView {
         let source_window = window.window_handle();
         let source_native_handle = native_window_handle(window).unwrap_or_default();
         let view = cx.entity().downgrade();
+        if let Some(context) = self.controlled_handoff.clone() {
+            // The noop resolver has no receipt; admission still resolves through the engine.
+            let resolution = resolution.unwrap_or(nxtools_download::DownloadResolutionOptions {
+                operation_id: context.handoff_id,
+                mode: nxtools_download::DownloadResolutionMode::Resolve,
+            });
+            if !context.is_active_owner(source_window) {
+                self.submitting = false;
+                self.finish_submission_failure("浏览器接管已结束，不能再确认此下载".into(), cx);
+                return;
+            }
+            info!(
+                ?mode,
+                handoff_id = %context.handoff_id,
+                "scheduling controlled browser handoff acceptance"
+            );
+            cx.defer(move |cx| {
+                if !context.is_active_owner(source_window) {
+                    let _ = view.update(cx, |view, cx| {
+                        view.finish_submission_failure(
+                            "浏览器接管已结束，不能再确认此下载".into(),
+                            cx,
+                        );
+                    });
+                    return;
+                }
+                let result = application.update(cx, |application, cx| {
+                    application
+                        .accept_controlled_browser_handoff(&context, request, mode, resolution, cx)
+                });
+                match result {
+                    Ok(_) if context.mark_held(source_window) => {
+                        let _ = source_window.update(cx, |_, window, _| window.remove_window());
+                    }
+                    Ok(_) => {
+                        application.update(cx, |application, cx| {
+                            application.abort_controlled_browser_handoff(
+                                &context,
+                                "desktop_owner_retired_after_accept",
+                                cx,
+                            );
+                        });
+                    }
+                    Err(message) => {
+                        let _ = view.update(cx, |view, cx| {
+                            view.abort_controlled_handoff("accept_failed", cx);
+                            view.finish_submission_failure(humanize_download_fault(&message), cx)
+                        });
+                    }
+                }
+            });
+            return;
+        }
+
         info!(?mode, "scheduling download task submission");
         cx.defer(move |cx| {
             let delayed = request.scheduled_at_unix_ms.is_some();
@@ -2170,7 +2430,7 @@ impl Render for NewDownloadView {
                 "download-new-titlebar",
                 "download-window-close",
                 "新建下载",
-                |_, window, _| window.remove_window(),
+                cx.listener(|this, _, window, cx| this.cancel_download(window, cx)),
             ))
             .child(body)
             .child(
@@ -2203,7 +2463,7 @@ impl Render for NewDownloadView {
                                 cx,
                                 "取消",
                                 submitting,
-                                |_, window, _| window.remove_window(),
+                                cx.listener(|this, _, window, cx| this.cancel_download(window, cx)),
                             )),
                     ),
             )

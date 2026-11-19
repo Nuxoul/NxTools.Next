@@ -182,6 +182,9 @@ pub(crate) fn discover(
     control: &OperationControl,
     held_paths: Option<&[String]>,
 ) -> Result<Option<DiskSet>> {
+    if let Some(set) = discover_sfx(path, limits, control, held_paths)? {
+        return Ok(Some(set));
+    }
     if let Some(set) = discover_continuous(path, limits, control, held_paths)? {
         return Ok(Some(set));
     }
@@ -711,11 +714,24 @@ pub(crate) fn normalize(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<File> {
+    let sfx = validate_sfx_set(set, limits)?;
     let mut joined = set.spool(control)?;
     if set.continuous {
         return Ok(joined);
     }
     let directory = directory(&mut joined, set, limits, control)?;
+    if let Some(descriptor) = sfx {
+        crate::zip_sfx::profile(&directory)?;
+        let first = directory
+            .records
+            .iter()
+            .map(|row| row.local)
+            .min()
+            .unwrap_or(directory.offset);
+        if first != descriptor.prefix + if descriptor.disks > 1 { 4 } else { 0 } {
+            return Err(ArchiveError::CorruptArchive);
+        }
+    }
     let mut out = tempfile::tempfile()?;
     copy_range(&mut joined, &mut out, 0, directory.offset, control)?;
     let start = out.stream_position()?;
@@ -750,6 +766,18 @@ pub(crate) fn split_encoded(
     limits: &ResourceLimits,
     control: &OperationControl,
 ) -> Result<Vec<File>> {
+    layout_encoded(input, volume_bytes, limits, control, false, true)
+}
+
+fn layout_encoded(
+    input: &mut File,
+    volume_bytes: u64,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    self_extracting: bool,
+    split: bool,
+) -> Result<Vec<File>> {
+    control.checkpoint()?;
     if volume_bytes < 128 || volume_bytes > limits.max_output_bytes {
         return Err(ArchiveError::ResourceLimit);
     }
@@ -768,6 +796,9 @@ pub(crate) fn split_encoded(
         continuous: false,
     };
     let directory = directory(input, &set, limits, control)?;
+    if self_extracting {
+        crate::zip_sfx::profile(&directory)?;
+    }
     let mut order: Vec<usize> = (0..directory.records.len()).collect();
     order.sort_by_key(|&index| directory.records[index].local);
     if order
@@ -776,8 +807,14 @@ pub(crate) fn split_encoded(
     {
         return Err(ArchiveError::UnsupportedOperation);
     }
-    let mut sink = SplitWriter::new(volume_bytes, limits.max_output_bytes)?;
-    sink.bytes(b"PK\x07\x08", true, control)?;
+    let mut sink = SplitWriter::new(volume_bytes, limits.max_output_bytes, split)?;
+    if self_extracting {
+        sink.bytes(crate::zip_sfx::STUB, true, control)?;
+        sink.bytes(&crate::zip_sfx::descriptor_bytes(1), true, control)?;
+    }
+    if split {
+        sink.bytes(b"PK\x07\x08", true, control)?;
+    }
     let mut locations = vec![(0u32, 0u64); order.len()];
     for (position, &index) in order.iter().enumerate() {
         control.checkpoint()?;
@@ -802,7 +839,7 @@ pub(crate) fn split_encoded(
             control,
         )?;
     }
-    if sink.files.len() == 1 {
+    if split && sink.files.len() == 1 {
         sink.next()?;
     }
     let mut central_start = None;
@@ -810,7 +847,11 @@ pub(crate) fn split_encoded(
     let mut central_disks = Vec::new();
     for (index, row) in directory.records.iter().enumerate() {
         let (disk, offset) = locations[index];
-        let raw = relocate(row, disk, offset)?;
+        let mut raw = relocate(row, disk, offset)?;
+        if self_extracting && entries[index].kind() == crate::EntryKind::Directory {
+            let attributes = (dword(&raw, 38) & !0xf000_0000) | 0x4000_0010;
+            raw[38..42].copy_from_slice(&attributes.to_le_bytes());
+        }
         sink.fit(raw.len() as u64)?;
         central_start.get_or_insert(sink.coordinate());
         central_disks.push(sink.coordinate().0);
@@ -855,6 +896,12 @@ pub(crate) fn split_encoded(
     ];
     exact(&mut ending, &mut bytes)?;
     sink.bytes(&bytes, true, control)?;
+    if self_extracting {
+        crate::zip_sfx::metadata_admission(central_size, directory.records.len())?;
+        let disks = sink.files.len() as u32;
+        sink.files[0].seek(SeekFrom::Start(crate::zip_sfx::STUB.len() as u64 + 24))?;
+        sink.files[0].write_all(&disks.to_le_bytes())?;
+    }
     for file in &mut sink.files {
         file.flush()?;
         file.rewind()?;
@@ -868,22 +915,24 @@ struct SplitWriter {
     budget: u64,
     total: u64,
     position: u64,
+    split: bool,
 }
 impl SplitWriter {
-    fn new(maximum: u64, budget: u64) -> Result<Self> {
+    fn new(maximum: u64, budget: u64, split: bool) -> Result<Self> {
         Ok(Self {
             files: vec![tempfile::tempfile()?],
             maximum,
             budget,
             total: 0,
             position: 0,
+            split,
         })
     }
     fn coordinate(&self) -> (u32, u64) {
         ((self.files.len() - 1) as u32, self.position)
     }
     fn next(&mut self) -> Result<()> {
-        if self.files.len() >= MAX_VOLUMES {
+        if !self.split || self.files.len() >= MAX_VOLUMES {
             return Err(ArchiveError::ResourceLimit);
         }
         self.files.push(tempfile::tempfile()?);
@@ -1042,4 +1091,123 @@ mod continuous_lease_tests {
             "public discovery still observes the extra segment"
         );
     }
+}
+
+pub(crate) fn sfx_encoded(
+    input: &mut File,
+    volume_bytes: Option<u64>,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+) -> Result<Vec<File>> {
+    control.checkpoint()?;
+    let maximum =
+        volume_bytes.unwrap_or(limits.max_output_bytes.min(crate::zip_sfx::MAX_EXE_BYTES));
+    if maximum > crate::zip_sfx::MAX_EXE_BYTES
+        || maximum < crate::zip_sfx::PREFIX_BYTES + if volume_bytes.is_some() { 4 } else { 0 }
+    {
+        return Err(ArchiveError::ResourceLimit);
+    }
+    layout_encoded(
+        input,
+        maximum,
+        limits,
+        control,
+        true,
+        volume_bytes.is_some(),
+    )
+}
+#[cfg(test)]
+#[path = "zip_container_ref20_tests.rs"]
+mod ref20_tests;
+
+fn same_source_path(left: &Path, right: &Path) -> bool {
+    if cfg!(windows) {
+        left.to_string_lossy()
+            .eq_ignore_ascii_case(&right.to_string_lossy())
+    } else {
+        left == right
+    }
+}
+
+fn discover_sfx(
+    path: &Path,
+    limits: &ResourceLimits,
+    control: &OperationControl,
+    held_paths: Option<&[String]>,
+) -> Result<Option<DiskSet>> {
+    let primary = if let Some(paths) = held_paths {
+        PathBuf::from(paths.first().ok_or(ArchiveError::MissingVolume)?)
+    } else if path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
+    {
+        if path.with_extension("z01").exists() {
+            return Ok(None);
+        }
+        path.with_extension("exe")
+    } else {
+        path.to_owned()
+    };
+    let mut source = match File::open(&primary) {
+        Ok(source) => source,
+        Err(failure) if failure.kind() == std::io::ErrorKind::NotFound && held_paths.is_none() => {
+            return Ok(None);
+        }
+        Err(failure) => return Err(missing(failure)),
+    };
+    let Some(descriptor) = crate::zip_sfx::descriptor(&mut source, limits)? else {
+        return Ok(None);
+    };
+    let mut paths = vec![primary.clone()];
+    for disk in 1..descriptor.disks {
+        paths.push(primary.with_extension(if disk + 1 == descriptor.disks {
+            "zip".to_owned()
+        } else {
+            format!("z{:02}", disk + 1)
+        }));
+    }
+    if !paths.iter().any(|member| same_source_path(member, path)) {
+        return Err(ArchiveError::SourceChanged);
+    }
+    if let Some(held) = held_paths {
+        if held.len() != paths.len() {
+            return Err(ArchiveError::MissingVolume);
+        }
+        if held
+            .iter()
+            .zip(&paths)
+            .any(|(actual, expected)| !same_source_path(Path::new(actual), expected))
+        {
+            return Err(ArchiveError::SourceChanged);
+        }
+        paths = held.iter().map(PathBuf::from).collect();
+    }
+    let mut set = DiskSet::new(paths, limits, control)?;
+    validate_sfx_set(&mut set, limits)?;
+    Ok(Some(set))
+}
+
+fn validate_sfx_set(
+    set: &mut DiskSet,
+    limits: &ResourceLimits,
+) -> Result<Option<crate::zip_sfx::Descriptor>> {
+    let Some(descriptor) = crate::zip_sfx::descriptor(
+        set.files.first_mut().ok_or(ArchiveError::MissingVolume)?,
+        limits,
+    )?
+    else {
+        return Ok(None);
+    };
+    if descriptor.disks as usize != set.files.len() {
+        return Err(ArchiveError::MissingVolume);
+    }
+    if descriptor.disks > 1 {
+        set.files[0].seek(SeekFrom::Start(descriptor.prefix))?;
+        let mut marker = [0; 4];
+        exact(&mut set.files[0], &mut marker)?;
+        if marker != *b"PK\x07\x08" {
+            return Err(ArchiveError::CorruptArchive);
+        }
+    }
+    Ok(Some(descriptor))
 }

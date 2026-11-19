@@ -1,3 +1,346 @@
+# Current checkpoint — 0.7.2 正式发布门禁通过
+
+2026-11-20。[正式发布说明](../../../docs/releases/0.7.2.md)与[服务验收](../../../docs/audits/2026-11-20-indexer-release-acceptance.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，B4暂停。
+
+- 复用源码一致的Release98：Release ID `44027b71-475c-4047-b63f-65c8fc16baed`，安装器30,157,564bytes，SHA256 `739A204CF4C519784111745B935B2CE51B3A0E6DA6CB08DF1119B82086FF7A49`。内部签名、108成员/精确110文件重新核验通过，未重复构建或占用新序号。
+- 已安装的Desktop/PlatformHost/Indexer与本包及批准身份一致。实际LocalSystem重启保留两个base及delta；新delta见证在重启前后均由真实桌面搜索找到。8秒平均CPU0.00%，读写约0.94 KiB/s，发布门禁通过，`release_accepted=true`。
+- 发布探针复用既有桌面UIA驱动，不以PowerShell身份直连受保护服务；身份校验未放宽，回归与语法检查通过。用户原始测试数据和构建目录不加入本轮源码提交。
+- 验收证据保留在`.diagnostics/packaging/20261119-231820-947b1f16-published98/formal-acceptance/`。既有全量测试/静态规则限制保留在发布说明，不计作通过。
+
+---
+
+# Current checkpoint — 0.7.2 Release98 候选包与缓存清理完成
+
+2026-11-20。[Release98](release98-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列98，Release ID `44027b71-475c-4047-b63f-65c8fc16baed`；安装器30,157,564bytes，SHA256 `739A204CF4C519784111745B935B2CE51B3A0E6DA6CB08DF1119B82086FF7A49`。4,806输入独立冷构建，0漂移；打包退出0、包装器`Completed`。
+- 本轮108成员/精确110文件、内部签名、95扩展源文件、5个Rust输出、实际版本、迁移Host及兼容门槛82核验通过；安装器runtime16项及BrowserHost替换/回滚5项通过，清理后读回一致。产品全量测试未重跑。
+- 索引器匹配LocalSystem重启/base+delta、空闲CPU/IO和真实搜索/运行哈希发布门禁未执行；正式验收待办，`release_accepted=false`。未部署或重启服务。
+- 清理工作区Rust缓存、本轮构建树及旧包备份，共4目录、5.90 GiB，失败0项；新包、散装包、对应源码/许可证、轻量证据、密钥/账本及必需恢复样本保留。
+- 证据`.diagnostics/packaging/20261119-231820-947b1f16-published98/`。无外层ZIP；未执行真实安装、UAC或服务/注册表操作，未提交/推送，B4暂停。
+
+---
+
+# Current checkpoint — 0.7.2 Release97 候选包与缓存清理完成
+
+2026-11-19。[Release97](release97-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列97，Release ID `e91e3d3d-8fac-436d-be89-2ab167d3fa68`；安装器30,156,301bytes，SHA256 `E18843B8F8C4E56673F74889E177BFA8D33A5A2928EEBD2586CA4D994578A24C`。4,803输入独立冷构建，0漂移；打包退出0、包装器`Completed`。
+- 本轮108成员/精确110文件、内部签名、95扩展源文件、5个Rust输出、实际版本、迁移Host及兼容门槛82核验通过；安装器runtime16项及BrowserHost替换/回滚5项通过，清理后读回一致。产品全量测试未重跑。
+- 索引器MFT/缓存改动的匹配LocalSystem重启/base+delta、空闲CPU/IO和真实搜索/运行哈希发布门禁未执行；正式验收待办，`release_accepted=false`。未部署或重启本机服务。
+- 清理工作区Rust/.NET缓存、本轮独立构建树及旧包备份，共10目录、17.31 GiB，失败0项。新包、当前散装包、对应源码/许可证、轻量证据、密钥/账本和必需恢复回归样本保留。
+- 证据`.diagnostics/packaging/20261119-181524-da3a83df-published97/`。无外层ZIP；未执行真实安装、UAC或服务/注册表操作，未提交/推送，B4暂停。
+
+---
+
+# Current checkpoint — 0.7.2 Release96 正式重打包与缓存清理完成
+
+2026-11-19。[Release96](release96-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列96，Release ID `aedd86ab-1cb4-4fdb-bc95-7c86bab396ab`；安装器30,076,990bytes，SHA256 `F4888C86817F4CFCFAAE6C993CF925892694AC66F8B9B74D60D994AF92BAC886`。冻结4,782输入、独立缓存/输出，构建期间0漂移；打包退出0、包装器`Completed`。
+- 本轮107成员/精确109文件、RSA-PSS签名、公钥、94扩展源文件、5个Rust输出、实际版本、迁移Host和兼容门槛82核验通过；安装器runtime16项和BrowserHost替换/回滚5项通过，发布及清理后读回一致。产品全量测试未重跑；既有测试失败和Clippy限制见发布记录。
+- 按要求清除旧安装器、旧包备份、工作区及本会话构建缓存/快照，共325个目录/文件、116.06 GiB，失败0项。当前安装器、散装包、许可证/对应源码、轻量日志、密钥/账本和必要恢复回归样本保留；历史包备份及构建快照不再保留。
+- 证据`.diagnostics/packaging/20261119-134437-f002075b-published96/`。仅交付正常EXE，无外层ZIP。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.2 Release95 正式重打包已交付
+
+2026-11-19。[Release95](release95-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列95，Release ID `cf3329e0-fee7-482d-8283-becc4a0bcc7c`；安装器30,077,160bytes，SHA256 `E3A1FB1C3E2A545A2C33C94D7FEFD101917311415E626F0CCDB59D55A731FECD`。冻结4,779输入、独立缓存/输出，构建期间0漂移；打包退出0、包装器`Completed`。
+- 本轮107成员/精确109文件、RSA-PSS签名、公钥、94扩展源文件、5个Rust输出、实际版本、迁移Host和兼容门槛82核验通过；安装器runtime16项和BrowserHost替换/回滚5项通过，发布读回一致。产品全量测试未重跑；既有桌面全量26项失败与Clippy限制保留在发布记录中。
+- 证据`.diagnostics/packaging/20261119-115324-92a4ff1a-published95/`；Release94保留。仅交付正常EXE，无外层ZIP。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.2 Release94 正式重打包已交付
+
+2026-11-19。[Release94](release94-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列94，Release ID `4cc4acf5-730a-45f1-9adf-82c9d66b9736`；安装器30,062,316bytes，SHA256 `20974F8348F1D7D702575740F902ECDC0F5449C227BBB284F10C502705517D91`。冻结4,771输入、独立缓存/输出，构建期间0漂移；打包退出0、包装器`Completed`。
+- 本轮107成员/精确109文件、RSA-PSS签名、公钥、94扩展源文件、5个Rust输出、实际版本、迁移Host和兼容门槛82核验通过；安装器runtime16项和BrowserHost替换/回滚5项通过，发布读回一致。产品全量测试未重跑；既有桌面全量26项失败与Clippy限制保留在发布记录中。
+- 证据`.diagnostics/packaging/20261119-073253-afb4a4c3-published94/`；Release93保留。仅交付正常EXE，无外层ZIP。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.2 Release93 正式安装包已交付
+
+2026-11-18。[Release93](release93-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 产品和扩展统一0.7.2，序列93，Release ID `a3b31996-202f-4189-a983-cdbce857fb77`；安装器30,010,699bytes，SHA256 `52A40AB991B46884469BF4995A79D92FC430B47128021B10A89EDC3C800BA65A`。冻结4,764输入、独立缓存/输出，构建期间0漂移；打包退出0、包装器`Completed`。
+- 本轮版本/脚本检查30项、扩展Node325项、隔离浏览器签名7项通过；第三方依赖、扩展身份/权限/脚本顺序、AppId和发布信任保持不变。
+- 107成员/精确109文件、RSA-PSS签名、公钥、94扩展源文件、5个Rust输出、实际0.7.2.0文件版本、迁移Host和兼容门槛82核验通过；安装器runtime16项和BrowserHost替换/回滚5项通过，发布读回一致。产品全量测试未重跑，仅交付正常EXE，无外层ZIP。
+- 证据`.diagnostics/packaging/20261118-163004-3d7330f0-published93/`；前一0.7.1 Release92保留。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.1 Release92 正式重打包已交付
+
+2026-11-18。[Release92](release92-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列92，Release ID `5716cd3c-bbc7-44e4-86d3-bb3d575096c3`；安装器30,007,863bytes，SHA256 `C84471B62819268BF242C843BF82E13C0BE4D50C45470D2D39E9F7A94722CECC`。冻结4,762输入、独立缓存/输出，构建期间0漂移；打包退出0、包装器`Completed`。
+- 本轮107成员/精确109文件、RSA-PSS签名、公钥、94扩展源文件、5个Rust输出、实际版本、迁移Host和兼容门槛82核验通过；安装器runtime16项和BrowserHost替换/回滚5项通过，发布读回一致。产品全量测试未重跑，仅交付正常EXE，无外层ZIP。
+- 证据`.diagnostics/packaging/20261118-133725-429ef06b-published92/`；Release91保留。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.1 Release91 正式重打包已交付
+
+2026-11-18。[Release91](release91-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列91，Release ID `22104f7f-5340-4ca5-a061-8fa8375d51d9`；安装器29,868,977bytes，SHA256 `45B3DFE40B316A7AC8CF913614A99170FC57BFBF81E6D8BE58E964EB81A96D89`。冻结4,750输入、独立缓存/输出，构建期间0漂移；打包退出0、包装器`Completed`。
+- 本轮107成员/精确109文件、RSA-PSS签名、公钥、94扩展源文件、5个Rust输出、实际版本、迁移Host和兼容门槛82核验通过；安装器runtime16项和BrowserHost替换/回滚5项通过，发布读回一致。产品全量测试未重跑，仅交付正常EXE，无外层ZIP。
+- 证据`.diagnostics/packaging/20261118-113842-781998f3-published91/`；Release90保留。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.1 Release90 正式重打包已交付
+
+2026-11-17。[Release90](release90-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列90，Release ID `433e191a-e1a1-4a08-ac44-85e53bd54716`；安装器29,232,101bytes，SHA256 `9F55801372C687226D89E8D176E037316CA0C61496216E6624DB49F0ED0E33CE`。冻结4,724输入、独立缓存/输出，构建期间0漂移；打包退出0、包装器`Completed`。
+- 本轮107成员/精确109文件、RSA-PSS签名、公钥、94扩展源文件、5个Rust输出、实际版本、迁移Host和兼容门槛82核验通过；安装器runtime16项和BrowserHost替换/回滚5项通过，发布读回一致。产品全量测试未重跑，仅交付正常EXE，无外层ZIP。
+- 证据`.diagnostics/packaging/20261117-224413-23cb03b1-published90/`；Release89保留。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.1 Release89 正式重打包已交付
+
+2026-11-16。[Release89](release89-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列89，Release ID `ec78848e-2c30-44d2-b336-51c54305f68c`；安装器29,227,905bytes，SHA256 `F003A40A72FAAFD1DD225366333EC266E9C93351413107D8609AFC6A4ACDA45F`。原打包进程退出0，包装器`Completed`，无残留包装器。
+- 本轮107成员/精确109文件、RSA-PSS签名、公钥、扩展/Windows版本、迁移Host和兼容门槛82核验通过；安装器runtime16项及BrowserHost替换/回滚5项通过。产品全量测试未重跑。仅交付正常EXE，无外层ZIP。
+- 证据`.diagnostics/packaging/20261116-180605-e82527d8/`；Release88保留。未执行真实安装、UAC、服务/注册表操作；未提交或推送，B4保持暂停。
+
+---
+
+# Current checkpoint — 0.7.1 Release81 迁移 Bootstrap/active 快照最终修复包已交付
+
+# Current checkpoint — 0.7.1 Release88 Bootstrap 重复授权修复包已交付
+
+2026-11-16。[Release88](release88-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 修正普通发布序列递增导致的重复 Bootstrap 授权；最低兼容门槛82。序列88，releaseID `8c0f0c7b-bc29-417f-989b-1770a0997083`；安装器29,233,267bytes，SHA256 `FE3C93441FE23B838ECDFC04C47AA50515FF0F3759496E3DA19B795941F35470`。107成员/精确109文件、版本、RSA-PSS签名、兼容门槛输入及16+5安装器场景独立核验通过，仅交付正常EXE，无外层ZIP。
+- 外层 `package-local.ps1` 未返回最终退出码，已停止本轮精确包装器进程并保存独立收尾证据 `.diagnostics/packaging/20261116-152454-cbe81232/independent-finalization.json`。未执行真实安装、UAC、服务/注册表操作；未提交或推送。
+
+---
+
+# Current checkpoint — 0.7.1 Release86 正式重打包已交付
+
+2026-11-16。[Release86](release86-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列86，releaseID `3dbdcd40-1c83-4681-92a6-eafecc89fc15`；安装器29,234,852bytes，SHA256 `94CB3B815927E0AA4F20D26226B47830D21B4D4E9B94E275581B12B838E70039`。新公钥保持 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；精确109文件、107成员、Windows版本、扩展版本、历史 SPKI 嵌入及RSA-PSS签名独立核验通过，仅交付正常EXE，无外层ZIP。
+- 外层 `package-local.ps1` 未返回最终退出码，已停止本轮精确包装器进程并保存独立收尾证据 `.diagnostics/packaging/20261116-125756-a7c8a83c/independent-finalization.json`。未执行真实安装、UAC、服务/注册表操作；未提交或推送。
+
+---
+
+# Current checkpoint — 0.7.1 Release85 正式重打包已交付
+
+2026-11-16。[Release85](release85-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列85，releaseID `ea7d1241-f928-44aa-a6dd-eddf1d68c306`；安装器29,212,911bytes，SHA256 `37D9DEC1134A0256518C5BBEB471526ECC93091E2717EF899A8E4B562CD90E5F`。新公钥保持 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；107签名成员/精确109散装文件及RSA-PSS签名独立核验通过，仅交付正常EXE，无外层ZIP。
+- 外层 `package-local.ps1` 未返回最终退出码，已停止本轮精确包装器进程并保存独立收尾证据 `.diagnostics/packaging/20261116-105132-71696d99/independent-finalization.json`。未执行真实安装、UAC、服务/注册表操作；未提交或推送。
+
+---
+
+# Current checkpoint — 0.7.1 Release84 正式重打包已交付
+
+2026-11-16。[Release84](release84-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列84，releaseID `5135ef5d-8d64-4b1e-9c6e-267cef7a68b0`；安装器29,207,323bytes，SHA256 `3FD09B000A236A2D6CC55BC42D5F8A8D4A13533B8EC0A2BD998A7ED16C3DBDBB`。新公钥保持 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；107签名成员/精确109散装文件及RSA-PSS签名独立核验通过，仅交付正常EXE，无外层ZIP。
+- 外层 `package-local.ps1` 未返回最终退出码，已停止本轮精确包装器进程并保存独立收尾证据 `.diagnostics/packaging/20261116-101209-0bba02f2/independent-finalization.json`。未执行真实安装、UAC、服务/注册表操作；未提交或推送。
+
+---
+
+# Current checkpoint — 0.7.1 Release83 正式重打包已交付
+
+2026-11-16。[Release83](release83-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 序列83，releaseID `2cdd320c-1207-416c-ad4a-e596a81f89be`；安装器29,202,611bytes，SHA256 `B5315E4872ACFC6594BAB7ECEB91F1D755A2BE3BAA63FB3C057D7230D0A0621E`。新公钥保持 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；107签名成员/精确109散装文件及RSA-PSS签名独立核验通过，仅交付正常EXE，无外层ZIP。
+- 外层 `package-local.ps1` 未返回最终退出码，已停止本轮精确包装器进程并保存独立收尾证据 `.diagnostics/packaging/20261116-082527-c644dba6/independent-finalization.json`。未执行真实安装、UAC、服务/注册表操作；未提交或推送。
+
+---
+
+# Current checkpoint — 0.7.1 Release82 历史公钥回退修复包已交付
+
+2026-11-15。[Release82](release82-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 修正 `LegacyUpdateTrust` 使用的历史 SPKI，指纹为 `03e979d5c6babda29aa217b7ce72268aab12870bda46a9072397fe52ba083b69`；旧 active 快照 recovery 验证通过，同一快照使用新公钥普通准入被拒绝。可信更新相关11项Fixture通过。
+- 序列82，releaseID `ae9ce5a0-caf6-4687-9a6e-482ed45ad079`；安装器29,197,500bytes，SHA256 `5E1FD0E03932F6DE322919938C13671291202CEE8DA19A06DE767A70F21239D7`。新公钥 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；107签名成员/精确109散装文件全部独立核验通过，仅交付正常EXE，无外层ZIP。
+- Inno Setup已生成正式安装器；外层 `package-local.ps1` 未返回最终退出码，已停止精确包装器进程并保存独立收尾证据 `.diagnostics/packaging/20261115-223053-4f2635d6/independent-finalization.json`。未执行真实安装、UAC、服务/注册表操作；未提交或推送。
+
+---
+2026-11-15。[Release81](release81-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release81，releaseID `f87da92b-0200-420b-875b-63f4cb4f36e5`；安装器29,202,343bytes（27.85MiB），SHA256 `5ACE0D5486E6993530BA4C95E799C414AE5D3ADCD3C460EF2CE3D3EAB6DD5522`。新公钥SHA256 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- 迁移期旧 active 快照只用历史公钥验证；登记公钥相同但 Bootstrap 序号低于当前包时强制同公钥维护更新。固定4,673输入，签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过；PlatformHost编译0警告/0错误，PowerShell语法通过。
+- 交付读回一致；证据 `.diagnostics/packaging/20261115-194149-d5343b2a-published6/`。Release80旧产物保留。Release81尚未在用户机器上实际安装验证；全量产品、当前材料离线重构建未重跑。未提交或推送。原338842bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 Release80 Bootstrap 序号门禁修复包已交付
+
+2026-11-15。[Release80](release80-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release80，releaseID `01971a00-bf36-4255-8108-8e176813a049`；安装器29,199,313bytes（27.85MiB），SHA256 `026FAFBB6C0FA8CB7154A70144242B227517CB818D43770E9D3F49184E144397`。新公钥SHA256 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- 修复迁移后Bootstrap序号落后于当前安装包时误判compatible的问题；固定4,672输入，签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过；PlatformHost编译0警告/0错误，PowerShell语法通过。
+- 交付读回一致；证据 `.diagnostics/packaging/20261115-191139-5f3011d4-published5/`。Release79旧产物保留。Release80尚未在用户机器上实际安装验证；全量产品、当前材料离线重构建未重跑。未提交或推送。原337596bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 Release79 迁移期旧 active 快照验证回退包已交付
+
+2026-11-15。[Release79](release79-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release79，releaseID `64c97271-f7c4-4883-8e43-cab023a0952a`；安装器29,194,961bytes（27.84MiB），SHA256 `523A97822C522F501DAB2FE920512B58FADA8704DC4E5A5D0803D64FD1041E4B`。新公钥SHA256 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- 迁移期只对当前旧 active/recovery snapshot 使用历史公开锚验证，新包和后续发布仍只使用新公钥。固定4,671输入，签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过；PlatformHost编译0警告/0错误，PowerShell语法通过。
+- 交付读回一致；证据 `.diagnostics/packaging/20261115-183837-e9cc2825-published4/`。Release78旧产物保留。Release79尚未在用户机器上实际安装验证；全量产品、当前材料离线重构建未重跑。未提交或推送。原336300bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 Release78 轮换预提交残留恢复包已交付
+
+2026-11-15。[Release78](release78-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release78，releaseID `f4973613-9624-452f-a5ae-3f549d3e03d3`；安装器29,196,788bytes（27.84MiB），SHA256 `B0F0D3FBB90E1D9CBA35CA06E08031B3382613661D8025918EC3A60FA441B5E7`。新公钥SHA256 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- Release78增加轮换预提交残留恢复：旧Bootstrap未移动且候选/journal身份完整匹配时清理未提交候选后继续；已有替换或身份不一致仍拒绝。固定4,669输入，签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过；PlatformHost编译0警告/0错误，PowerShell语法通过。
+- 交付读回一致；证据 `.diagnostics/packaging/20261115-174828-5ae3bbbf-published3/`。Release77旧产物保留。Release78尚未在用户机器上实际安装验证；全量产品、当前材料离线重构建未重跑。未提交或推送。原334961bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 Release77 手动信任轮换状态修复包已交付
+
+2026-11-15。[Release77](release77-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release77，releaseID `28fd21c9-27c7-4cc4-b818-bdcfb6384199`；安装器29,196,614bytes（27.84MiB），SHA256 `40FF7AE5C611E525055F053C6F4DE1D8620AD75DBF751D9BCB62F48EEE3D23A5`。新公钥SHA256 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- Release77修复旧公钥登记轮换在停服务阶段误用新公钥校验的问题；PlatformHost编译0警告/0错误，PowerShell语法通过。固定4,668构建输入，签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过。
+- 交付读回一致；证据 `.diagnostics/packaging/20261115-171527-fdbd0c1e-published/`。Release76旧产物保留。实际旧版本覆盖、UAC、服务/注册表轮换和回滚未执行；全量产品、当前材料离线重构建未重跑。未提交或推送。原333687bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 Release76 手动信任轮换修复包已交付
+
+2026-11-15。[Release76](release76-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release76，releaseID `be45645d-4b48-4fdb-8013-f6e3fcc3db56`；安装器29,195,241bytes（27.84MiB），SHA256 `FFB8E6661A33D6A326D9485D077A4767CFFD7209D5CDBA64817F7C8AADA52DBC`。新公钥SHA256 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- 固定4,667构建输入，独立缓存/输出，内容无漂移；签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过。PlatformHost Release编译0警告/0错误，PowerShell轮换脚本语法通过。
+- 修复旧公钥登记阻断：旧Bootstrap身份完整但公钥不同会进入明确轮换确认；新PlatformHost在部署门内更新Bootstrap、公钥登记和enrollment，失败恢复旧身份。实际旧版本覆盖、UAC、服务和注册表轮换未执行。
+- 交付读回一致；证据 `.diagnostics/packaging/20261115-125815-042c8d1d-published/`。Release75旧产物保留。全量产品及当前材料离线重构建未重跑；既有定向结果仅历史复用。未提交或推送。原332215bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 Release75 新发布身份手动迁移包已交付
+
+2026-11-15。[Release75](release75-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 使用新发布身份完成正式Release75，releaseID `a93beec0-4d28-4d5b-bde0-580ba0c303c9`；安装器29,192,471bytes（27.84MiB），SHA256 `3E5FAB95EC5AAA9F486F11B3D61336FF8ECE0C81DEEC1B74755B1D9D0FC67899`。新公钥SHA256 `a7caa726f091b61620879c2935e37b85eac286714045fc71d158cad04c3beb68`；产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- 新私钥和账本位于仓库外 `D:\NxTools-private-release-keys\`；历史序号74保留，Release75使用75。固定4,666构建输入，独立缓存/输出，内容无漂移；签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过。Desktop/Host/helper/安装器数字文件版本读回0.7.1.0。
+- 交付读回一致；证据 `.diagnostics/packaging/20261115-121004-bb6cb18d-published/`。Release74旧产物保留。新安装器沿用原AppId/目录/覆盖流程；首次迁移依赖用户手动运行，实际覆盖安装和旧受信组件轮换未执行。
+- 全量产品、当前材料离线重构建未重跑；既有定向结果仅历史复用。未执行真实安装/卸载、产品启动、服务操作或注册表修改；未提交或推送。原330673bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 正式 Release74 安装器已交付
+
+2026-11-14。[Release74](release74-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release74，releaseID `720a1504-ae1b-47c2-87ed-da52d67a758e`；安装器29,200,238bytes（27.85MiB），SHA256 `3BA0AB43122D8EA9FC329482B654493C1364846461FD8DD31C72F8C824F92F92`。产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- 固定4,665构建输入，独立缓存/输出，内容无漂移；原打包入口正常退出0。签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过。Desktop/Host/helper/安装器数字文件版本读回0.7.1.0。
+- 交付读回一致；证据 `.diagnostics/packaging/20261114-174723-286542fc-published2/`。对应材料与126源文件/3清单/147依赖匹配，Release73旧产物保留。全量产品、当前材料离线重构建未重跑；此前定向结果仅历史复用，当前拖放定位/浮动助手/集成初始化修改的交互验收不由打包代替。
+- 未执行真实安装/卸载、产品启动、服务操作或注册表修改；索引器安装态及物理UI等原开放项保持，B4未恢复。未提交或推送。原329259bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 0.7.1 正式 Release73 安装器已交付
+
+2026-11-14。[Release73](release73-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 实际构建正式Release73，releaseID `5beb6c5a-b90f-4cc4-838b-42fcc0038ed0`；安装器29,185,432bytes（27.83MiB），SHA256 `1901B9B7B74071420D261297271ABE5DF9D5EB40193693DA8F97BA34FBD45481`。产品与扩展均0.7.1，仅交付正常EXE，无外层完整分发ZIP。
+- 固定4,662构建输入，独立缓存/输出，内容无漂移；原打包入口正常退出0。签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64、16Inno/5BrowserHost和版本5项通过。Desktop/Host/helper/安装器数字文件版本读回0.7.1.0。
+- 交付读回一致；证据 `.diagnostics/packaging/20261114-134319-8220e329/`。对应材料与126源文件/3清单/147依赖匹配，Release72旧产物保留。全量产品、当前材料离线重构建未重跑；此前定向结果仅历史复用，当前提权输入/快速启动等修改的交互验收不由打包代替。
+- 未执行真实安装/卸载、产品启动、服务操作或注册表修改；索引器安装态及物理UI等原开放项保持，B4未恢复。未提交或推送。原327869bytes检查点完整保留为精确suffix。
+
+---
+
+# Current checkpoint — 产品与扩展0.7.1 / 正式 Release72
+
+2026-11-14。[Release72](release72-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 产品、14个第一方Rust包、C#程序集、正常/维护安装器及浏览器扩展统一0.7.1。第三方依赖、扩展身份/权限/脚本顺序及协议版本不变；交付Desktop/Host/helper/安装器数字文件版本均读回0.7.1.0。
+- 正式Release72，releaseID `e0a48a33-6f04-4300-aff7-f1dc48f66804`；安装器29,184,982bytes（27.83MiB），SHA256 `D2F218A22AC0D87CF6810297FE888F70332BA3B7C109CB976B01E13ACAA21CB6`。仅交付正常EXE，未生成外层完整分发ZIP。
+- 固定4,658构建输入，独立缓存/输出，无漂移；原打包入口正常退出0。签名、107成员/精确109文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。版本5/入口12/源码材料5/清理定向1/扩展Node25/浏览器签名7项通过。
+- 交付读回一致；证据 `.diagnostics/packaging/20261114-094143-1ec46b84/`。对应材料与126源文件/3清单/147依赖匹配，原Release70产物保留。全量产品及当前材料离线重构建未重跑；历史定向验证复用不计新执行。
+- 未执行真实安装/卸载、产品启动、服务操作或注册表修改；索引器安装态及物理UI等原开放项不变，B4未恢复。未提交或推送。原326335bytes检查点保留为精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release70 安装器已生成
+
+2026-11-14。[Release70](release70-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release70，releaseID `83c09a9c-3a6a-4444-93df-9f914febf398`；安装器29,177,542bytes（27.83MiB），SHA256 `6D51E08C72B962C9F2FB6E9B6E0EBEEE80E5D42B9EB7F808C3F3CA1D022DD853`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定4,656构建输入文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、107成员/精确109散装包文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。原安装准备修复和助手身份保持。
+- 正式交付读回一致；证据 `.diagnostics/packaging/20261114-083338-0a02063b/`。对应材料与126源文件/3清单/147依赖匹配。全量产品及独立离线重构建未重跑，历史定向验证复用不计新执行。
+- 真实安装、UAC/恢复、卸载、索引器安装态及物理UI等原开放项保持；未执行服务操作、注册表修改、提交或推送。旧产物和历史记录完整保留；仅prepend，原325066bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release69 安装器已生成
+
+2026-11-13。[Release69](release69-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release69，releaseID `e113aced-e1ca-4aeb-9dbf-c7f6910506d7`；安装器29,178,545bytes（27.83MiB），SHA256 `DB9399F1B06732537CAA9638DB085CC1EE4BF6E246A0CB69C0CC21992656444F`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定4,654构建输入文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、107成员/精确109散装包文件、10输出、94扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。原安装准备修复和助手身份保持。
+- 新增3个当前扩展源码及测试文件，无删除项，全部匹配固定源码和签名清单。正式交付读回一致；证据 `.diagnostics/packaging/20261113-190214-72ffb673/`。对应材料与126源文件/3清单/147依赖匹配。
+- 全量产品及独立离线重构建未重跑，历史定向验证复用不计新执行；真实安装、UAC/恢复、卸载、索引器安装态及物理UI等原开放项保持。未执行服务操作、注册表修改、提交或推送；旧产物和历史记录完整保留，仅prepend，原323694bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release68 安装器已生成
+
+2026-11-13。[Release68](release68-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release68，releaseID `a470598a-3b3c-422b-858d-abcf273e3ab5`；安装器29,062,303bytes（27.72MiB），SHA256 `28C066888D32B66DA3501118A40E388B62888B2C181543BD166E2CC9C30D36E6`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定4,588构建输入文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、104成员/精确106散装包文件、10输出、91扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。原安装准备修复和助手身份保持。
+- 新增11个当前扩展源码及测试文件，无删除项，全部匹配固定源码和签名清单。正式交付读回一致；证据 `.diagnostics/packaging/20261113-123410-366e683b/`。对应材料与126源文件/3清单/147依赖匹配。
+- 全量产品及独立离线重构建未重跑，历史定向验证复用不计新执行；真实安装、UAC/恢复、卸载、索引器安装态及物理UI等原开放项保持。未执行服务操作、注册表修改、提交或推送；旧产物和历史记录完整保留，仅prepend，原322321bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release67 安装器已生成
+
+2026-11-13。[Release67](release67-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release67，releaseID `0939ce1c-3c1b-4e29-b822-751957b6a57c`；安装器29,037,653bytes（27.69MiB），SHA256 `E564E52561F13AB6F3A8E842B1278E05D64A2E119C79259055D2F99F0A791F8B`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定4,562构建输入文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、93成员/精确95散装包文件、10输出、80扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。原安装准备修复和助手身份保持。
+- 正式交付读回一致；证据 `.diagnostics/packaging/20261113-085630-6655457c/`。对应材料与126源文件/3清单/147依赖匹配。全量产品及独立离线重构建未重跑，历史定向验证复用不计新执行。
+- 真实安装、UAC/恢复、卸载、索引器安装态及物理UI等原开放项保持；未执行服务操作、注册表修改、提交或推送。旧产物和历史记录完整保留；仅prepend，原321054bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release66 安装器已生成
+
+2026-11-12。[Release66](release66-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release66，releaseID `128ef41f-0867-400f-af74-2858d7f0c5c4`；安装器28,828,120bytes（27.49MiB），SHA256 `0EF868812FABD2BC979D3651D672E65237CAC892F641593453844FBE6403AF83`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定9,924源码文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、93成员/精确95散装包文件、10输出、80扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。原安装准备修复和助手身份保持。
+- 正式交付读回一致；证据 `.diagnostics/packaging/20261112-111947-8b58a494/`。对应材料与108源文件/3清单/147依赖匹配。全量产品及独立离线重构建未重跑，历史定向验证复用不计新执行。
+- 真实安装、UAC/恢复、卸载、索引器安装态及物理UI等原开放项保持；未执行服务操作、注册表修改、提交或推送。旧产物和历史记录完整保留；仅prepend，原319793bytes保持精确suffix。
+
+---
+
+# Current checkpoint — 正式 Release65 安装器已生成
+
+2026-11-12。[Release65](release65-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。
+
+- 本次实际构建正式Release65，releaseID `a0a2a7ea-2c4f-4b8c-ac11-1873c8a3627d`；安装器28,824,932bytes（27.49MiB），SHA256 `39EE41C4252274EC02B52C53140554383EC6EBA2235BCF616F88B2D783B13609`。仅交付安装器，未生成外层完整分发ZIP。
+- 固定8,854源码文件、独立缓存和输出，内容无漂移；原package.ps1退出0。签名、93成员/精确95散装包文件、10输出、80扩展源、5批准/helper绑定、身份30/退出47各x86/x64及16Inno/5BrowserHost通过。原安装准备修复和助手身份保持。
+- 正式交付读回一致；证据 `.diagnostics/packaging/20261111-235710-fdf55657/`。对应材料与108源文件/3清单/147依赖匹配。全量产品及独立离线重构建未重跑，历史定向验证复用不计新执行。
+- 真实安装、UAC/恢复、卸载、索引器安装态及物理UI等原开放项保持；未执行服务操作、注册表修改、提交或推送。旧产物和历史记录完整保留；仅prepend，原318532bytes保持精确suffix。
+
+---
+
 # Current checkpoint — 正式 Release64 安装器已生成
 
 2026-11-10。[Release64](release64-package-outcomes.md)。归档仍 **Phase E — Format expansion and ZIP editing / in_progress**，原限定及待验范围保持。

@@ -19,7 +19,7 @@ mod rar;
 pub(crate) mod sevenz_budget;
 mod sevenz_drag;
 mod sevenz_layout;
-mod volumes;
+pub(crate) mod volumes;
 
 pub(crate) fn try_execute<W: Write + Send>(
     request: &WorkerRequest,
@@ -159,6 +159,7 @@ fn source_checkpoint<W: Write + Send>(
 fn fingerprint(path: &Path, control: &OperationControl) -> Result<([u8; 32], u64)> {
     let mut file = File::open(path)?;
     let before = file.metadata()?;
+    let mut observation = control.observe_revision();
     let mut digest = Sha256::new();
     let mut buffer = [0u8; 64 * 1024];
     loop {
@@ -168,6 +169,7 @@ fn fingerprint(path: &Path, control: &OperationControl) -> Result<([u8; 32], u64
             break;
         }
         digest.update(&buffer[..count]);
+        observation.bytes += count as u64;
     }
     let after = file.metadata()?;
     if before.len() != after.len() || before.modified()? != after.modified()? {
@@ -619,7 +621,7 @@ fn run_sevenz<W: Write + Send>(
         }
         let extracting = request.operation == "extract";
         if extracting && selected.is_none() {
-            validate_extraction(&entries)?;
+            validate_extraction(&entries, job_plan.is_some())?;
         }
         if extracting {
             set.verify(control)?;
@@ -729,7 +731,8 @@ fn run_sevenz<W: Write + Send>(
                     }
                     let relative = metadata.display_path.replace('\\', "/");
                     let relative = relative.trim_end_matches('/');
-                    let wanted = selected.is_none_or(|ordinal| ordinal == metadata.id().ordinal);
+                    let wanted = selected.is_none_or(|ordinal| ordinal == metadata.id().ordinal)
+                        && codec_member_wanted(job_plan.as_ref(), metadata);
                     let token = match (native.as_mut().filter(|_| wanted), metadata.kind) {
                         (Some(native), EntryKind::Directory) => {
                             native.ensure_directory(relative)?;
@@ -906,11 +909,14 @@ fn finalize_directories(
     Ok(())
 }
 
-fn validate_extraction(entries: &[ArchiveEntry]) -> Result<()> {
+fn validate_extraction(entries: &[ArchiveEntry], job_planned: bool) -> Result<()> {
     let mut files = 0;
     for entry in entries {
         if matches!(entry.kind, EntryKind::File | EntryKind::Directory) {
             entry.metadata.validate()?;
+        }
+        if job_planned {
+            continue;
         }
         if entry.warnings.contains(&EntryWarning::UnsafePath) {
             return Err(ArchiveError::UnsafePath);
@@ -951,7 +957,7 @@ fn run_rar<W: Write + Send>(
         replies.clone(),
         "source_validated",
     )?;
-    let (mut entries, mut files, mut bytes, _) = rar::execute(request, control, None, None)?;
+    let (mut entries, mut files, mut bytes, _) = rar::execute(request, control, None, None, None)?;
     validate_metadata(&mut entries, &request.limits.into(), control)?;
     let entries: std::sync::Arc<[ArchiveEntry]> = entries.into();
     control.record_work(|work| work.catalog_loads += 1);
@@ -976,7 +982,7 @@ fn run_rar<W: Write + Send>(
     let mut skipped = 0;
     if request.operation == "extract" {
         if selected.is_none() {
-            validate_extraction(&entries)?;
+            validate_extraction(&entries, job_plan.is_some())?;
         }
         set.verify(control)?;
         extraction_preflight(
@@ -996,8 +1002,13 @@ fn run_rar<W: Write + Send>(
             .extraction_metadata(request.extract_options.is_some())
             .conflicts(request.conflict_policy, interaction, entries.clone());
         let result: Result<()> = (|| {
-            let (_, count, decoded, mut pending) =
-                rar::execute(request, control, Some(&mut native), Some(&entries))?;
+            let (_, count, decoded, mut pending) = rar::execute(
+                request,
+                control,
+                Some(&mut native),
+                Some(&entries),
+                job_plan.as_ref(),
+            )?;
             let result: Result<()> = (|| {
                 set.verify(control)?;
                 native.source_checkpoint("source_precommit")?;
@@ -1092,6 +1103,28 @@ fn record_extraction(
     control.source_delete_finish(lifecycle, reason, vec![request.operation_id]);
 }
 
+/// Native codec catalogs assign monotonic original ordinals; plans retain their catalog order.
+/// Name-to-output mapping cannot distinguish separate source records with the same name.
+pub(crate) fn codec_member_wanted(
+    plan: Option<&crate::planning::ExtractionPlan>,
+    entry: &ArchiveEntry,
+) -> bool {
+    plan.is_none_or(|plan| {
+        let ordinal = entry.id().ordinal;
+        match entry.kind {
+            EntryKind::File => plan
+                .files()
+                .binary_search_by_key(&ordinal, |file| file.id().ordinal)
+                .is_ok(),
+            EntryKind::Directory => plan
+                .explicit_directories
+                .binary_search_by_key(&ordinal, |id| id.ordinal)
+                .is_ok(),
+            _ => false,
+        }
+    })
+}
+
 #[cfg(test)]
 mod browser_budget_tests {
     use super::*;
@@ -1168,5 +1201,49 @@ mod packed_risk_tests {
             None,
             "unreferenced stream cannot dilute risk ratio"
         );
+    }
+}
+
+#[cfg(test)]
+mod selected_validation_tests {
+    use super::*;
+    fn file(ordinal: u64) -> ArchiveEntry {
+        ArchiveEntry {
+            id: crate::EntryId {
+                session: uuid::Uuid::nil(),
+                ordinal,
+            },
+            raw_name: b"file.txt".to_vec(),
+            display_path: format!("file-{ordinal}.txt"),
+            provenance: crate::NameProvenance::FormatUnicode,
+            kind: EntryKind::File,
+            size: Some(1),
+            compressed_size: Some(1),
+            method: 0,
+            encrypted: false,
+            crc32: None,
+            dos_modified: None,
+            metadata: Default::default(),
+            warnings: Vec::new(),
+            zip: None,
+        }
+    }
+    #[test]
+    fn ordinary_job_plan_owns_selected_paths_and_large_file_count() {
+        let mut entries = vec![file(0), file(1)];
+        entries[1].warnings.push(EntryWarning::UnsafePath);
+        assert!(matches!(
+            validate_extraction(&entries, false),
+            Err(ArchiveError::UnsafePath)
+        ));
+        validate_extraction(&entries, true)
+            .expect("selected plan already validates its original output members");
+        let large = (0..5000).map(file).collect::<Vec<_>>();
+        assert!(matches!(
+            validate_extraction(&large, false),
+            Err(ArchiveError::ResourceLimit)
+        ));
+        validate_extraction(&large, true)
+            .expect("ordinary job plan and native output budget own file count");
     }
 }

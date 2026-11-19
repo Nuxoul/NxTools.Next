@@ -1,0 +1,27 @@
+﻿[
+    {
+        "name":  "spec-contracts",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-spec-contracts.log"
+    },
+    {
+        "name":  "gpui-component-catalog",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-gpui-component-catalog.log"
+    },
+    {
+        "name":  "gpui-release-contracts",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-gpui-release-contracts.log"
+    },
+    {
+        "name":  "markdown-editor-contracts",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-markdown-editor-contracts.log"
+    },
+    {
+        "name":  "download-ui-lifecycle",
+        "exit":  0,
+        "log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-download-ui-lifecycle.log"
+    }
+]

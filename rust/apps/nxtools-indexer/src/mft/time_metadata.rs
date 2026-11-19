@@ -1,13 +1,23 @@
 //! True NTFS last-write metadata. Journal event time is deliberately never an input.
 
 #[cfg(any(windows, test))]
-fn filetime_to_unix_ms(ticks: i64) -> Option<i64> {
+pub(super) fn filetime_to_unix_ms(ticks: i64) -> Option<i64> {
     const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
     // Zero/negative NTFS times and dates before the Unix epoch are unknown to this view.
     let elapsed = ticks.checked_sub(UNIX_EPOCH_TICKS)?;
     (elapsed > 0)
         .then_some(elapsed / 10_000)
         .filter(|ms| *ms > 0)
+}
+
+#[cfg(all(test, windows))]
+thread_local! {
+    static ATTRIBUTE_READS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(all(test, windows))]
+pub(super) fn attribute_read_count() -> u64 {
+    ATTRIBUTE_READS.with(std::cell::Cell::get)
 }
 
 #[cfg(windows)]
@@ -26,6 +36,8 @@ mod native {
     };
 
     pub(crate) fn read_last_write_by_id(volume: HANDLE, reference: u64) -> Option<i64> {
+        #[cfg(test)]
+        super::ATTRIBUTE_READS.with(|count| count.set(count.get() + 1));
         let descriptor = FILE_ID_DESCRIPTOR {
             dwSize: size_of::<FILE_ID_DESCRIPTOR>() as u32,
             Type: FileIdType,

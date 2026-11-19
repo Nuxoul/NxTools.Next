@@ -14,9 +14,9 @@ use nxtools_clipboard::{ClipboardItem, ClipboardKind};
 use unicode_width::UnicodeWidthStr;
 
 use crate::clipboard::ClipboardApplication;
-use crate::theme::{Theme, UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
+use crate::theme::{Theme, UI_MONO_FONT_FAMILY};
 use crate::ui::metrics::RADIUS_CONTROL;
-use crate::ui::typography::{TEXT_BODY, TEXT_LABEL};
+use crate::ui::typography::{TEXT_BODY, TEXT_LABEL, active_ui_font_family};
 
 const TEXT_LINE_HEIGHT: f32 = 20.0;
 const META_LINE_HEIGHT: f32 = 16.0;
@@ -36,7 +36,6 @@ pub(crate) fn preview_shell(theme: Theme) -> Div {
         .border_1()
         .border_color(theme.window_border)
         .bg(theme.canvas)
-        .font_family(UI_FONT_FAMILY)
         .text_color(theme.text)
         .flex()
         .flex_col()
@@ -69,7 +68,7 @@ pub(crate) struct ClipboardPreview {
     application: WeakEntity<ClipboardApplication>,
     appearance_generation: u64,
     rich: rich::PreparedText,
-    measured_for: Option<(rich::ViewingMode, f32)>,
+    measured_for: Option<(rich::ViewingMode, f32, gpui_kit::SharedString)>,
     measured_callback: Option<MeasuredLayoutCallback>,
     viewport_body_height: f32,
     text_scroll: gpui_kit::ScrollHandle,
@@ -134,8 +133,9 @@ impl ClipboardPreview {
     fn measure_rendered_layout(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         use gpui_kit::AvailableSpace;
         let width = self.layout.window_width - WINDOW_HORIZONTAL_CHROME;
+        let family = active_ui_font_family(cx);
         if self.item.kind != ClipboardKind::Text
-            || self.measured_for == Some((self.rich.mode, width))
+            || self.measured_for == Some((self.rich.mode, width, family.clone()))
         {
             return;
         }
@@ -144,7 +144,7 @@ impl ClipboardPreview {
                 .max(TEXT_LINE_HEIGHT)
         } else if let Some(state) = self.rich.markdown.as_ref().or(self.rich.code.as_ref()) {
             let mut body = div()
-                .font_family(UI_FONT_FAMILY)
+                .font_family(family.clone())
                 .w(px(width))
                 .child(state.clone())
                 .into_any_element();
@@ -185,7 +185,7 @@ impl ClipboardPreview {
                 .unwrap_or(self.layout.body_height)
                 .max(TEXT_LINE_HEIGHT)
         };
-        self.measured_for = Some((self.rich.mode, width));
+        self.measured_for = Some((self.rich.mode, width, family));
         let maximum = self.layout.maximum_height;
         self.layout = measured_layout(self.layout.window_width, natural, 24.0, maximum / 0.7);
         if let Some(callback) = self.measured_callback.take() {
@@ -858,7 +858,7 @@ mod tests {
                 )
             };
             let mut body = div()
-                .font_family(UI_FONT_FAMILY)
+                .font_family(active_ui_font_family(cx))
                 .w(px(width))
                 .child(state)
                 .into_any_element();

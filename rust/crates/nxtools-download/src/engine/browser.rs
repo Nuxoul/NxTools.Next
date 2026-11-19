@@ -156,6 +156,8 @@ impl DownloadEngine {
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        self.inner.check_admission()?;
+        self.inner.next_work_revision()?;
         if let Some(task_id) =
             self.resolve_existing_browser_handoff(handoff_id, &request_fingerprint, correlation_id)?
         {
@@ -212,6 +214,7 @@ impl DownloadEngine {
                 return Ok((task_id, true));
             }
         };
+        let accepted_revision = self.inner.bump_work_revision();
 
         tasks.insert(
             task_id,
@@ -221,6 +224,9 @@ impl DownloadEngine {
                 control: None,
                 last_progress_event: None,
                 transfer_rate: None,
+                paused_url_replacement: None,
+                completion_batch_id: None,
+                accepted_revision,
             },
         );
         drop(tasks);
@@ -306,6 +312,17 @@ impl DownloadEngine {
                 }
             })
             .collect::<Vec<_>>();
+        {
+            let mut tasks = self.inner.lock_tasks()?;
+            for result in &results {
+                if !result.duplicate
+                    && let Some(task_id) = result.task_id
+                    && let Some(state) = tasks.get_mut(&task_id)
+                {
+                    state.completion_batch_id = Some(correlation_id);
+                }
+            }
+        }
         info!(
             event = "download.browser_batch.completed",
             %correlation_id,
@@ -342,6 +359,7 @@ impl DownloadEngine {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: crate::DownloadCertificatePolicy::Strict,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -384,6 +402,8 @@ impl DownloadEngine {
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        self.inner.check_admission()?;
+        self.inner.next_work_revision()?;
         if let Some(task_id) =
             self.resolve_existing_browser_handoff(handoff_id, &request_fingerprint, correlation_id)?
         {
@@ -407,6 +427,7 @@ impl DownloadEngine {
         import_blob_artifact(&staged_path, &final_path)?;
         let now = now_unix_ms();
         let mut task = DownloadTask::new(request, RequestOrigin::Browser, now);
+        task.set_completion_attempt(1);
         for status in [
             DownloadStatus::Probing,
             DownloadStatus::Waiting,
@@ -485,6 +506,7 @@ impl DownloadEngine {
             }
         }
         let task_id = task.id();
+        let accepted_revision = self.inner.bump_work_revision();
         tasks.insert(
             task_id,
             EngineTaskState {
@@ -493,6 +515,9 @@ impl DownloadEngine {
                 control: None,
                 last_progress_event: None,
                 transfer_rate: None,
+                paused_url_replacement: None,
+                completion_batch_id: None,
+                accepted_revision,
             },
         );
         drop(tasks);
@@ -630,7 +655,7 @@ impl DownloadEngine {
         )
     }
 
-    fn open_browser_dialog_source_correlated(
+    pub(super) fn open_browser_dialog_source_correlated(
         &self,
         handoff_id: uuid::Uuid,
         source: BrowserDownloadDialogSource,

@@ -19,6 +19,7 @@ History owns Connection/item/format/category SQL; current initialization uses CR
 - Every `ClipboardItem` query projection includes `last_used_at_unix_ms`; the cursor is copied from the returned row and is never reread by ID for pagination.
 - Cursor SQL uses descending `(is_pinned, last_used_at_unix_ms, captured_at_unix_ms, id)` ordering and fetches `limit + 1` rows to derive `has_more`.
 - A known filtered total may be reused for appended/prepended pages; a fresh query must calculate it.
+- Panel filter snapshots combine category, keyword/scope, optional source process and an optional half-open capture-time range. Initial count, offset and forward cursor use the same predicate. A filter change starts a new query generation with no inherited total; exact-ID extension location returns to the unfiltered All view.
 
 ### 4. Validation & Error Matrix
 - Missing category -> `CategoryNotFound`.

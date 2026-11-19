@@ -1,0 +1,44 @@
+{
+  "oracle": "independent Python CC0 Appendix A / format CRC",
+  "fixtures": [
+    {
+      "fixture": "azo_pe.egg",
+      "archive_bytes": 41306,
+      "files": 1,
+      "bytes": 148781,
+      "members": [
+        {
+          "index": 0,
+          "name": "hello.sys",
+          "size": 148781,
+          "crc32": "b9a7aa7c",
+          "blocks": [
+            {
+              "header": 70,
+              "offset": 92,
+              "method": 3,
+              "level": 1,
+              "packed": 41210,
+              "expanded": 148781,
+              "crc32": "b9a7aa7c",
+              "azo_blocks": [
+                {
+                  "expanded": 148781,
+                  "x86_changes": 151,
+                  "packed": 41184,
+                  "read_bits": 329496,
+                  "lookahead_bits": 24,
+                  "literals": 19538,
+                  "matches": 12677,
+                  "max_distance": 140436
+                }
+              ]
+            }
+          ],
+          "expected": "0.bin.gz"
+        }
+      ],
+      "origin": "unchanged pinned CC0"
+    }
+  ]
+}

@@ -77,6 +77,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     private readonly IPlatformLog _log;
     private readonly ShellContextMenuSessionManager _shellActions = new();
     private readonly IElevatedDirectoryNavigationChannel _elevatedDirectoryNavigation;
+    private readonly IDisposable _directoryLifetime;
     private readonly NativeFileDragCoordinator _fileDragCoordinator;
     private readonly NativeContextMenuCoordinator _contextMenus;
     private readonly TaskbarProgressLogGate _taskbarProgressLogGate = new();
@@ -99,7 +100,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         _contextMenus = new NativeContextMenuCoordinator(_log,
             flushPointerObservation: () => _window?.FlushContextMenuPointerPress());
         _extensionRuntimeInspector = new ExtensionRuntimeInspector(_log);
-        ThirdPartyFileManagerAdapter.WarmUp();
+        _directoryLifetime = ThirdPartyFileManagerAdapter.BeginLifetime(_log, "ordinary");
         _elevatedDirectoryNavigation = new ElevatedDirectoryNavigationClient(
             platformEvent => _events.Writer.TryWrite(platformEvent),
             _log);
@@ -115,6 +116,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         _started.Wait();
         if (_startupError is not null)
         {
+            _directoryLifetime.Dispose();
+            _elevatedDirectoryNavigation.Dispose();
             throw new InvalidOperationException("Windows platform adapter failed to start.", _startupError);
         }
     }
@@ -122,6 +125,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public ChannelReader<WindowsPlatformEvent> Events => _events.Reader;
     internal void DiscardQueuedEventsForNewSession()
     {
+        ThirdPartyFileManagerAdapter.ResumeLifetime(_log, "ordinary");
         while (_events.Reader.TryRead(out var platformEvent))
         {
             if (platformEvent is ClipboardCapturedEvent captured)
@@ -135,6 +139,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     }
 
     internal void CancelCurrentShellContextWork() => _shellActions.CancelCurrent();
+    internal void CancelCurrentDirectoryContextWork() => ThirdPartyFileManagerAdapter.Stop();
     internal static bool TryPublishClipboardCapturedEvent(
         ChannelWriter<WindowsPlatformEvent> events,
         ClipboardCapturedEvent captured,
@@ -924,9 +929,25 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             new IntPtr(command.WindowHandle),
             new IntPtr(command.WindowHandle))
             ? new WindowsCommandResult(true)
-            : new WindowsCommandResult(
-                false,
-                "Windows did not activate and focus the requested GPUI window.");
+            : new WindowsCommandResult(false, "Windows did not activate and focus the requested GPUI window.");
+
+    public WindowsCommandResult ActivateWindow(ActivateWindowCommand command,
+        Guid correlationId, uint desktopProcessId)
+    {
+        if (desktopProcessId != 0 &&
+            ElevatedInputClientPlatform.WindowProcessId(command.WindowHandle) == desktopProcessId &&
+            _elevatedDirectoryNavigation is IElevatedInputChannel input &&
+            input.TryActivateInput(new(command.WindowHandle, correlationId),
+                ElevatedInputClientPlatform.ForegroundWindow()) is { } elevatedResult)
+            return elevatedResult;
+        return ActivateWindow(command);
+    }
+
+    internal void BindDesktopInputPeer(uint processId)
+    {
+        if (_elevatedDirectoryNavigation is ElevatedDirectoryNavigationClient client)
+            client.BindDesktopInputPeer(processId);
+    }
 
     internal static bool TryActivateNativeWindow(long windowHandle) =>
         TryActivateNativeWindow(windowHandle, 0);
@@ -957,6 +978,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     public WindowsCommandResult OpenDefaultAppsSettings(
         OpenDefaultAppsSettingsCommand command, Guid correlationId, CancellationToken cancellationToken) =>
         new DefaultAppsSettingsOpener(_log).Open(command, correlationId, cancellationToken);
+
+    public WindowsCommandResult MarkdownAssociation(
+        MarkdownAssociationCommand command, Guid correlationId, CancellationToken cancellationToken) =>
+        MarkdownAssociationService.CreateProduct(_log).ExecuteBounded(command, correlationId, cancellationToken);
 
     public Task<WindowsCommandResult> OpenShellTargetAsync(
         OpenShellTargetCommand command,
@@ -1060,6 +1085,9 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     public WindowsCommandResult ShutdownSystem(ShutdownSystemCommand command) =>
         _completionSystemActions.RequestShutdown(command.DelaySeconds);
+
+    public WindowsCommandResult SuspendSystem(SuspendSystemCommand command) =>
+        _completionSystemActions.RequestSuspend(command.Hibernate);
 
     public WindowsCommandResult PickBrowserExtensionExportPath(PickBrowserExtensionExportPathCommand command,
         Guid correlationId, CancellationToken cancellationToken)
@@ -1618,6 +1646,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         _contextMenus.Dispose();
         _extensionRuntimeInspector.Dispose();
         _window?.RequestStop();
+        _directoryLifetime.Dispose();
         if (!_thread.Join(TimeSpan.FromSeconds(5)))
         {
             Console.Error.WriteLine("Windows platform adapter did not stop within five seconds.");

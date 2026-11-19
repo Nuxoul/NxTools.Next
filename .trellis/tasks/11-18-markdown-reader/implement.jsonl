@@ -1,0 +1,4 @@
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Desktop owners, deferred entity callbacks and production behavior gates"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official tile, header button and reader component composition"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Owned Windows file chooser, detached command and native PDF boundaries"}
+{"file":"docs/reference-code/markdown-reader.md","reason":"mdview behavior and pinned GPUI/NxTools entry paths"}

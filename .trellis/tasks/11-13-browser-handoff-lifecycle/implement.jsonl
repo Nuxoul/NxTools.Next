@@ -1,0 +1,7 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Rust engine/state, GPUI rendering and deferred cross-owner updates"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Correlation, persistence-before-publication and secret-free diagnostics"}
+{"file":".trellis/spec/browser-extension/contracts.md","reason":"Browser ownership, Cookie isolation and native transport lifetime"}
+{"file":".trellis/spec/nxtools-download/backend/index.md","reason":"Engine owners and relevant quality contracts"}
+{"file":".trellis/spec/nxtools-browser-host/backend/quality-guidelines.md","reason":"Native framed durable identity receipt"}
+{"file":"docs/reference-code/browser-integration-polish.md","reason":"Verified ABDM, legacy and Mister source entries"}
+{"file":".trellis/tasks/11-13-browser-handoff-lifecycle/design.md","reason":"User-approved controlled lifecycle and external-resolution boundary"}

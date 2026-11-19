@@ -22,6 +22,7 @@ async function checkApiStatus(explicitRetry = false) {
     const response = await sendDesktopRequest("get_snapshot", {}, 2500, correlationId);
     logCheck("completed", "ready");
     lastSnapshot = response.data || lastSnapshot;
+    if (explicitRetry) void restoreBrowserHandoffs();
     return {
       ok: true,
       code: "connected",

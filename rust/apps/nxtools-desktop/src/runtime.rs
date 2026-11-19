@@ -16,13 +16,20 @@ use nxtools_clipboard::ClipboardRetentionPolicy;
 use nxtools_core::{AppConfig, AppPaths, LogGuard, SingleInstanceGuard, init_file_logging};
 use nxtools_download::DownloadStatus;
 use nxtools_download::{DownloadEngine, DownloadHttpPolicy};
-use nxtools_download_ipc::{DOWNLOAD_PIPE_NAME, DownloadHostActivity, run_download_host};
+use nxtools_download_ipc::{
+    DOWNLOAD_PIPE_NAME, DownloadHostActivity, DownloadHostReadiness, run_download_host,
+    stop_download_host,
+};
 use nxtools_finder::{FinderCatalog, default_application_roots};
+use nxtools_ipc::desktop_markdown_intent::{MarkdownIntentReceiver, markdown_intent_channel};
 use nxtools_ipc::{
     INDEXER_PIPE_NAME, connect_local_indexer_pipe, connect_local_pipe, read_bounded_sync_frame,
     write_envelope_sync,
 };
 use nxtools_network::NetworkPolicy;
+use nxtools_protocol::desktop_markdown_intent::{
+    DesktopMarkdownIntent, LaunchFailure as MarkdownLaunchFailure,
+};
 use nxtools_protocol::{
     ActivateWindowCommand, DEFAULT_PLATFORM_PIPE_NAME, Envelope, Hello, IndexerCommand,
     IndexerEvent, Message, PlatformCommand, SetWindowVisibilityCommand,
@@ -150,9 +157,12 @@ pub struct DesktopRuntime {
     pub platform_bridge: Option<nxtools_ipc::PlatformBridge>,
     pub indexer_bridge: Option<IndexerBridge>,
     pub archive_launches: Option<nxtools_ipc::desktop_archive_intent::ArchiveIntentReceiver>,
+    pub markdown_launches: Option<MarkdownIntentReceiver>,
     pub clipboard_worker: Option<ClipboardCaptureWorkerHandle>,
     pub finder_catalog: Option<FinderCatalog>,
     pub download_engine: Option<DownloadEngine>,
+    download_host_activity: Option<DownloadHostActivity>,
+    download_host_thread: Option<JoinHandle<Result<()>>>,
     pub(crate) extension_service: crate::extensions::service::ExtensionService,
     pub(crate) extension_ui_calls:
         Option<AsyncReceiver<crate::extensions::feature_adapters::UiHostCall>>,
@@ -169,6 +179,7 @@ impl DesktopRuntime {
     pub fn initialize(
         instance_wait: Duration,
         initial_archive: Option<nxtools_protocol::desktop_archive_intent::DesktopArchiveIntent>,
+        initial_markdown: Option<DesktopMarkdownIntent>,
     ) -> Result<Self> {
         let paths = AppPaths::discover()?;
         let instance = acquire_desktop_instance(&paths, instance_wait)?;
@@ -215,7 +226,8 @@ impl DesktopRuntime {
                 config_path.clone(),
                 paths.data_dir.join("extensions-data"),
             )?;
-        start_download_host(download_engine.clone())?;
+        let (download_host_activity, download_host_thread) =
+            start_download_host(download_engine.clone())?;
         let download_default_directory = std::env::var_os("USERPROFILE")
             .map(PathBuf::from)
             .map(|home| home.join("Downloads"))
@@ -229,7 +241,13 @@ impl DesktopRuntime {
                 return Err(failure.into());
             }
         }
-        let platform_server = platform_server.with_archive_intents(archive_intents);
+        let (markdown_intents, markdown_launches) = markdown_intent_channel();
+        if let Some(intent) = initial_markdown {
+            markdown_intents.submit(intent)?;
+        }
+        let platform_server = platform_server
+            .with_archive_intents(archive_intents)
+            .with_markdown_intents(markdown_intents);
         start_platform_server(config.platform_pipe_name.clone(), platform_server)?;
         let platform_host = PlatformHostSupervisor::launch_if_packaged()?;
         let (indexer_bridge, indexer_endpoint) = indexer_bridge(256);
@@ -242,9 +260,12 @@ impl DesktopRuntime {
             platform_bridge: Some(platform_bridge),
             indexer_bridge: Some(indexer_bridge),
             archive_launches: Some(archive_launches),
+            markdown_launches: Some(markdown_launches),
             clipboard_worker: Some(clipboard_worker),
             finder_catalog: Some(finder_catalog),
             download_engine: Some(download_engine),
+            download_host_activity: Some(download_host_activity),
+            download_host_thread: Some(download_host_thread),
             extension_service,
             extension_ui_calls,
             network_policy,
@@ -257,6 +278,52 @@ impl DesktopRuntime {
             _indexer: indexer,
         })
     }
+
+    pub(crate) fn shutdown_downloads_and_wait(
+        &mut self,
+        engine: &DownloadEngine,
+        correlation_id: uuid::Uuid,
+    ) -> Result<()> {
+        let Some(activity) = self.download_host_activity.take() else {
+            anyhow::ensure!(
+                self.download_host_thread.is_none(),
+                "download IPC host activity is unavailable while its thread remains owned"
+            );
+            return engine
+                .shutdown_and_wait_correlated(correlation_id)
+                .context("failed to drain download workers");
+        };
+        let thread = self
+            .download_host_thread
+            .take()
+            .context("download IPC host thread is unavailable during shutdown")?;
+        shutdown_download_resources(
+            engine,
+            DOWNLOAD_PIPE_NAME,
+            &activity,
+            thread,
+            correlation_id,
+        )
+    }
+}
+
+fn shutdown_download_resources(
+    engine: &DownloadEngine,
+    pipe_name: &str,
+    activity: &DownloadHostActivity,
+    thread: JoinHandle<Result<()>>,
+    correlation_id: uuid::Uuid,
+) -> Result<()> {
+    activity.begin_draining();
+    let workers = engine
+        .shutdown_and_wait_correlated(correlation_id)
+        .context("failed to drain download workers");
+    let stop =
+        stop_download_host(pipe_name, activity).context("failed to request download IPC host stop");
+    let joined = join_download_host(activity, thread);
+    workers?;
+    stop?;
+    joined
 }
 
 pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
@@ -283,7 +350,8 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
         .spawn(move || while background_events.recv_blocking().is_ok() {})
         .context("failed to start the background engine event drain")?;
     let activity = DownloadHostActivity::default();
-    start_download_host_with_activity(engine.clone(), activity.clone())?;
+    let (activity, download_host_thread) =
+        start_download_host_with_activity(engine.clone(), activity)?;
     info!("background download host initialized");
 
     const IDLE_EXIT_AFTER: Duration = Duration::from_secs(5);
@@ -310,10 +378,19 @@ pub fn run_background_download_host(instance_wait: Duration) -> Result<()> {
         {
             activity.begin_draining();
             info!("background download host entered draining before idle exit");
-            extensions
+            let extension_result = extensions
                 .shutdown_and_wait()
-                .context("failed to drain background extension resources")?;
-            activity.mark_stopped();
+                .context("failed to drain background extension resources");
+            let engine_result = engine
+                .shutdown_and_wait()
+                .context("failed to drain background download workers");
+            let stop_result = stop_download_host(DOWNLOAD_PIPE_NAME, &activity)
+                .context("failed to request background download IPC host stop");
+            let host_result = join_download_host(&activity, download_host_thread);
+            extension_result?;
+            engine_result?;
+            stop_result?;
+            host_result?;
             info!("background download host exited after becoming idle");
             return Ok(());
         }
@@ -336,26 +413,53 @@ fn open_download_engine_from_config(
     Ok((engine, network_policy))
 }
 
-fn start_download_host(engine: DownloadEngine) -> Result<()> {
+fn start_download_host(
+    engine: DownloadEngine,
+) -> Result<(DownloadHostActivity, JoinHandle<Result<()>>)> {
     start_download_host_with_activity(engine, DownloadHostActivity::default())
 }
 
 fn start_download_host_with_activity(
     engine: DownloadEngine,
     activity: DownloadHostActivity,
-) -> Result<()> {
+) -> Result<(DownloadHostActivity, JoinHandle<Result<()>>)> {
     let activity_for_thread = activity.clone();
-    thread::Builder::new()
+    let thread = thread::Builder::new()
         .name("download-ipc".into())
         .spawn(move || {
-            if let Err(error) =
-                run_download_host(DOWNLOAD_PIPE_NAME, engine, activity_for_thread.clone())
-            {
-                activity_for_thread.mark_failed("ipc_server_stopped");
-                error!(%error, "download IPC server stopped");
+            let result = run_download_host(DOWNLOAD_PIPE_NAME, engine, activity_for_thread.clone());
+            if result.is_err() {
+                if activity_for_thread.readiness() != DownloadHostReadiness::Failed {
+                    activity_for_thread.mark_failed("ipc_server_stopped");
+                }
+                error!(
+                    event = "download.ipc.host_failed",
+                    "download IPC server stopped with an error"
+                );
             }
+            result
         })
         .context("failed to start download IPC thread")?;
+    Ok((activity, thread))
+}
+
+fn join_download_host(
+    activity: &DownloadHostActivity,
+    thread: JoinHandle<Result<()>>,
+) -> Result<()> {
+    thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("download IPC host thread panicked"))?
+        .context("download IPC host exited with a failure")?;
+    anyhow::ensure!(
+        activity.connected_clients() == 0,
+        "download IPC host exited with {} registered clients",
+        activity.connected_clients()
+    );
+    anyhow::ensure!(
+        activity.readiness() == DownloadHostReadiness::Stopped,
+        "download IPC host exit did not reach the stopped state"
+    );
     Ok(())
 }
 
@@ -398,7 +502,7 @@ struct PlatformHostSupervisor {
 }
 
 struct IndexerSupervisor {
-    stop: Sender<()>,
+    stop: AsyncSender<()>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -414,7 +518,7 @@ impl IndexerSupervisor {
             return Ok(None);
         }
 
-        let (stop, receiver) = mpsc::channel();
+        let (stop, receiver) = async_channel::bounded(1);
         let thread = thread::Builder::new()
             .name("indexer-supervisor".into())
             .spawn(move || supervise_indexer_service(endpoint, receiver))
@@ -428,7 +532,7 @@ impl IndexerSupervisor {
 
 impl Drop for IndexerSupervisor {
     fn drop(&mut self) {
-        let _ = self.stop.send(());
+        let _ = self.stop.try_send(());
         if let Some(thread) = self.thread.take()
             && thread.join().is_err()
         {
@@ -539,22 +643,55 @@ fn supervise_platform_host(host_path: PathBuf, receiver: Receiver<()>) {
     }
 }
 
-fn supervise_indexer_service(endpoint: IndexerProcessEndpoint, receiver: Receiver<()>) {
+fn supervise_indexer_service(endpoint: IndexerProcessEndpoint, receiver: AsyncReceiver<()>) {
     supervise_indexer_service_at(INDEXER_PIPE_NAME, endpoint, receiver);
 }
 
 fn supervise_indexer_service_at(
     pipe_name: &str,
     endpoint: IndexerProcessEndpoint,
-    receiver: Receiver<()>,
+    receiver: AsyncReceiver<()>,
+) {
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_time()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            endpoint.connected.store(false, Ordering::Release);
+            let _ = endpoint
+                .events
+                .send_blocking(IndexerNotification::Disconnected);
+            error!(
+                event = "indexer.transport.runtime_failed",
+                native_error_code = ?error.raw_os_error(),
+                "failed to initialize indexer transport runtime"
+            );
+            return;
+        }
+    };
+    runtime.block_on(run_indexer_service_at(pipe_name, endpoint, receiver));
+}
+
+async fn run_indexer_service_at(
+    pipe_name: &str,
+    endpoint: IndexerProcessEndpoint,
+    receiver: AsyncReceiver<()>,
 ) {
     loop {
+        match receiver.try_recv() {
+            Ok(()) | Err(async_channel::TryRecvError::Closed) => return,
+            Err(async_channel::TryRecvError::Empty) => {}
+        }
         let mut connection = match connect_local_indexer_pipe(pipe_name, Duration::from_millis(750))
         {
             Ok(connection) => connection,
             Err(error) => {
                 endpoint.connected.store(false, Ordering::Release);
-                if receiver.recv_timeout(Duration::from_secs(1)) != Err(RecvTimeoutError::Timeout) {
+                if tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+                    .await
+                    .is_ok()
+                {
                     return;
                 }
                 warn!(%error, "indexer service is not available; retrying local pipe");
@@ -563,7 +700,10 @@ fn supervise_indexer_service_at(
         };
         if let Err(error) = write_indexer_handshake(&mut connection.writer) {
             error!(%error, "failed to begin indexer handshake");
-            if receiver.recv_timeout(Duration::from_secs(1)) != Err(RecvTimeoutError::Timeout) {
+            if tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+                .await
+                .is_ok()
+            {
                 return;
             }
             continue;
@@ -571,28 +711,41 @@ fn supervise_indexer_service_at(
 
         let events = endpoint.events.clone();
         let connected = Arc::clone(&endpoint.connected);
-        let reader = thread::Builder::new()
+        let (reader_finished, reader_done) = async_channel::bounded::<()>(1);
+        let reader = match thread::Builder::new()
             .name("indexer-events".into())
-            .spawn(move || read_indexer_events(connection.reader, events, connected))
-            .ok();
+            .spawn(move || {
+                // Closing this sender wakes the session on reader return or unwind.
+                let _completion = reader_finished;
+                read_indexer_events(connection.reader, events, connected);
+            }) {
+            Ok(reader) => Some(reader),
+            Err(error) => {
+                warn!(
+                    event = "indexer.transport.reader_start_failed",
+                    native_error_code = ?error.raw_os_error(),
+                    "failed to start indexer event reader"
+                );
+                None
+            }
+        };
         info!(pipe = pipe_name, "connected to indexer Windows service");
 
-        let reconnect = 'session: loop {
-            match receiver.recv_timeout(Duration::from_millis(100)) {
-                Ok(()) | Err(RecvTimeoutError::Disconnected) => {
-                    break false;
+        let reconnect = loop {
+            tokio::select! {
+                biased;
+                _ = receiver.recv() => break false,
+                _ = reader_done.recv() => {
+                    warn!("indexer service stream ended; reconnecting");
+                    break true;
                 }
-                Err(RecvTimeoutError::Timeout) => {}
-            }
-            while let Ok(command) = endpoint.commands.try_recv() {
-                if let Err(error) = write_indexer_envelope(&mut connection.writer, &command) {
-                    warn!(%error, "failed to send command to indexer");
-                    break 'session true;
+                command = endpoint.commands.recv() => {
+                    let Ok(command) = command else { break false };
+                    if let Err(error) = write_indexer_envelope(&mut connection.writer, &command) {
+                        warn!(%error, "failed to send command to indexer");
+                        break true;
+                    }
                 }
-            }
-            if reader.as_ref().is_some_and(JoinHandle::is_finished) {
-                warn!("indexer service stream ended; reconnecting");
-                break true;
             }
         };
 
@@ -607,7 +760,10 @@ fn supervise_indexer_service_at(
         if let Some(reader) = reader {
             let _ = reader.join();
         }
-        if receiver.recv_timeout(Duration::from_secs(1)) != Err(RecvTimeoutError::Timeout) {
+        if tokio::time::timeout(Duration::from_secs(1), receiver.recv())
+            .await
+            .is_ok()
+        {
             return;
         }
     }
@@ -706,6 +862,30 @@ pub(crate) fn forward_running_archive(
     };
     nxtools_ipc::desktop_archive_intent::forward_archive_intent(&pipe_name, intent)?;
     Ok(true)
+}
+
+/// A reader-only handoff uses the live instance guard and listener, never a main HWND hint.
+pub(crate) fn forward_running_markdown(intent: &DesktopMarkdownIntent) -> Result<bool> {
+    let paths = AppPaths::discover().map_err(|_| MarkdownLaunchFailure::OwnerUnavailable)?;
+    if !SingleInstanceGuard::is_locked(&paths, "desktop") {
+        return Ok(false);
+    }
+    let _log_guard = init_file_logging(&paths, "markdown-launch").ok();
+    let correlation_id = intent.request_id;
+    let started = std::time::Instant::now();
+    info!(event = "markdown.launch.forward_started", %correlation_id);
+    let result = (|| {
+        let pipe_name = if paths.config_file().is_file() {
+            AppConfig::load_from(&paths.config_file())
+                .map_err(|_| MarkdownLaunchFailure::OwnerUnavailable)?
+                .platform_pipe_name
+        } else {
+            DEFAULT_PLATFORM_PIPE_NAME.into()
+        };
+        nxtools_ipc::desktop_markdown_intent::forward_markdown_intent(&pipe_name, intent)
+    })();
+    info!(event = "markdown.launch.forward_finished", %correlation_id, admitted = result.is_ok(), failure = ?result.err(), elapsed_ms = started.elapsed().as_millis());
+    result.map(|()| true).map_err(Into::into)
 }
 
 /// Summons the main window of an already-running desktop instance. A second
@@ -841,6 +1021,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -922,7 +1103,7 @@ mod tests {
         });
 
         let (_bridge, endpoint) = indexer_bridge(8);
-        let (stop, stop_receiver) = mpsc::channel();
+        let (stop, stop_receiver) = async_channel::bounded(1);
         let (finished, finished_receiver) = mpsc::channel();
         let supervisor_pipe = pipe_name.clone();
         thread::spawn(move || {
@@ -933,7 +1114,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(2))
             .expect("desktop connected to test service");
 
-        stop.send(()).expect("request desktop shutdown");
+        stop.try_send(()).expect("request desktop shutdown");
         finished_receiver
             .recv_timeout(Duration::from_secs(1))
             .expect("supervisor stopped without joining its persistent pipe reader");
@@ -950,3 +1131,94 @@ fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
         .args(["--parent-pid", &std::process::id().to_string()])
         .spawn()
 }
+
+#[cfg(test)]
+mod b5_shutdown_tests {
+    use super::*;
+
+    #[test]
+    fn b5_normal_runtime_drain_joins_original_writer_then_pipe_resources() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(2)
+            .enable_all()
+            .build()
+            .expect("HTTP fixture runtime");
+        let server = runtime.block_on(crate::completion_http_fixture::UrlServer::start());
+        let directory = tempfile::tempdir().expect("SQLite and artifact fixture");
+        let engine = DownloadEngine::open(directory.path().join("downloads.sqlite3"))
+            .expect("original engine");
+        let input = serde_json::from_value(serde_json::json!({"source_url":server.url("/old"),"save_directory":directory.path(),"file_name":"draining.bin","connection_limit":1})).expect("request");
+        let id = engine
+            .submit(input, nxtools_download::RequestOrigin::Ui)
+            .expect("actual worker admission");
+        let until = std::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            if server
+                .requests
+                .lock()
+                .expect("HTTP facts")
+                .iter()
+                .any(|request| {
+                    request.starts_with("GET /old ")
+                        && !request.to_ascii_lowercase().contains("range: bytes=0-0")
+                })
+            {
+                break;
+            }
+            assert!(
+                std::time::Instant::now() < until,
+                "writer must enter actual HTTP body"
+            );
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        let pipe = format!(r"\\.\pipe\nxtools-b5-runtime-{}", uuid::Uuid::new_v4());
+        let activity = DownloadHostActivity::default();
+        let host_activity = activity.clone();
+        let host_engine = engine.clone();
+        let host_pipe = pipe.clone();
+        let thread =
+            std::thread::spawn(move || run_download_host(&host_pipe, host_engine, host_activity));
+        let mut client =
+            nxtools_download_ipc::DownloadIpcClient::connect(&pipe, Duration::from_secs(3))
+                .expect("actual pipe Hello");
+        shutdown_download_resources(&engine, &pipe, &activity, thread, uuid::Uuid::new_v4())
+            .expect("production normal download resource drain");
+        assert_eq!(activity.readiness(), DownloadHostReadiness::Stopped);
+        assert_eq!(activity.connected_clients(), 0);
+        assert!(client.next_event().expect("retired client").is_none());
+        assert!(
+            nxtools_download_ipc::DownloadIpcClient::connect(&pipe, Duration::from_millis(100))
+                .is_err()
+        );
+        let task = engine
+            .task(id)
+            .expect("task")
+            .expect("retained task identity");
+        assert!(matches!(
+            task.task.status(),
+            DownloadStatus::Paused | DownloadStatus::Completed
+        ));
+        let stored =
+            nxtools_download::SqliteDownloadStore::open(directory.path().join("downloads.sqlite3"))
+                .expect("original store")
+                .load_task(id)
+                .expect("durable task")
+                .expect("retained durable task");
+        assert_eq!(stored.status(), task.task.status());
+        assert!(
+            engine
+                .enqueue(
+                    stored.request().clone(),
+                    nxtools_download::RequestOrigin::Ui
+                )
+                .is_err()
+        );
+        let address = server.address;
+        runtime.block_on(server.wait_drained());
+        runtime.block_on(server.close());
+        assert!(std::net::TcpStream::connect(address).is_err());
+    }
+}
+
+#[cfg(all(test, windows))]
+mod indexer_dispatch_tests;

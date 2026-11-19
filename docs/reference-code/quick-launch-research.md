@@ -32,8 +32,9 @@ Rechecked exact managed lifecycle chain: LauncherSearchWindowFactory.cs18 → La
 | --- | --- |
 | `D:\Code\SwiftList-main` | Source and first-party documentation inspected |
 | `D:\Program Files\Listary` | Installed file layout inspected |
-| `D:\Tool\dnSpy-net-win64\dnSpy.Console.exe` | Used to decompile `Listary.exe` managed metadata/code into local diagnostics only |
-| `D:\Code\NxTools.Next-main\.diagnostics\listary-managed` | Temporary investigation output; not a production dependency |
+| `D:\Tool\dnSpy-net-win64\dnSpy.Console.exe` | Exports the installed managed assemblies and BAML/XAML resources; fixed rerun script is retained with the archive |
+| `D:\Code\Listary.Decompiled\6.3.5.94` | Canonical persistent reference; `managed\Listary` and `expanded\Listary`, binary snapshot, inventory and `README.md`; independent of Trellis/session scratch |
+| `D:\Code\NxTools.Next-main\.diagnostics\listary-managed` | Historical investigation output; use the persistent archive for new source review |
 
 > 2026-08-31 迁移说明:项目移植到新机器后,参考项目已恢复,Listary 托管反编译输出已用
 > `D:\Tool\dnSpy-net-win64\dnSpy.Console.exe` 按原命令重新生成(抽查 22 处文档引用路径全部命中)。
@@ -75,11 +76,12 @@ The installed Listary service was checked through the Windows Service Control Ma
 `D:\Program Files\Listary\Listary.Service.exe`. The ordinary Listary UI is therefore not proof that
 raw-volume indexing works at medium integrity: the privileged work is isolated in a separate service.
 
-The read-only managed inspection also confirms an important path-building invariant: Listary's
-`DiskSearch` index receives an explicit root file reference and seeds that root into its folder map
-before attaching enumerated children. It does not require the root directory itself to appear in an
-MFT/USN enumeration batch. NxTools.Next independently applies the equivalent NTFS invariant by
-recognizing MFT record number 5 (while preserving its sequence bits) as the volume root.
+The legacy managed `DiskSearch` code seeds an explicit root file reference into its folder map
+before attaching enumerated children; it does not require that root to appear in the batch.
+This is historical managed evidence, not the active6.3.5.94 native engine's scan implementation.
+NxTools.Next independently recognizes MFT record number5 while preserving sequence bits.
+The active/legacy boundary and initial-build comparison are recorded in
+[`listary-initial-indexing.md`](listary-initial-indexing.md).
 
 SwiftList makes the same boundary explicit in source:
 
@@ -461,8 +463,9 @@ section and nested Shell submenus remains phase 3 work; phase 1 must not fake th
     a compacted base is accepted only when its journal ID and cursor still match. One poll schedules
     every oversized volume; one volume can never overwrite another volume's maintenance request.
 26. File search workers partition results into bounded ordered batches. Only the last batch is marked
-    complete. The desktop publishes accepted current-generation nonempty batches through the original
-    merge; pending ends only on the terminal batch. Already available results do not wait for it.
+    complete. Ordinary launcher batches accumulate privately until the index and current extension
+    providers finish, then merged ranking replaces the result set once. The attached file-dialog
+    mode retains its independent first-publication deadline and stable later merge.
 27. Incremental compaction retries are isolated per volume with bounded exponential backoff. The
     retry timer never postpones the shared USN poll; successful rebuild/compaction or new USN
     progress clears that volume's compaction fault.
@@ -528,12 +531,12 @@ section and nested Shell submenus remains phase 3 work; phase 1 must not fake th
     likewise prefers an existing target or resolved shortcut, then falls back through
     `SHGFI_USEFILEATTRIBUTES`; stale versioned paths therefore keep their `.png`, `.exe`, and other
     Windows type icons without relying on pointer hover.
-38. Query work is cancelled/coalesced before publication. Listary's normal launcher replaces its
-    committed collection only after its providers and ranking stage complete, while each new query
-    cancels the previous search scope. NxTools.Next preserves committed rows during its 65 ms input
-    coalescing window and rejects older index generations. A non-empty one-character query still
-    has full file/folder semantics; its cost must be controlled by the index data layout rather than
-    by silently skipping the indexed-file provider.
+38. Ordinary query input dispatches on the next application turn without a fixed debounce. Listary's
+    normal launcher replaces its committed collection only after its providers and ranking stage
+    complete, while each new query cancels the previous search scope. NxTools.Next preserves old
+    committed rows as non-actionable during that wait and rejects older index generations. A non-empty
+    one-character query retains full file/folder semantics; its cost is controlled by the index data
+    layout rather than by silently skipping the indexed-file provider.
 39. The indexed-search boundary is session-oriented and pageable. In the inspected managed
     Listary boundary, `Class387.method_23` searches into a stable session and returns a
     `SearchResultsSummary` with `TotalCount`; `Class387.GetSearchResults` then requests an explicit
@@ -566,18 +569,11 @@ section and nested Shell submenus remains phase 3 work; phase 1 must not fake th
     and write it back through `popup.panel.update`, re-entering the same panel lease and terminating
     the process with `double_lease_panic`. The presentation-range loader and hover retry therefore
     share the same deferred application boundary.
-45. Reverified 2026-09-03 after the user-reported "typing feels multi-second" reproduction: the
-    first visible result list is a local-provider product. When an indexed-file query was queued,
-    `search_and_request_icons` returned `pending=true` with **empty** results, withholding catalog,
-    instant-answer and command rows until the indexer round-trip completed. That violated the
-    recorded Listary behavior (invariant 38: the launcher replaces the committed collection only
-    after its providers complete, and a fresh query must not clear what is already visible) and the
-    phase-5 gate "应用目录首批结果 P95 ≤ 30 ms". The corrected contract: local rows always publish
-    in the same turn (`should_publish_immediate_results` is unconditionally true), `pending` only
-    keeps the bounded "正在搜索" hint alive (`search_update_pending(search_queued)`), and the
-    complete index batch still atomically replaces the list through `refresh_indexed_results` with
-    its generation check. Old generations are rejected exactly as before; only the withholding was
-    removed.
+45. Ordinary local, indexed and extension results share one current-query completion boundary.
+    Pending updates never replace committed rows, even when local or partial provider rows are
+    nonempty. A query with no running asynchronous provider commits immediately; otherwise the last
+    current provider completion merges, ranks and replaces results once. Cancellation, query identity,
+    popup lifetime and action guards remain active through publication.
 46. Reverified 2026-09-04 after the user reported "right-click action mode still waits ~5 s" with a
     screenshot of the bounded "正在加载 Windows 操作" state: the C# pipe read loop executed
     `query_shell_actions` inline, and the command creates a fresh STA worker per query that runs the
@@ -860,6 +856,41 @@ The staged implementation plan is in [`../quick-launch-plan.md`](../quick-launch
   后续只保存同一窗口最后焦点元素。Explorer/OneCommander 的非协作导航超时通过 Fatal 响应让
   helper 退出，同时使普通客户端立刻作废旧连接并预建下一代 helper。同名 UIA 工作在旧线程
   真正退出前持有唯一租约，重复呼出只快速失败而不继续创建可能阻塞的 STA 线程。
+
+### 管理员前台输入边界
+
+- 已核对 Listary `LauncherSearchWindowFactory.CreateView` → `LauncherSearchWindow` 构造 →
+  `SearchWindowBase` 构造/`method_7`：ShowWindow 最终调用 `base.Show`，ActivateWindow 经
+  `WindowUtils.ForceForegroundWindow` 后调用 `base.Activate`，HideWindow 直接连接 `base.Hide`。
+  此证据仅覆盖托管窗口生命周期，不包含 Listary 原生键盘钩子源码。
+- SwiftList `GlobalHotkeyDetector`/`KeyboardHookService` 的完整释放、重复按下拒绝、其他键取消，
+  以及 `QuickSearchWindowController` 的布局后显示、激活/输入焦点和隐藏恢复行为保持不变。
+- NxTools.Next 的管理员输入复用 `ElevatedDirectoryNavigationHelper.Run` 的常驻认证连接。
+  双击 Ctrl 由辅助进程的钩子检测后 PostMessage，在消息线程检查管理员前台；普通消息窗口按
+  已确认的辅助所有权、进程和配置代次分流。录制/禁用/组合热键配置同步并在连接后重放。
+  桌面仍为普通权限的主动搜索窗口，RegisterHotKey 不改；安装或关联管理员令牌缺失时保留普通路径。
+  EOF、进程退出和正常停止必须释放输入资源，不以超时 ACK 冒充原生生命周期验收。
+
+### 管理员前台激活结果边界（实机复现）
+
+- 实际入口已确认是现有 `WM_HOTKEY` 消息链：高权限自有窗口保持前台时请求速启，GPUI popup
+  已 reveal；两次 `ActivateWindow` 都返回 `success=false`，随后 `SetWindowTopmost` 返回成功，但
+  输入焦点仍留在管理员源窗口。该夹具没有执行物理双击 Ctrl，因此它只证明前台激活结果链失败，
+  不证明物理手势或高权限钩子失败。普通权限通过同一消息入口可以直接输入搜索。
+- Listary 托管调用链再次核对为 `LauncherSearchWindowFactory.CreateView` →
+  `LauncherSearchWindow(SearchBarViewModel, ListarySettings)` → `SearchWindowBase.method_7`；显示事件进入
+  `SearchWindowBase.ShowWindow`/`base.Show`，激活事件进入 `ActivateWindow`，先调用
+  `WindowUtils.ForceForegroundWindow`，再调用 `base.Activate`。托管边界没有暴露 Listary 原生前台
+  实现或键盘钩子源码，不能把它描述为可用的 native engine source。
+- SwiftList 当前源码的 `QuickSearchWindowController.ShowWindow` 在隐藏状态完成布局、位置和
+  Topmost 准备后才 `Show`，随后统一进入 `ActivateAndFocus`；该方法调用 `ForceForeground`、
+  `Window.Activate`/`Focus`，而 `FocusSearchBoxWhenForeground` 轮询真实 `GetForegroundWindow` 后才
+  聚焦搜索框。`HideWindow`/`QuickSearchWindowForegroundWatcher` 独立处理隐藏和外部前台切换，
+  Topmost 状态不替代真实前台确认。
+- NxTools.Next 的 Rust 状态机必须保持 `PreTopmost → Activate → ConfirmTopmost` 的因果关系：
+  只有成功的 `Activate` 才能进入确认置顶并聚焦搜索框；有限次 Activate 重试耗尽是终端失败，
+  不能再发送 ConfirmTopmost，也不能把后续置顶成功记录成 activation success。失败通过既有 Panel
+  通知入口给出可重试、可点击搜索框的提示；旧 command result 不得消费或改变替代激活会话。
 
 ### 阶段 5：自定义命令纵向切片（2026-07-25 复核）
 
@@ -1260,13 +1291,13 @@ Reverified on 2026-08-24 before the QL-12 diagnostics-page closure:
 - 与既有参考的关系:Listary 仍是用户行为基准;SwiftList 补充检索与窗口拆分;Wox 补充"原生 GPU 渲染 + 常驻轻量"的工程策略对照。
 - 状态:not inspected(仅完成目录级勘察:wox.core/{hotkey,ui,plugin,setting} 为主要模块)。
 
-## 独占全屏呼出抑制参考核对（2026-10-02）
+## Global fullscreen summon policy (2026-11-16)
 
-- Quick Launch 当前链路为 `rust/crates/nxtools-core/src/lib.rs::QuickLaunchSettings` 持久化配置 → `rust/apps/nxtools-desktop/src/quick_launch.rs::send_configuration_for` → typed `ConfigureQuickLaunchCommand` → PlatformHost `ApplyQuickLaunchConfiguration` 注册 double-Ctrl hook 或系统热键 → `WndProc(WM_HOTKEY)` / `OnGlobalKeyDown` → `PublishQuickLaunchPanelRequest`。
-- UI 的开关应写入 Quick Launch 设置模型，沿现有配置命令同步到 PlatformHost；不得只在 GPUI 收到事件后隐藏面板，否则仍会进入前台/焦点转换和显现生命周期。
-- Windows 10/11 SDK `shellapi.h::QUERY_USER_NOTIFICATION_STATE` 定义 `QUNS_RUNNING_D3D_FULL_SCREEN = 3`，注释明确为“full-screen (exclusive-mode) D3D app”；官方 `SHQueryUserNotificationState` 文档定义同一状态。仅以该返回值屏蔽呼出，不使用 `QUNS_BUSY`（合并全屏与 Presentation Settings 的启发式），也不使用 HWND/display rectangle 覆盖比较（会误判无边框全屏）。
-- Detection 是系统级 D3D exclusive-fullscreen 状态，不是任意窗口覆盖显示器；它不会保证识别非 Direct3D/旧 API 的所有独占模式。API HRESULT 失败时 fail-open，并以状态变化/限速方式记录诊断，不记录窗口标题/路径，不在低层键盘回调内调用 Shell API。
-- Focused invariants: disabled setting preserves the existing gesture; enabled + exact D3D-fullscreen state suppresses both double-Ctrl message publication and registered-hotkey publication; borderless/windowed states continue summoning; API failure is bounded and does not swallow input indefinitely.
+- The user-approved global policy supersedes the earlier Quick Launch-only exclusive-fullscreen scope. Global Settings → Application Blacklist owns one `process_blacklist.suppress_in_fullscreen` value for Quick Launch and Clipboard panel summons. Missing legacy values inherit `quick_launch.suppress_in_exclusive_fullscreen`; explicit global values win. Loading does not write configuration.
+- Core normalizes the policy independently of per-process entries. One existing global transaction saves the draft, then `publish_live_blacklist` defers both consumers. `ConfigureClipboardCommand.suppress_in_fullscreen` and the existing `ConfigureQuickLaunchCommand.suppress_in_exclusive_fullscreen` wire field carry the same value. Consumers never persist the global section.
+- PlatformHost `EventWindow.PublishPanelRequest` and `PublishQuickLaunchPanelRequest` call `QuickLaunchSummonGate.DispatchObserved` before publication. `SHQueryUserNotificationState == QUNS_RUNNING_D3D_FULL_SCREEN` recognizes exclusive D3D; otherwise visible valid non-desktop borderless foreground bounds must cover that foreground window's monitor, not the cursor/assistant monitor or work area. Reuse `FloatingAssistantFullscreenPolicy` for style/visibility/desktop exclusions without changing assistant behavior. Ordinary framed/maximized, hidden/minimized, desktop and unavailable observations remain non-fullscreen. A successful borderless observation still suppresses when the independent Shell query fails.
+- Rechecked legacy `D:\Code\NxTools\Services\ClipboardHotKeyService.cs::HandleHotKeyMessage` (350ms debounce and one HotKeyPressed), `Views\ClipboardHistoryPopupWindow.axaml.cs` constructor/Open/Activated → PrepareForPopupShow → HidePopup/HidePreviewWindow → base Hide, and `Views\SettingsWindow.axaml.cs` constructor/OnOpened/Apply/OnClosed cancellation. The Avalonia native base is unavailable; the new policy does not replace those lifecycles. Legacy NxTools has no Quick Launch implementation.
+- Suppression changes only publication: no panel creation, activation, focus transfer or preview show occurs, while Clipboard updates/capture continue. The native gate runs on the existing message boundary, not the low-level hook. Queries fail open, diagnostics retain correlation, kind/reason, native errors and elapsed time with bounded state-change/rate-limit logging, and never include title/path/content. Tests cover actual WndProc publication, independent policies, monitor geometry and global draft/save/consumer routing.
 
 ## 2026-10-08 SOL remediation: action and index session boundaries
 
@@ -1710,3 +1741,106 @@ file/directory handles. The writer-completion barrier distinguishes logical time
 resource release. This is isolated lifecycle evidence, not live DOpus timing or interaction acceptance.
 A controlled termination request also keeps an owned helper alive after the writer exits with
 all output handles closed; the same cleanup owner waits for the helper's actual exit before removal.
+
+## Shell action invocation wait boundary (2026-11-09)
+
+Reverified Listary's managed Shell path at
+`.diagnostics/listary-managed/Listary/Core/Actions/ContextMenuSearchItemViewModel.cs:40-43` ->
+`Class477.method_2` -> `Class479.method_0` -> `IContextMenu.InvokeCommand` at
+`Class477.cs:61-67,624-637`. The returned `Task` represents the actual invocation call; this
+managed boundary exposes no separate five-second user-completion deadline. Root creation and lazy
+submenu enumeration remain separate asynchronous calls through `Class472.cs:20-47` and
+`Class473.cs:10-14`.
+
+SwiftList's current secondary implementation reaches
+`ShellMenuActionProvider.ExecuteCommand` -> `ShellContextMenu.InvokeCommand` ->
+`InvokeCommandCore` -> `IContextMenu.InvokeCommand` and disposes the detached live session only in
+the invocation task's `finally` (`ShellMenuActionProvider.cs:100-118`,
+`ShellContextMenu.cs:203-225`). Its shared `TryInvoke` currently applies the same 5000 ms dispatcher
+wait to invocation and machine work and then kills the STA (`ShellContextMenu.cs:227-239`,
+`ShellMenuStaWorker.cs:12-15,91-110`); that secondary mechanism conflicts with NxTools.Next's fixed
+worker/COM ownership and is not carried forward.
+
+The verified NxTools.Next production chain is
+`QuickLaunchAction::Shell` -> `PlatformCommand::InvokeShellAction` ->
+`PlatformPipeClient.ExecutePlatformCommandAsync` ->
+`WindowsPlatformAdapter.InvokeShellAction` ->
+`ShellContextMenuSessionManager.InvokeAction` ->
+`ShellContextMenuSessionWorker.Invoke` -> `TryInvokeHumanAction` -> `TryInvokeCore` ->
+`ShellContextMenuSession.Invoke` -> `IContextMenu.InvokeCommand`. QueryActions and QuerySubmenu retain
+the machine-bounded `TryInvoke` path; their completion waits and STA
+startup are machine phases and keep the existing five-second logical waits. Only the queued Invoke
+completion wait has no elapsed-time deadline because a Shell verb may synchronously own a system or
+extension window awaiting the user. The original session cancellation token may retire the logical
+caller promptly, but it does not interrupt native code. Worker retirement from cancellation or a
+machine-stage timeout wakes every queued logical wait, and each dequeued request rechecks retirement
+before entering its operation; a queued Invoke therefore cannot run after the session that admitted
+it has retired. The already-active native operation still owns the same worker, COM session and
+cleanup until it actually returns. A retired worker is excluded from cache throughout; no replacement
+thread, parallel queue or late success publication is permitted.
+
+## Fixed-export normal-query dispatch and completion (2026-11-17)
+
+The persistent investigation note is `D:\Code\Listary.Decompiled\6.3.5.94\notes\search-dispatch-and-publication.md`. Source paths below are relative to that version's `managed\Listary`; explicit state-machine confirmation uses its sibling `expanded\Listary`. These are verified managed-boundary facts, not recovered native-engine algorithms.
+
+- `Main/Views/LauncherSearchWindow.xaml:459` binds Query two-way with `UpdateSourceTrigger=PropertyChanged` and no Binding Delay. `Core/ViewModels/SearchBarViewModel.cs:707–768` forwards ordinary edits to ActiveMode.Query; `SearchMode.cs:431–479` starts its search task. No fixed input delay was found at these inspected entry points.
+- The actual indexed-provider chain is `Core/FileSearch/Class385.Search` → `Class387.method_22/method_23` → `uniffi/listary_engine/Class65.imethod_12` → `Class64.uniffi_listary_engine_fn_method_listaryengine_search`. `Class387.method_23:483–496` uses the existing ExclusiveScheduler and cancellation token; it is task scheduling, not a timed command-drain loop. The C# frontend calls a native DLL entry through UniFFI. Generated MiniCore gRPC definitions alone do not establish the active frontend call path or the DLL's internal service communication.
+- `uniffi/listary_engine/Class118.smethod_0:15–33` registers a native callback/user-data handle and awaits `TaskCompletionSource<byte>(RunContinuationsAsynchronously)`. `Class119.smethod_0:96–103` resolves the task. Callback result zero completes the wait; otherwise the callback-driven loop registers another native poll. `Class65` delegates route to `ffi_listary_engine_rust_future_poll/complete/free_rust_buffer`; the future handle is freed in finally. `expanded/.../Class118.cs::Struct35.MoveNext:194–233` confirms real await suspension and callback-driven repeat. No Task.Delay, Thread.Sleep or DispatcherTimer appears in this helper; the word poll does not imply 100 ms timed polling.
+- `Core/Search/Class269.Class268_0:12–26` disposes the preceding query; `Class268.Dispose:84–88` cancels its source. `Class387.Class390.method_2:936–981` registers the per-request cancellation callback; `Class391.method_0:1322–1325` reaches `Class65.imethod_1` and the native `cancel_request` entry. Queued work also receives the query cancellation token. `Class387.method_22:458–479` checks cancellation between summary and bounded, score-sorted detail retrieval.
+- Normal launcher construction in `Core/Launcher/Class293.Class294.method_0:222–234` uses 50-result merge/provider limits and an already-completed folder-context task. Ordinary `SearchMode.method_0:702–755` awaits providers, checks cancellation, awaits merged ranking, checks cancellation again and replaces Results. The separate mode at `Class293.cs:384–385` explicitly enables incremental publication with a 20 ms delay; it is not the default normal launcher.
+
+For NxTools, the transferable contract is prompt request/completion wakeup plus stale-query rejection. The measured baseline in `repo:rust/apps/nxtools-desktop/src/runtime.rs#supervise_indexer_service_at` waited up to100ms on its separate stop receiver before draining an already bounded async command channel. The event-driven implementation runs `run_indexer_service_at` on the existing supervisor thread with a current-thread Tokio runtime: a biased select awaits stop, reader completion and the original bounded command receiver. The reader's completion sender closes on return or unwind; idle EOF therefore wakes reconnection without a later query. Stop also interrupts the existing one-second retry backoff; stopping detaches the persistent synchronous reader rather than waiting for the authenticated desktop process lifetime.
+
+Connection ownership, disconnected admission/draining, envelope IDs, cancellation correlation/generation and deferred GPUI entity updates remain unchanged, including immediate-completion paths. The65ms input debounce,150ms initial publication deadline, terminal completion and stable append policy are unchanged. No dependency, busy polling or replacement UniFFI/gRPC transport is added. Real random-named-pipe regressions cover prompt search/cancel dispatch, FIFO identity, partial/terminal receive, idle EOF/reconnect and stop/channel closure/backoff. Native Listary index layout, matching cost, internal queues and service transport remain uninspected. Dispatch-boundary tests do not establish installed UI latency gains; those require a separately authorized matching release tuple and renewed A/B measurement.
+
+Implementation verification and current acceptance limits: `repo:docs/audits/2026-11-17-indexer-dispatch-wakeup.md`.
+
+## Normal launcher input and atomic publication alignment (2026-11-17)
+
+The user-approved target is the verified normal launcher mode, superseding the earlier65ms input debounce and terminal-or150ms/stable-append policy for that mode. Reverified fixed-export `managed/Listary/Core/ViewModels/SearchMode.cs::Query:431-479` -> `method_0:702-755`: changed nonempty input starts provider tasks without a fixed debounce; `Class269.Class268_0:12-26` disposes the preceding query and `Class268.Dispose:84-88` cancels its token. Default `Task.WhenAll` precedes cancellation check, merged ranking, a second cancellation check and one replacement of Results. `Core/Launcher/Class293.cs::Class294.method_0:222-234` constructs the normal mode without incremental publication. The separately enabled incremental mode and its20ms delay are not this target.
+
+Reverified native-lifecycle ownership: `Main/Views/LauncherSearchWindowFactory.cs::CreateView:19-22` -> `LauncherSearchWindow.xaml.cs::LauncherSearchWindow:24-29` -> `SearchWindowBase.cs::SearchWindowBase:28-35`/`method_7:318-340`. The base wires ViewModel ShowWindow to `ShowWindow:383-400`, HideWindow to WPF `Window.Hide`, activation to the existing handler, and close to `Window.Close`; ShowWindow sets ShowActivated, calls Window.Show and restores the search caret when activating. WPF's own native implementation is not recovered. Preserve activating primary input, one reused popup, passive generation-scoped preview, original placement/show/hide/focus and failure policy. No native/window/layout changes are required for this search alignment.
+
+Next boundary invariants: InputState change admits work on the next application turn with no timer; retain generation/query/open checks even on immediate completion. Keep previous committed rows inert while current indexed/extension providers finish; accumulate provider batches without publishing. Current completion/failure releases the existing provider owner, and only the last current completion allows merged replacement. Input replacement/clear/hide cancels retired work and rejects stale completion. Local matching/ranking, bounded IPC, service-owned supersession and explicit clear/hide cancellation remain. File-dialog attached search is a separate mode and retains its independently owned cadence; do not apply ordinary-launcher evidence to it.
+
+Implementation and verification: `repo:docs/audits/2026-11-17-quick-launch-normal-search.md`.
+Production input and provider-completion regressions pass; the complete Desktop run retains the
+same21 unrelated failures. Installed input-to-visible performance remains a separate acceptance.
+
+## Shared query work and local admission probe (2026-11-17)
+
+The approved optimization keeps ordinary completion-owned publication and removes duplicated work,
+not cancellation or candidate headroom. Reverified SwiftList `Core/IndexV2/Search/SearchMatcher.cs`
+(`BuildContext`, `MatchUniques`, pooled workers), `SearchMatcherRow.cs` (`MatchRow`,
+`TryMatchNameOrAliases`) and `NameSearch.cs` (`SearchStreaming`, `CollectRanks`,
+`RefineWithWeight`): prepare/match unique names before row fanout; retain original row/delta identity,
+bounded expensive refinement, cancellation and deferred result construction. This is inspectable
+MIT-source structure, not evidence of Listary native engine internals.
+
+NxTools query work remains owned by `search_snapshots_query_while` and its existing name/full-path
+scans. A retained-kind query shares one matching walk and keeps independent file/directory quotas,
+unchanged scores/ties, exclusions, delta suppression and kind-specific cold-underfill recovery.
+Single-kind, scoped, recent and permitted-only homophone behavior must remain equivalent. Original
+worker events, framed response correlation, bounded send and cooperative cancellation stay intact.
+Desktop local admission needs only existence of an ordinary local hit before the indexed request;
+the final merged rank remains authoritative. Probe semantics must include original catalog, typed
+instant actions, custom commands and declarative packages without adding approximation or a cache.
+InputState/InputGroup, IME, activating popup/passive preview, native placement/show/hide/focus and
+deferred GPUI entity updates are unchanged by these computation-only replacements.
+
+Normal retained-kind queries keep independent per-kind quotas; permitted homophone fallback keeps
+its existing combined cap. Shared matching preserves the original hot headroom before cold type
+filtering, and cold recovery replaces only underfilled kinds. The local probe uses the same source
+and declarative-package candidate visitors as complete search; it does not add a second matcher.
+Implementation evidence and remaining release limits:
+`repo:docs/audits/2026-11-17-quick-launch-search-work.md`.
+
+## Initial volume build: active and legacy Listary evidence
+
+The fixed6.3.5.94 startup uses Class387 -> Class65 -> the native listaryengine_start entry.
+Its retained managed DiskSearch/Class544/Class553 scanner is a separate historical reference,
+including chunked record reading and in-record modification metadata; it is not proof of the
+current DLL's algorithm, parallelism, cache format or first-searchable publication point.
+Next's per-record true-time hydration, transient/final search auxiliaries and per-volume publication
+are compared in [`listary-initial-indexing.md`](listary-initial-indexing.md). No cold-build speedup
+or slow-machine bottleneck share is established without stage measurements.

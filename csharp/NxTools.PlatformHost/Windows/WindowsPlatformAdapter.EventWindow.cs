@@ -105,6 +105,7 @@ internal sealed partial class WindowsPlatformAdapter
         private readonly ConcurrentQueue<QuickLaunchHotKeyRecordingRequest> _quickLaunchHotKeyRecordingRequests = new();
         private readonly QuickLaunchSummonDiagnosticGate _quickLaunchSummonDiagnosticGate = new();
         private bool _quickLaunchSuppressInExclusiveFullscreen = true;
+        private bool _clipboardSuppressInFullscreen = true;
         private readonly ConcurrentQueue<DesktopShellConfigurationRequest> _desktopShellConfigurationRequests = new();
         // Event-thread owned: one physical capture and one coalesced source/return intent.
         // A logical cancellation never frees the occupied native runner slot early.
@@ -295,12 +296,13 @@ internal sealed partial class WindowsPlatformAdapter
             Func<long, string?> captureExplorerDirectory,
             Action<Action> runExplorerWork,
             Action<Action> deferExplorerDelivery,
-            Func<long, bool> isReturnForeground)
+            Func<long, bool> isReturnForeground,
+            IElevatedDirectoryNavigationChannel? elevatedDirectoryNavigation = null)
         {
             _events = events;
             _log = log;
             _foregroundContextProvider = new ForegroundContextProvider();
-            _elevatedDirectoryNavigation = null!;
+            _elevatedDirectoryNavigation = elevatedDirectoryNavigation!;
             _clipboardCaptureDropDiagnosticGate = new();
             _foregroundCallback = OnForegroundChanged;
             _fileDialogWindowCallback = OnFileDialogWindowChanged;
@@ -583,7 +585,20 @@ internal sealed partial class WindowsPlatformAdapter
                     DrainDesktopShellConfigurationRequests();
                     return;
                 case WmQuickLaunchGesture:
-                    PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger.DoubleControl);
+                    HandleQuickLaunchGesture(0, message.LParam.ToInt64(), unchecked((uint)message.WParam.ToInt64()));
+                    return;
+                case ElevatedInputMessages.Gesture:
+                    HandleQuickLaunchGesture(unchecked((int)(uint)message.WParam.ToInt64()),
+                        message.LParam.ToInt64(), unchecked((uint)((ulong)message.WParam.ToInt64() >> 32)));
+                    return;
+                case ElevatedInputMessages.Unavailable:
+                    (_elevatedDirectoryNavigation as IElevatedInputChannel)?.InputUnavailable(
+                        message.WParam.ToInt32(), message.LParam.ToInt64());
+                    return;
+                case ElevatedInputMessages.PointerPressed:
+                    HandleElevatedPointerPress(message.WParam.ToInt64(),
+                        unchecked((int)(uint)message.LParam.ToInt64()),
+                        unchecked((uint)((ulong)message.LParam.ToInt64() >> 32)));
                     return;
                 case WmDirectorySourceResolved:
                     DrainResolvedDirectorySources();
@@ -1246,6 +1261,8 @@ internal sealed partial class WindowsPlatformAdapter
 
         private void ProcessForeground(ForegroundContext context)
         {
+            var observeOneCommander = _fileDialogSearchEnabled || _autoQuickSwitchEnabled;
+            ThirdPartyFileManagerAdapter.ObserveForeground(observeOneCommander ? context : EmptyClipboardCaptureSource);
             if (_explorerReturn is { } pendingReturn && context.WindowHandle != pendingReturn.Candidate.Target.WindowHandle)
             {
                 ClearExplorerReturn("foreground_left");
@@ -1294,8 +1311,10 @@ internal sealed partial class WindowsPlatformAdapter
                 return;
             }
 
-            var directoryAttempt =
-                DirectoryNavigationAdapter.TryCaptureLocalAttempt(context);
+            var directoryAttempt = !observeOneCommander && Path.GetFileNameWithoutExtension(context.ProcessName)
+                .Equals("OneCommander", StringComparison.OrdinalIgnoreCase)
+                ? new DirectoryNavigationCaptureAttempt(null)
+                : DirectoryNavigationAdapter.TryCaptureLocalAttempt(context);
             var directorySource = directoryAttempt.Context;
             if (directorySource is not null &&
                 !directorySource.Host.Equals(
@@ -1323,7 +1342,11 @@ internal sealed partial class WindowsPlatformAdapter
                 ThirdPartyFileManagerAdapter.IsPotentialHost(context))
             {
                 CancelExplorerDirectoryCapture("source_superseded");
-                _autoQuickSwitch.DiscardPendingSource();
+                if (!IsTrackedDirectoryOpusSource(context.WindowHandle) ||
+                    !_autoQuickSwitch.MarkSourcePending(context.WindowHandle))
+                {
+                    _autoQuickSwitch.DiscardPendingSource();
+                }
                 ScheduleDirectorySourceRecognition(context.WindowHandle);
                 return;
             }
@@ -1335,12 +1358,28 @@ internal sealed partial class WindowsPlatformAdapter
                 return;
             }
 
+            // An unrelated foreground (taskbar, Alt+Tab switcher, the dialog owner's main window)
+            // is not a bound host: like Listary, it neither consumes nor clears the pending
+            // source → dialog synchronization.
             CancelFileDialogRecognition();
             CancelDirectorySourceRecognition();
-            if (!IsNxToolsDesktopProcess(context.ProcessName))
+        }
+
+        private bool IsTrackedDirectoryOpusSource(long windowHandle) =>
+            windowHandle != 0 &&
+            _autoQuickSwitch.LatestSource is { } source &&
+            source.Context.WindowHandle == windowHandle &&
+            ThirdPartyFileManagerAdapter.IsDirectoryOpusSource(
+                source.Context.WindowHandle,
+                source.Context.HostContextId);
+
+        private void DiscardUnrecognizedDirectorySource(long windowHandle)
+        {
+            // A tracked Directory Opus lister keeps its pending state; the dialog return refresh
+            // re-reads the active pane and discards only when that read fails.
+            if (!IsTrackedDirectoryOpusSource(windowHandle))
             {
-                CancelExplorerDirectoryCapture("foreground_left");
-                _autoQuickSwitch.ObserveOther();
+                _autoQuickSwitch.DiscardPendingSource();
             }
         }
 
@@ -1382,7 +1421,7 @@ internal sealed partial class WindowsPlatformAdapter
             if (!_directorySourceRecognitionRetry.TryBeginPendingAttempt(
                     out var windowHandle))
             {
-                _autoQuickSwitch.DiscardPendingSource();
+                DiscardUnrecognizedDirectorySource(windowHandle);
                 return;
             }
             var targetContext = foreground.WindowHandle == windowHandle
@@ -1430,7 +1469,6 @@ internal sealed partial class WindowsPlatformAdapter
                 FailDirectorySourceRecognition(
                     "fatal_capture_failure",
                     attempt.Failure.NativeErrorCode);
-                _autoQuickSwitch.DiscardPendingSource();
                 return;
             }
             if (_directorySourceRecognitionRetry.HasPendingAttempt(windowHandle))
@@ -1439,7 +1477,6 @@ internal sealed partial class WindowsPlatformAdapter
                 return;
             }
             FailDirectorySourceRecognition("attempt_budget_exhausted", null);
-            _autoQuickSwitch.DiscardPendingSource();
         }
 
         private void CompleteDirectorySourceRecognition(long windowHandle)
@@ -1491,7 +1528,7 @@ internal sealed partial class WindowsPlatformAdapter
                     });
             }
             CancelDirectorySourceRecognition();
-            _autoQuickSwitch.DiscardPendingSource();
+            DiscardUnrecognizedDirectorySource(windowHandle);
         }
 
         private void CancelDirectorySourceRecognition()
@@ -1897,7 +1934,6 @@ internal sealed partial class WindowsPlatformAdapter
                     IntPtr.Zero) == UIntPtr.Zero)
             {
                 _fileDialogRecognitionRetry.Cancel();
-                _autoQuickSwitch.ObserveOther();
             }
         }
 
@@ -1931,7 +1967,6 @@ internal sealed partial class WindowsPlatformAdapter
                 ScheduleFileDialogRecognition(windowHandle);
                 return;
             }
-            _autoQuickSwitch.ObserveOther();
         }
 
         private void CompleteFileDialogRecognition(long windowHandle)
@@ -2141,6 +2176,8 @@ internal sealed partial class WindowsPlatformAdapter
                 }
                 return;
             }
+            if (eventType == EventObjectDestroy && objectId == ObjIdWindow && childId == 0)
+                ThirdPartyFileManagerAdapter.RetireWindow(window.ToInt64());
 
             var rootWindowHandle = NativeMethods.GetRootWindowHandle(window);
             if ((eventType is EventObjectDestroy or EventObjectHide) && objectId == ObjIdWindow)
@@ -2482,18 +2519,47 @@ internal sealed partial class WindowsPlatformAdapter
             }
 
             var sampledAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var eventSequence = NextPlatformEventSequence();
             var target = NativeMethods.GetPointerTarget();
-            _contextMenus?.ObservePointerPress(target.WindowHandle, target.RootWindowHandle);
-            _events.TryWrite(new GlobalPointerPressedEvent(
-                target.WindowHandle,
-                target.RootWindowHandle,
-                target.ProcessId,
-                sampledAtUnixMs,
-                eventSequence));
+            PublishPointerPress(target.WindowHandle, target.RootWindowHandle, target.ProcessId, sampledAtUnixMs);
         }
 
         private void PublishPanelRequest()
+        {
+            var decision = QuickLaunchSummonGate.DispatchObserved(
+                triggerEnabled: true,
+                suppressInFullscreen: _clipboardSuppressInFullscreen,
+                trigger: QuickLaunchSummonTrigger.ClipboardHotKey,
+                queryFullscreenState: QuickLaunchSummonGate.QueryWindowsFullscreenState,
+                publish: correlationId => PublishPanelRequestCore(correlationId));
+            if (!_quickLaunchSummonDiagnosticGate.TryAcquire(decision, out var suppressedFailureCount))
+            {
+                return;
+            }
+            try
+            {
+                _log.Write(
+                    decision.QueryHresult is null && decision.ForegroundHresult is null ? "info" : "warning",
+                    "clipboard.summon_decision",
+                    decision.CorrelationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["decision"] = decision.Suppressed ? "suppressed" : "published",
+                        ["fullscreen_kind"] = decision.FullscreenKind.ToString(),
+                        ["fullscreen_reason"] = decision.FullscreenReason,
+                        ["notification_state"] = decision.NotificationState,
+                        ["native_hresult"] = decision.QueryHresult,
+                        ["foreground_native_error_code"] = decision.ForegroundHresult,
+                        ["elapsed_ms"] = decision.ElapsedMilliseconds,
+                        ["suppressed_failure_count"] = suppressedFailureCount
+                    });
+            }
+            catch
+            {
+                // Logging must never change clipboard capture or panel publication.
+            }
+        }
+
+        private void PublishPanelRequestCore(Guid correlationId)
         {
             var target = _foregroundContextProvider.Capture();
             var cursor = NativeMethods.GetCursorLocation();
@@ -2506,16 +2572,17 @@ internal sealed partial class WindowsPlatformAdapter
                 cursor.DisplayIndex,
                 cursor.Dpi,
                 requestedAtUnixMs,
-                eventSequence));
+                eventSequence,
+                correlationId));
         }
 
         private void PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger trigger)
         {
-            var decision = QuickLaunchSummonGate.Dispatch(
+            var decision = QuickLaunchSummonGate.DispatchObserved(
                 _quickLaunchTriggerEnabled && !_quickLaunchRecording,
                 _quickLaunchSuppressInExclusiveFullscreen,
                 trigger,
-                QuickLaunchSummonGate.QueryWindowsNotificationState,
+                QuickLaunchSummonGate.QueryWindowsFullscreenState,
                 correlationId => PublishQuickLaunchPanelRequestCore(correlationId));
             if (!_quickLaunchSummonDiagnosticGate.TryAcquire(decision, out var suppressedFailureCount))
             {
@@ -2524,7 +2591,7 @@ internal sealed partial class WindowsPlatformAdapter
             try
             {
                 _log.Write(
-                    decision.QueryHresult is null ? "info" : "warning",
+                    decision.QueryHresult is null && decision.ForegroundHresult is null ? "info" : "warning",
                     "quick_launch.summon_decision",
                     decision.CorrelationId,
                     new Dictionary<string, object?>
@@ -2535,8 +2602,11 @@ internal sealed partial class WindowsPlatformAdapter
                         ["decision"] = !decision.TriggerEnabled
                             ? "disabled"
                             : decision.Suppressed ? "suppressed" : "published",
+                        ["fullscreen_kind"] = decision.FullscreenKind.ToString(),
+                        ["fullscreen_reason"] = decision.FullscreenReason,
                         ["notification_state"] = decision.NotificationState,
                         ["native_hresult"] = decision.QueryHresult,
+                        ["foreground_native_error_code"] = decision.ForegroundHresult,
                         ["elapsed_ms"] = decision.ElapsedMilliseconds,
                         ["suppressed_failure_count"] = suppressedFailureCount
                     });
@@ -2554,8 +2624,10 @@ internal sealed partial class WindowsPlatformAdapter
             var requestedAtUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var deferDirectoryCapture =
                 DirectoryNavigationAdapter.RequiresElevatedHelper(target);
+            var oneCommander = Path.GetFileNameWithoutExtension(target.ProcessName)
+                .Equals("OneCommander", StringComparison.OrdinalIgnoreCase);
             var directoryNavigationContext = deferDirectoryCapture
-                ? null
+                ? oneCommander ? _elevatedDirectoryNavigation.TryCapture(target) : null
                 : DirectoryNavigationAdapter.TryCaptureLocal(target);
             _events.TryWrite(new QuickLaunchPanelRequestedEvent(
                 target,
@@ -2566,7 +2638,7 @@ internal sealed partial class WindowsPlatformAdapter
                 requestedAtUnixMs,
                 directoryNavigationContext,
                 correlationId));
-            if (directoryNavigationContext is null &&
+            if (directoryNavigationContext is null && !oneCommander &&
                 DirectoryNavigationAdapter.IsPotentialElevatedHost(target))
             {
                 _ = Task.Run(() =>
@@ -2597,22 +2669,30 @@ internal sealed partial class WindowsPlatformAdapter
         private void OnGlobalKeyDown(int virtualKey, uint timestamp)
         {
             if (_quickLaunchKeyboardGesture.OnKeyDown(virtualKey, timestamp))
-                _ = NativeMethods.PostMessage(_quickLaunchGestureWindow, WmQuickLaunchGesture, IntPtr.Zero, IntPtr.Zero);
+                PostOrdinaryQuickLaunchGesture();
         }
 
         private void OnGlobalKeyUp(int virtualKey)
         {
             if (_quickLaunchKeyboardGesture.OnKeyUp(virtualKey))
-                _ = NativeMethods.PostMessage(_quickLaunchGestureWindow, WmQuickLaunchGesture, IntPtr.Zero, IntPtr.Zero);
+                PostOrdinaryQuickLaunchGesture();
         }
+
+        private void PostOrdinaryQuickLaunchGesture() =>
+            _ = NativeMethods.PostMessage(_quickLaunchGestureWindow, WmQuickLaunchGesture,
+                new IntPtr(_quickLaunchKeyboardGesture.Timestamp),
+                new IntPtr(_quickLaunchKeyboardGesture.Generation));
 
         private void ResetQuickLaunchGesture()
         {
-            _quickLaunchKeyboardGesture.Publish(new(
+            var configuration = new QuickLaunchKeyboardConfiguration(
                 _quickLaunchTriggerEnabled,
                 _quickLaunchRecording,
                 _quickLaunchTrigger.Kind,
-                ++_quickLaunchGestureResetGeneration));
+                ++_quickLaunchGestureResetGeneration);
+            _quickLaunchKeyboardGesture.Publish(configuration);
+            (_elevatedDirectoryNavigation as IElevatedInputChannel)?.ConfigureInput(
+                new ElevatedInputConfiguration(Handle.ToInt64(), configuration, Guid.NewGuid()));
         }
 
 
@@ -2626,7 +2706,8 @@ internal sealed partial class WindowsPlatformAdapter
                     continue;
                 }
                 request.Completion.TrySetResult(
-                    new WindowsPasteCoordinator(this, _log).Execute(
+                    new WindowsPasteCoordinator(this, _log,
+                        _elevatedDirectoryNavigation as IElevatedPasteInput).Execute(
                         request.Command,
                         request.CorrelationId));
             }
@@ -2681,8 +2762,7 @@ internal sealed partial class WindowsPlatformAdapter
                 var result = ApplyQuickLaunchConfiguration(request.Command, request.CorrelationId);
                 if (result.Success)
                 {
-                    _quickLaunchSuppressInExclusiveFullscreen = request.Command.Enabled &&
-                        request.Command.SuppressInExclusiveFullscreen;
+                    _quickLaunchSuppressInExclusiveFullscreen = request.Command.SuppressInExclusiveFullscreen;
                 }
                 WriteQuickLaunchDiagnostic(result.Success ? "info" : "error",
                     result.Success ? "quick_launch.configuration.applied" : "quick_launch.configuration.failed",
@@ -2746,6 +2826,7 @@ internal sealed partial class WindowsPlatformAdapter
                 return registration;
             }
             _captureLimits = requestedLimits;
+            _clipboardSuppressInFullscreen = command.SuppressInFullscreen;
             _log.Write("info", "clipboard.configuration_applied", null,
                 new Dictionary<string, object?>
                 {
@@ -2918,6 +2999,7 @@ internal sealed partial class WindowsPlatformAdapter
             }
             else
             {
+                ThirdPartyFileManagerAdapter.ObserveForeground(EmptyClipboardCaptureSource);
                 CancelFileDialogRecognition();
             }
             if (!command.Enabled)

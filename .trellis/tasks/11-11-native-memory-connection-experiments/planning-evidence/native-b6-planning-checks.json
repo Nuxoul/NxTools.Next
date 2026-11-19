@@ -1,0 +1,61 @@
+﻿[
+    {
+        "name":  "parent-context",
+        "program":  "python",
+        "arguments":  [
+                          ".trellis/scripts/task.py",
+                          "validate",
+                          ".trellis/tasks/11-11-native-memory-connection-experiments"
+                      ],
+        "exit":  0
+    },
+    {
+        "name":  "uia-context",
+        "program":  "python",
+        "arguments":  [
+                          ".trellis/scripts/task.py",
+                          "validate",
+                          ".trellis/tasks/11-11-platformhost-uia-memory"
+                      ],
+        "exit":  0
+    },
+    {
+        "name":  "b6-context",
+        "program":  "python",
+        "arguments":  [
+                          ".trellis/scripts/task.py",
+                          "validate",
+                          ".trellis/tasks/11-11-reference-b6-connection-experiments"
+                      ],
+        "exit":  0
+    },
+    {
+        "name":  "spec-contracts",
+        "program":  "python",
+        "arguments":  [
+                          "tests/architecture/spec-contracts.py"
+                      ],
+        "exit":  0
+    },
+    {
+        "name":  "audit",
+        "program":  "python",
+        "arguments":  [
+                          "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\native-b6-planning-audit.py"
+                      ],
+        "exit":  0
+    },
+    {
+        "name":  "diff-check",
+        "program":  "git",
+        "arguments":  [
+                          "diff",
+                          "--check",
+                          "--",
+                          "docs/reference-code/platformhost-uia-memory-repair.md",
+                          "docs/reference-code/download.md",
+                          "docs/reference-code/mister-download-manager.md"
+                      ],
+        "exit":  0
+    }
+]

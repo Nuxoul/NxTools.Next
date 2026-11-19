@@ -3,13 +3,21 @@ use crate::clipboard::ClipboardApplication;
 use crate::clipboard_worker::ClipboardCaptureWorkerHandle;
 use crate::tools::link_detector::{DetectedLink, DetectedLinkKind};
 use gpui_kit::{TestAppContext, VisualTestContext};
+use std::io::{Read as _, Write as _};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+};
 
 struct LinkIntakeFixture {
     clipboard: Entity<ClipboardApplication>,
     downloads: Entity<DownloadApplication>,
     endpoint: nxtools_ipc::PlatformServerEndpoint,
+    address: std::net::SocketAddr,
+    server_stop: Arc<AtomicBool>,
+    request_count: Arc<AtomicUsize>,
+    server: Option<std::thread::JoinHandle<()>>,
     worker: ClipboardCaptureWorkerHandle,
-    listener: std::net::TcpListener,
     _temporary: tempfile::TempDir,
 }
 
@@ -20,9 +28,38 @@ impl LinkIntakeFixture {
         cx.executor().allow_parking();
         let temporary = tempfile::tempdir().expect("link intake fixture");
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("HTTP observation socket");
+        let address = listener.local_addr().expect("HTTP fixture address");
         listener
             .set_nonblocking(true)
             .expect("bounded HTTP observation");
+        let server_stop = Arc::new(AtomicBool::new(false));
+        let request_count = Arc::new(AtomicUsize::new(0));
+        let worker_stop = Arc::clone(&server_stop);
+        let worker_count = Arc::clone(&request_count);
+        let server = std::thread::spawn(move || {
+            while !worker_stop.load(Ordering::Acquire) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .expect("accepted blocking fixture");
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(1)))
+                            .expect("bounded fixture read");
+                        let mut request = [0_u8; 4096];
+                        let _ = stream.read(&mut request);
+                        worker_count.fetch_add(1, Ordering::AcqRel);
+                        if !worker_stop.load(Ordering::Acquire) {
+                            let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\nfixture!");
+                        }
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
         let worker = ClipboardCaptureWorkerHandle::spawn(
             temporary.path().join("history.db"),
             temporary.path().join("assets"),
@@ -65,6 +102,9 @@ impl LinkIntakeFixture {
                 )
             });
             clipboard.update(cx, |app, _| app.bind_downloads(downloads.downgrade()));
+            downloads.update(cx, |app, _| {
+                app.new_download_native_handles_override = Some((701, 702));
+            });
             (clipboard, downloads)
         });
         cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string("sentinel".into()));
@@ -72,17 +112,17 @@ impl LinkIntakeFixture {
             clipboard,
             downloads,
             endpoint,
+            address,
+            server_stop,
+            request_count,
+            server: Some(server),
             worker,
-            listener,
             _temporary: temporary,
         }
     }
 
     fn target(&self, path: &str) -> String {
-        format!(
-            "http://{}/{path}",
-            self.listener.local_addr().expect("address")
-        )
+        format!("http://{}/{path}", self.address)
     }
 
     fn panel(
@@ -120,11 +160,12 @@ impl LinkIntakeFixture {
         let button = surface
             .debug_bounds("link-panel-download-0")
             .expect("named production 使用 NxTools 下载 button");
-        let open = surface
-            .debug_bounds("link-panel-open-0")
-            .expect("independent open");
+        let copy = surface
+            .debug_bounds("link-panel-copy-0")
+            .expect("independent copy");
+        assert!(surface.debug_bounds("link-panel-open-0").is_none());
         assert!(name.size.width >= px(40.0), "name lane remains readable");
-        assert!(button.left() >= open.right() && button.right() <= row.right());
+        assert!(button.left() >= copy.right() && button.right() <= row.right());
         assert!(button.top() >= row.top() && button.bottom() <= row.bottom());
         assert_eq!(row.size.height, px(28.0));
         let semantic = surface
@@ -179,64 +220,174 @@ impl LinkIntakeFixture {
         })
     }
 
-    fn assert_idle(&self, cx: &TestAppContext, expected: &str) {
+    fn request_count(&self) -> usize {
+        self.request_count.load(Ordering::Acquire)
+    }
+
+    fn wait_for_pending_confirmation(
+        &self,
+        cx: &mut TestAppContext,
+        expected: &str,
+        requests_before: usize,
+    ) -> (AnyWindowHandle, Entity<NewDownloadView>) {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            cx.run_until_parked();
+            let intake = self.downloads.read_with(cx, |app, _| {
+                app.new_download_window.zip(app.new_download_view.clone())
+            });
+            if let Some((window, view)) = intake
+                && view.read_with(cx, |view, cx| {
+                    !view.probing
+                        && view.probe.is_some()
+                        && view.handoff_pending
+                        && view.url.read(cx).value().as_ref() == expected
+                })
+                && self.request_count() > requests_before
+            {
+                self.downloads.read_with(cx, |app, _| {
+                    assert!(app.engine.tasks().expect("original task store").is_empty());
+                });
+                return (window, view);
+            }
+            assert!(
+                Instant::now() < deadline,
+                "automatic probe missing: requests={}, state={:?}",
+                self.request_count(),
+                self.downloads
+                    .read_with(cx, |app, cx| app.new_download_view.as_ref().map(|view| {
+                        let view = view.read(cx);
+                        (
+                            view.probing,
+                            view.probe.is_some(),
+                            view.handoff_staged,
+                            view.probe_generation,
+                        )
+                    }))
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn present_confirmation(&self, cx: &mut TestAppContext) {
+        let command_id = self.downloads.read_with(cx, |app, _| {
+            app.pending_new_download_handoff
+                .as_ref()
+                .expect("pending native presentation")
+                .command_id
+        });
+        self.downloads.update(cx, |app, cx| {
+            app.finish_new_download_handoff(command_id, true, "test_native_presented", cx);
+        });
+        cx.run_until_parked();
+    }
+
+    fn wait_for_confirmation(
+        &self,
+        cx: &mut TestAppContext,
+        source: AnyWindowHandle,
+        expected: &str,
+        requests_before: usize,
+    ) -> (AnyWindowHandle, Entity<NewDownloadView>) {
+        let deadline = Instant::now() + Duration::from_secs(4);
+        loop {
+            cx.run_until_parked();
+            let intake = self.downloads.read_with(cx, |app, _| {
+                app.new_download_window.zip(app.new_download_view.clone())
+            });
+            if let Some((window, view)) = intake
+                && window != source
+                && view.read_with(cx, |view, cx| {
+                    !view.probing
+                        && view.probe.is_some()
+                        && view.url.read(cx).value().as_ref() == expected
+                })
+            {
+                assert!(self.request_count() > requests_before);
+                assert!(
+                    source.update(cx, |_, _, _| {}).is_err(),
+                    "compact source closes after fixed confirmation is ready"
+                );
+                self.downloads.read_with(cx, |app, _| {
+                    assert!(app.engine.tasks().expect("original task store").is_empty());
+                });
+                let mut surface = VisualTestContext::from_window(window, cx);
+                surface.refresh().expect("fixed confirmation rendering");
+                assert!(
+                    surface
+                        .debug_bounds("download-new-confirmed-form")
+                        .is_some()
+                );
+                assert!(surface.debug_bounds("download-new-footer").is_some());
+                return (window, view);
+            }
+            assert!(
+                Instant::now() < deadline,
+                "automatic probe must reach fixed confirmation"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    fn assert_preserved(
+        &self,
+        cx: &TestAppContext,
+        expected: &str,
+        requests_before: usize,
+        probing: bool,
+    ) {
         let (_, view) = self.intake(cx);
         self.downloads.read_with(cx, |app, _| {
             assert!(app.engine.tasks().expect("original task store").is_empty());
         });
         view.read_with(cx, |view, cx| {
             assert_eq!(view.url.read(cx).value().as_ref(), expected);
-            assert!(!view.probing && !view.submitting);
-            assert!(view.probe.is_none());
-            assert!(view.external_request.is_none() && view.external_blob.is_none());
+            assert_eq!(view.probing, probing);
+            assert!(!view.submitting);
         });
+        assert_eq!(self.request_count(), requests_before);
         assert_eq!(
             cx.read_from_clipboard()
                 .and_then(|item| item.text())
                 .as_deref(),
             Some("sentinel")
         );
-        let commands =
-            std::iter::from_fn(|| self.endpoint.try_receive_command_for_contract_test().ok())
-                .filter_map(|envelope| match envelope.message {
-                    nxtools_protocol::Message::PlatformCommand(command) => Some(command),
-                    _ => None,
-                })
-                .collect::<Vec<_>>();
-        assert!(
-            commands.iter().all(|command| matches!(
-                command,
-                PlatformCommand::SetWindowTopmost(_) | PlatformCommand::ActivateWindow(_)
-            )),
-            "intake queues only original window commands, never clipboard or Shell work"
-        );
-        assert!(
-            self.listener.accept().is_err(),
-            "opening intake performs no HTTP request"
-        );
     }
 
-    fn finish(self, cx: &mut TestAppContext) {
+    fn finish(mut self, cx: &mut TestAppContext) {
         for handle in cx.windows() {
-            handle
-                .update(cx, |_, window, _| window.remove_window())
-                .expect("close fixture window");
+            if cx.windows().contains(&handle) {
+                handle
+                    .update(cx, |_, window, _| window.remove_window())
+                    .expect("close live fixture window");
+            }
         }
         cx.run_until_parked();
+        assert!(cx.windows().is_empty(), "all fixture window owners retired");
+        self.server_stop.store(true, Ordering::Release);
+        self.server
+            .take()
+            .expect("fixture server")
+            .join()
+            .expect("bounded fixture server");
         self.worker.shutdown().expect("flush fixture history");
     }
 }
 
 #[gpui_kit::test]
-fn ref04_production_download_action_only_opens_original_url_intake(cx: &mut TestAppContext) {
+fn external_link_action_auto_probes_and_opens_fixed_confirmation(cx: &mut TestAppContext) {
     let fixture = LinkIntakeFixture::new(cx);
     let target = fixture.target("selected.zip");
+    let requests_before = fixture.request_count();
     let panel = fixture.panel(cx, &target, DetectedLinkKind::Web);
     fixture.activate(cx, panel, None);
-    assert_eq!(cx.windows().len(), 1, "one original intake window");
-    fixture.assert_idle(cx, &target);
-    let (handle, view) = fixture.intake(cx);
-    let mut surface = VisualTestContext::from_window(handle, cx);
+    assert_eq!(
+        cx.windows().len(),
+        2,
+        "compact intake and hidden confirmation"
+    );
+    let (source, view) = fixture.wait_for_pending_confirmation(cx, &target, requests_before);
+    let mut surface = VisualTestContext::from_window(source, cx);
     surface.refresh().expect("original URL input");
     assert!(surface.update(|window, cx| {
         view.read(cx)
@@ -245,17 +396,21 @@ fn ref04_production_download_action_only_opens_original_url_intake(cx: &mut Test
             .focus_handle(cx)
             .is_focused(window)
     }));
+    fixture.present_confirmation(cx);
+    let _ = fixture.wait_for_confirmation(cx, source, &target, requests_before);
     fixture.finish(cx);
 }
 
 #[gpui_kit::test]
-fn ref04_keyboard_enter_space_reuse_window_and_preserve_populated_draft(cx: &mut TestAppContext) {
+fn external_link_keyboard_reuse_preserves_pending_confirmation(cx: &mut TestAppContext) {
     let fixture = LinkIntakeFixture::new(cx);
     let first = fixture.target("first.zip");
+    let requests_before = fixture.request_count();
     let panel = fixture.panel(cx, &first, DetectedLinkKind::Web);
     fixture.activate(cx, panel, Some("enter"));
-    let (original, view) = fixture.intake(cx);
+    let (original, view) = fixture.wait_for_pending_confirmation(cx, &first, requests_before);
     let input = view.read_with(cx, |view, _| view.url.entity_id());
+    let started_requests = fixture.request_count();
     let panel = fixture.panel(cx, &fixture.target("second.zip"), DetectedLinkKind::Web);
     fixture.activate(cx, panel, Some("space"));
     let (reused, reused_view) = fixture.intake(cx);
@@ -265,13 +420,49 @@ fn ref04_keyboard_enter_space_reuse_window_and_preserve_populated_draft(cx: &mut
         reused_view.read_with(cx, |view, _| view.url.entity_id()),
         input
     );
-    assert_eq!(cx.windows(), vec![original]);
-    fixture.assert_idle(cx, &first);
+    assert!(cx.windows().contains(&original));
+    assert_eq!(
+        cx.windows().len(),
+        2,
+        "original source and pending target stay keyed"
+    );
+    fixture.assert_preserved(cx, &first, started_requests, false);
+    assert!(view.read_with(cx, |view, _| view.handoff_pending));
     fixture.finish(cx);
 }
 
 #[gpui_kit::test]
-fn ref04_explicit_url_fills_pristine_window_and_retires_late_clipboard(cx: &mut TestAppContext) {
+fn external_link_reuse_preserves_populated_draft_without_new_probe(cx: &mut TestAppContext) {
+    let fixture = LinkIntakeFixture::new(cx);
+    fixture
+        .downloads
+        .update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let (original, view) = fixture.intake(cx);
+    let existing = fixture.target("existing.zip");
+    original
+        .update(cx, |_, window, cx| {
+            view.update(cx, |view, cx| {
+                view.url.update(cx, |input, cx| {
+                    input.replace_all(existing.clone(), window, cx)
+                });
+            });
+        })
+        .expect("populate original draft");
+    let requests_before = fixture.request_count();
+    let panel = fixture.panel(
+        cx,
+        &fixture.target("replacement.zip"),
+        DetectedLinkKind::Web,
+    );
+    fixture.activate(cx, panel, None);
+    assert_eq!(fixture.intake(cx).0, original);
+    fixture.assert_preserved(cx, &existing, requests_before, false);
+    fixture.finish(cx);
+}
+
+#[gpui_kit::test]
+fn external_link_pristine_reuse_auto_probes_and_retires_late_clipboard(cx: &mut TestAppContext) {
     let fixture = LinkIntakeFixture::new(cx);
     fixture
         .downloads
@@ -294,8 +485,11 @@ fn ref04_explicit_url_fills_pristine_window_and_retires_late_clipboard(cx: &mut 
     .expect("original one-shot clipboard request")
     .id;
     let target = fixture.target("explicit.zip");
+    let requests_before = fixture.request_count();
     let panel = fixture.panel(cx, &target, DetectedLinkKind::Web);
     fixture.activate(cx, panel, None);
+    let (source, _) = fixture.wait_for_pending_confirmation(cx, &target, requests_before);
+    assert_eq!(source, original);
     fixture.downloads.update(cx, |app, cx| {
         app.handle_platform_notification(
             PlatformNotification::CommandResult {
@@ -313,17 +507,24 @@ fn ref04_explicit_url_fills_pristine_window_and_retires_late_clipboard(cx: &mut 
     cx.run_until_parked();
     assert_eq!(fixture.intake(cx).0, original);
     assert_eq!(view.read_with(cx, |view, _| view.url.entity_id()), input);
-    fixture.assert_idle(cx, &target);
+    assert_eq!(
+        view.read_with(cx, |view, cx| view.url.read(cx).value().to_string()),
+        target
+    );
+    fixture.present_confirmation(cx);
+    let _ = fixture.wait_for_confirmation(cx, original, &target, requests_before);
     fixture.finish(cx);
 }
 
 #[gpui_kit::test]
-fn ref04_user_edit_then_clear_is_not_an_empty_replaceable_draft(cx: &mut TestAppContext) {
+fn external_link_reuse_preserves_edited_then_cleared_manual_draft(cx: &mut TestAppContext) {
     let fixture = LinkIntakeFixture::new(cx);
-    let target = fixture.target("first.zip");
-    let panel = fixture.panel(cx, &target, DetectedLinkKind::Web);
-    fixture.activate(cx, panel, None);
-    let (original, _) = fixture.intake(cx);
+    fixture
+        .downloads
+        .update(cx, |app, cx| app.open_new_download_window(cx));
+    cx.run_until_parked();
+    let (original, view) = fixture.intake(cx);
+    let started_requests = fixture.request_count();
     let mut surface = VisualTestContext::from_window(original, cx);
     surface.refresh().expect("original input");
     let input = surface
@@ -331,10 +532,11 @@ fn ref04_user_edit_then_clear_is_not_an_empty_replaceable_draft(cx: &mut TestApp
         .expect("URL input");
     surface.simulate_click(input.center(), Default::default());
     surface.simulate_keystrokes("ctrl-a u s e r ctrl-a backspace");
+    assert!(!view.read_with(cx, |view, cx| view.clipboard_prefill_eligible(cx)));
     let panel = fixture.panel(cx, &fixture.target("second.zip"), DetectedLinkKind::Web);
     fixture.activate(cx, panel, None);
     assert_eq!(fixture.intake(cx).0, original);
-    fixture.assert_idle(cx, "");
+    fixture.assert_preserved(cx, "", started_requests, false);
     fixture.finish(cx);
 }
 
@@ -370,7 +572,7 @@ fn ref04_replaced_panel_cannot_change_or_open_download_intake(cx: &mut TestAppCo
         assert!(app.new_download_window.is_none());
         assert!(app.engine.tasks().expect("original task store").is_empty());
     });
-    assert!(fixture.listener.accept().is_err());
+    assert_eq!(fixture.request_count(), 0);
     drop(subscription);
     fixture.finish(cx);
 }

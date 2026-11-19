@@ -14,6 +14,7 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -26,11 +27,53 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
         duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
     };
     let task_id = engine.enqueue(request, RequestOrigin::Internal)?;
-    let snapshot = Some(
+    let mut snapshot = Some(
         load_download_task_detail(&engine, task_id)
             .map_err(anyhow::Error::msg)?
             .task,
     );
+    let layout_page = std::env::var("NXTOOLS_PREVIEW_PROGRESS_PAGE")
+        .ok()
+        .map(|page| page.parse::<usize>().unwrap_or(3));
+    let progress = layout_page.map(|_| {
+        let snapshot = snapshot.as_mut().expect("synthetic task");
+        let at = snapshot.task.updated_at_unix_ms();
+        for status in [
+            DownloadStatus::Probing,
+            DownloadStatus::Waiting,
+            DownloadStatus::Downloading,
+        ] {
+            snapshot
+                .task
+                .transition_to(status, at)
+                .expect("synthetic progress");
+        }
+        let total = 208 * 1024 * 1024;
+        let per_segment = total / 16;
+        let written = per_segment / 3;
+        snapshot.total_bytes = Some(total);
+        snapshot.downloaded_bytes = written * 16;
+        snapshot.final_path = Some(scratch.join("download-1.1.0-portable.zip"));
+        DownloadProgress {
+            task_id,
+            downloaded_bytes: written * 16,
+            total_bytes: Some(total),
+            bytes_per_second: 5 * 1024 * 1024,
+            active_connections: 8,
+            segments: (0..16)
+                .map(|index| nxtools_download::DownloadSegmentProgress {
+                    segment_index: index,
+                    start_byte: Some(u64::from(index) * per_segment),
+                    total_bytes: Some(per_segment),
+                    downloaded_bytes: written,
+                })
+                .collect(),
+            finishing: None,
+        }
+    });
+    if std::env::var("NXTOOLS_PREVIEW_PROGRESS_THEME").is_ok_and(|mode| mode == "light") {
+        gpui_kit::component::Theme::change(gpui_kit::component::ThemeMode::Light, None, cx);
+    }
     let (platform, endpoint) = nxtools_ipc::platform_bridge(16);
     drop(endpoint);
     let platform = Rc::new(platform);
@@ -51,7 +94,10 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
             cx,
         )
     });
-    let window_size = download_task_window_size(DownloadWindowPhase::Progress);
+    let window_size = download_task_window_size_for_details(
+        DownloadWindowPhase::Progress,
+        layout_page.is_some_and(|page| page < 3),
+    );
     cx.open_window(
         WindowOptions {
             window_bounds: Some(WindowBounds::centered(window_size, cx)),
@@ -73,7 +119,7 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
         move |window, cx| {
             let native = native_window_handle(window).unwrap_or_default();
             let view = cx.new(|_| {
-                DownloadTaskWindowView::new(
+                let mut view = DownloadTaskWindowView::new(
                     application,
                     platform,
                     task_id,
@@ -82,9 +128,26 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
                         generation: uuid::Uuid::new_v4(),
                     },
                     snapshot,
-                    None,
+                    progress.clone(),
                     false,
-                )
+                );
+                if let Some(page) = layout_page {
+                    view.details_tab = page.min(2);
+                    view.details_expanded = page < 3;
+                    let total = 208 * 1024 * 1024;
+                    let bytes = total / 16 / 3 * 16;
+                    view.display_sampler =
+                        super::progress_display::ProgressDisplaySampler::default();
+                    view.display_sampler.observe(
+                        Duration::ZERO,
+                        bytes - 5 * 1024 * 1024,
+                        Some(total),
+                        true,
+                    );
+                    view.display_sampler
+                        .observe(Duration::from_secs(1), bytes, Some(total), true);
+                }
+                view
             });
             println!(
                 "ui.preview.completion_source hwnd={native} scale={}",

@@ -508,7 +508,97 @@ pub(crate) async fn run_hls_task(
             }
         }
     }
+    if !paused && !cancelled {
+        let mut total = 0_u64;
+        for segment in &playlist.segments {
+            total += tokio::fs::metadata(
+                working_directory.join(format!("{:08}.segment", segment.index)),
+            )
+            .await?
+            .len();
+        }
+        let mut copied = 0_u64;
+        publish_finishing_progress(
+            &inner,
+            task_id,
+            DownloadFinishingProgress {
+                stage: DownloadFinishingStage::Concatenating,
+                completed: 0,
+                total: Some(total),
+            },
+            true,
+        );
+        info!(event = "download.hls_finalize.stage", %correlation_id, ?task_id, stage = "concatenating", "HLS finalization stage changed");
+        let mut output = tokio::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&temporary_path)
+            .await?;
+        let mut buffer = vec![0_u8; 1024 * 1024];
+        'merge: for segment in &playlist.segments {
+            let completed_path = working_directory.join(format!("{:08}.segment", segment.index));
+            let mut input = tokio::fs::File::open(completed_path).await?;
+            loop {
+                if let Some(directive) = hls_stop_directive(&control) {
+                    paused = directive == TransferDirective::Pause;
+                    cancelled = directive == TransferDirective::Cancel;
+                    break 'merge;
+                }
+                let count = input.read(&mut buffer).await?;
+                if count == 0 {
+                    break;
+                }
+                if let Some(directive) = hls_stop_directive(&control) {
+                    paused = directive == TransferDirective::Pause;
+                    cancelled = directive == TransferDirective::Cancel;
+                    break 'merge;
+                }
+                output.write_all(&buffer[..count]).await?;
+                copied += count as u64;
+                publish_finishing_progress(
+                    &inner,
+                    task_id,
+                    DownloadFinishingProgress {
+                        stage: DownloadFinishingStage::Concatenating,
+                        completed: copied,
+                        total: Some(total),
+                    },
+                    false,
+                );
+                tokio::task::yield_now().await;
+            }
+        }
+        if !paused && !cancelled {
+            output.flush().await?;
+            output.sync_all().await?;
+            publish_finishing_progress(
+                &inner,
+                task_id,
+                DownloadFinishingProgress {
+                    stage: DownloadFinishingStage::Concatenating,
+                    completed: copied,
+                    total: Some(total),
+                },
+                true,
+            );
+        }
+        drop(output);
+        if let Some(directive) = hls_stop_directive(&control) {
+            paused = directive == TransferDirective::Pause;
+            cancelled = directive == TransferDirective::Cancel;
+        }
+    }
     if paused {
+        remove_hls_cancel_artifact(
+            &temporary_path,
+            "merge_artifact",
+            false,
+            task_id,
+            correlation_id,
+            Instant::now(),
+        )
+        .await?;
         let mut tasks = inner.lock_tasks()?;
         let state = tasks
             .get_mut(&task_id)
@@ -586,20 +676,6 @@ pub(crate) async fn run_hls_task(
         return Ok(());
     }
 
-    let mut output = tokio::fs::OpenOptions::new()
-        .create(true)
-        .truncate(true)
-        .write(true)
-        .open(&temporary_path)
-        .await?;
-    for segment in &playlist.segments {
-        let completed_path = working_directory.join(format!("{:08}.segment", segment.index));
-        let mut input = tokio::fs::File::open(completed_path).await?;
-        tokio::io::copy(&mut input, &mut output).await?;
-    }
-    output.flush().await?;
-    output.sync_all().await?;
-    drop(output);
     {
         let prepared_bytes = tokio::fs::metadata(&temporary_path).await?.len();
         let mut tasks = inner.lock_tasks()?;
@@ -610,6 +686,47 @@ pub(crate) async fn run_hls_task(
         inner.persist(state)?;
     }
 
+    if let Some(directive) = hls_stop_directive(&control) {
+        remove_hls_cancel_artifact(
+            &temporary_path,
+            "merge_artifact",
+            false,
+            task_id,
+            correlation_id,
+            Instant::now(),
+        )
+        .await?;
+        let status = match directive {
+            TransferDirective::Pause => DownloadStatus::Paused,
+            TransferDirective::Cancel => {
+                remove_hls_cancel_artifact(
+                    &working_directory,
+                    "segment_staging",
+                    true,
+                    task_id,
+                    correlation_id,
+                    Instant::now(),
+                )
+                .await?;
+                inner.store.clear_hls_transfer_plan(task_id)?;
+                DownloadStatus::Cancelled
+            }
+            TransferDirective::Running => unreachable!("stop helper returned Running"),
+        };
+        transition_transfer_to_terminal(&inner, task_id, status, completed_bytes)?;
+        return Ok(());
+    }
+    publish_finishing_progress(
+        &inner,
+        task_id,
+        DownloadFinishingProgress {
+            stage: DownloadFinishingStage::Publishing,
+            completed: 0,
+            total: None,
+        },
+        true,
+    );
+    info!(event = "download.hls_finalize.stage", %correlation_id, ?task_id, stage = "publishing", "HLS finalization stage changed");
     http.commit_prepared(PreparedDownload {
         temporary_path,
         final_path,

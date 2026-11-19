@@ -18,7 +18,7 @@ $typography = Get-Content -LiteralPath $typographyPath -Raw
 $metrics = Get-Content -LiteralPath $metricsPath -Raw
 
 foreach ($token in @(
-    'pub(crate) const UI_FONT_FAMILY: &str = "Microsoft YaHei UI";',
+    'pub(crate) const UI_FONT_FAMILY: &str = nxtools_core::DEFAULT_UI_FONT_FAMILY;',
     'pub(crate) const UI_MONO_FONT_FAMILY: &str = "Consolas";',
     'pub(crate) const TEXT_PAGE_TITLE: f32 = 16.0;',
     'pub(crate) const TEXT_TITLE: f32 = 14.0;',

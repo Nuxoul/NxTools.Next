@@ -5,6 +5,131 @@ use nxtools_archive::planning::{
 };
 use nxtools_protocol::archive_virtual_drag::valid_drag_name_component;
 
+pub(crate) struct FrozenDrop {
+    pub wrapper: String,
+    pub direct: bool,
+    pub ordinals: Option<Vec<u64>>,
+    pub strip_prefix: Option<String>,
+}
+
+impl BrowserModel {
+    /// Freeze ordinary extraction intent without virtual-file descriptors or content requests.
+    pub fn freeze_drop(
+        &self,
+        tree_path: Option<&str>,
+        display_name: &str,
+    ) -> Result<FrozenDrop, String> {
+        if tree_path == Some("") {
+            if self.entries.is_empty() {
+                return Err("空压缩包没有可拖出的项目；未拖出任何项目。".into());
+            }
+            return Ok(FrozenDrop {
+                wrapper: archive_drag_stem(display_name)?.into(),
+                direct: false,
+                ordinals: None,
+                strip_prefix: None,
+            });
+        }
+        let mut ids = Vec::new();
+        let mut directories = Vec::new();
+        if let Some(path) = tree_path {
+            directories.push(path);
+        } else {
+            for id in &self.selected {
+                match id {
+                    RowId::Entry(snapshot, ordinal) if *snapshot == self.snapshot => {
+                        ids.push(*ordinal)
+                    }
+                    RowId::Folder(snapshot, path) if *snapshot == self.snapshot => {
+                        directories.push(path.as_str())
+                    }
+                    _ => return Err("所选条目来自已失效的快照，请刷新后重试。".into()),
+                }
+            }
+        }
+        if ids.is_empty() && directories.is_empty() {
+            return Err("请选择要拖出的项目；未拖出任何项目。".into());
+        }
+        let directory = (ids.is_empty() && directories.len() == 1).then(|| directories[0]);
+        let direct = tree_path.is_none() && directories.is_empty() && !ids.is_empty();
+        let wrapper = if let Some(path) = directory {
+            let name = path.rsplit('/').next().unwrap_or("");
+            if !valid_drag_name_component(name) {
+                return Err(rejected(name, "文件夹名称不满足Windows输出限制"));
+            }
+            name.to_owned()
+        } else {
+            archive_drag_stem(display_name)?.to_owned()
+        };
+        let base = directory.unwrap_or(&self.folder);
+        let strip_prefix = (!base.is_empty()).then(|| format!("{base}/"));
+        let mut work = SelectionWork::default();
+        let credit = self
+            .selection_metadata_credit(&mut work)
+            .map_err(selection_failure)?;
+        let positions = bind_ordinals(
+            &self.entries,
+            &ids,
+            credit,
+            |entry| entry.ordinal,
+            || Ok(()),
+            &mut work,
+        )
+        .map_err(selection_failure)?;
+        let mut failure = None;
+        let ordinals = expand_selection(
+            &self.entries,
+            CatalogSelection::Entries {
+                positions: &positions,
+                directories: &directories,
+            },
+            credit,
+            |_, entry| SelectionEntry {
+                ordinal: entry.ordinal,
+                path: &entry.name,
+                directory: entry.kind == "Directory",
+            },
+            |_, entry, path, _| {
+                let valid = matches!(entry.kind.as_str(), "File" | "Directory")
+                    && !entry
+                        .warning_codes
+                        .iter()
+                        .any(|code| code == "UnsafePath" || code == "LinkNotExtracted")
+                    && path
+                        .trim_end_matches('/')
+                        .split('/')
+                        .all(valid_drag_name_component)
+                    && strip_prefix.as_deref().is_none_or(|prefix| {
+                        path.starts_with(prefix)
+                            || entry.kind == "Directory"
+                                && path.trim_end_matches('/') == prefix.trim_end_matches('/')
+                    });
+                if !valid {
+                    failure = Some(rejected(
+                        &entry.name,
+                        "条目类型、原始路径或当前文件夹不允许解压",
+                    ));
+                    return Err(nxtools_archive::ArchiveError::UnsafePath);
+                }
+                Ok(0)
+            },
+            || Ok(()),
+            &mut work,
+        )
+        .map_err(|error| failure.unwrap_or_else(|| selection_failure(error)))?;
+        if ordinals.is_empty() {
+            return Err("所选条目已不在当前快照中，请刷新后重试。".into());
+        }
+        Ok(FrozenDrop {
+            wrapper,
+            direct,
+            ordinals: Some(ordinals),
+            strip_prefix,
+        })
+    }
+}
+
+#[cfg(test)]
 pub(crate) struct FrozenDragItem {
     pub name: String,
     pub directory: bool,
@@ -52,6 +177,7 @@ fn archive_drag_stem(display_name: &str) -> Result<&str, String> {
 }
 
 // Only descriptor presentation changes. Original member ordinal/path still owns content reads.
+#[cfg(test)]
 fn descriptor_name(
     frozen: &BTreeMap<String, FrozenDragItem>,
     parent: &str,
@@ -149,15 +275,18 @@ impl BrowserModel {
             .checked_sub(bytes)
             .ok_or(nxtools_archive::ArchiveError::ResourceLimit)
     }
+    #[cfg(test)]
     pub fn freeze_drag_selection(&self) -> Result<Vec<FrozenDragItem>, String> {
         self.freeze_drag_selection_authorized(false)
     }
+    #[cfg(test)]
     pub fn freeze_drag_selection_authorized(
         &self,
         authorized: bool,
     ) -> Result<Vec<FrozenDragItem>, String> {
         self.freeze_drag_selection_observed(authorized, &mut SelectionWork::default())
     }
+    #[cfg(test)]
     pub fn freeze_drag_selection_observed(
         &self,
         authorized: bool,
@@ -208,19 +337,7 @@ impl BrowserModel {
             work,
         )
     }
-    /// Root drag destination wrapper: one descriptor-only folder named like the archive. The
-    /// receiver creates it and the ordinary extraction job fills it, so no member is frozen here.
-    pub fn freeze_drag_locate(&self, display_name: &str) -> Result<Vec<FrozenDragItem>, String> {
-        if self.entries.is_empty() {
-            return Err("空压缩包没有可拖出的项目；未拖出任何项目。".into());
-        }
-        Ok(vec![FrozenDragItem {
-            name: archive_drag_stem(display_name)?.to_owned(),
-            directory: true,
-            ordinal: None,
-            size: None,
-        }])
-    }
+    #[cfg(test)]
     pub fn freeze_drag_tree(
         &self,
         path: &str,
@@ -264,6 +381,7 @@ impl BrowserModel {
             )
         }
     }
+    #[cfg(test)]
     fn freeze_drag_roots(
         &self,
         selection: CatalogSelection<'_>,
@@ -721,5 +839,103 @@ mod tree_tests {
             .freeze_drag_tree("top/sub", "bundle.zip", false)
             .expect("unique descriptors for duplicate names");
         assert_eq!(items.iter().filter(|item| !item.directory).count(), 2);
+    }
+}
+
+#[cfg(test)]
+mod drop_tests {
+    use super::*;
+    fn model() -> BrowserModel {
+        BrowserModel::new(Uuid::new_v4(), [(7,"top/sub/","Directory"),(9,"top/sub/empty/","Directory"),(13,"top/sub/a.txt","File"),(17,"top/other.txt","File")].into_iter().map(|(ordinal,name,kind)| {
+            serde_json::from_value(serde_json::json!({"ordinal":ordinal,"name":name,"kind":kind,"size":null,"packed_size":null,"encrypted":true,"warning_codes":[],"provenance":"Utf8Flag","codepage":65001})).expect("metadata")
+        }).collect())
+    }
+    #[test]
+    fn ordinary_drop_subtree_and_list_directory_share_original_members_and_prefix() {
+        let mut model = model();
+        let tree = model
+            .freeze_drop(Some("top/sub"), "bundle.zip")
+            .expect("subtree");
+        assert_eq!(tree.wrapper, "sub");
+        assert_eq!(tree.ordinals.as_deref(), Some(&[7, 9, 13][..]));
+        assert_eq!(tree.strip_prefix.as_deref(), Some("top/sub/"));
+        model.enter("top");
+        model
+            .selected
+            .insert(RowId::Folder(model.snapshot, "top/sub".into()));
+        let list = model
+            .freeze_drop(None, "bundle.zip")
+            .expect("selected directory");
+        assert_eq!(
+            (list.wrapper, list.ordinals, list.strip_prefix),
+            (tree.wrapper, tree.ordinals, tree.strip_prefix)
+        );
+    }
+    #[test]
+    fn ordinary_drop_multiple_selection_strips_only_parent_and_root_is_whole_archive() {
+        let mut model = model();
+        model.enter("top");
+        model.select_all();
+        let selected = model
+            .freeze_drop(None, "bundle.tar.gz")
+            .expect("complete mixed selection");
+        assert_eq!(selected.wrapper, "bundle");
+        assert_eq!(selected.ordinals.as_deref(), Some(&[7, 9, 13, 17][..]));
+        assert_eq!(selected.strip_prefix.as_deref(), Some("top/"));
+        let root = model
+            .freeze_drop(Some(""), "bundle.tar.gz")
+            .expect("whole root");
+        assert_eq!(root.wrapper, "bundle");
+        assert!(root.ordinals.is_none() && root.strip_prefix.is_none());
+    }
+    #[test]
+    fn ordinary_drop_empty_directory_and_noncontiguous_single_file_keep_exact_intent() {
+        let mut model = model();
+        let empty = model
+            .freeze_drop(Some("top/sub/empty"), "bundle.zip")
+            .expect("empty directory");
+        assert_eq!(empty.wrapper, "empty");
+        assert_eq!(empty.ordinals, Some(vec![9]));
+        assert_eq!(empty.strip_prefix.as_deref(), Some("top/sub/empty/"));
+        model.enter("top/sub");
+        model.selected.insert(RowId::Entry(model.snapshot, 13));
+        let single = model.freeze_drop(None, "bundle.zip").expect("single file");
+        assert_eq!(single.wrapper, "bundle");
+        assert_eq!(single.ordinals, Some(vec![13]));
+        assert_eq!(single.strip_prefix.as_deref(), Some("top/sub/"));
+    }
+    #[test]
+    fn ordinary_drop_large_directory_does_not_build_or_limit_virtual_descriptors() {
+        let mut model = model();
+        let template = model.entries[2].clone();
+        model.entries = (0..5000)
+            .map(|ordinal| {
+                let mut entry = template.clone();
+                entry.ordinal = ordinal;
+                entry.name = format!(
+                    "top/sub/{}/{}.txt",
+                    "long".repeat(32),
+                    "long".repeat(60) + &ordinal.to_string()
+                );
+                entry
+            })
+            .collect();
+        let drop = model
+            .freeze_drop(Some("top/sub"), "bundle.zip")
+            .expect("ordinary output, not FILEDESCRIPTORW paths");
+        assert_eq!(drop.ordinals.expect("all members").len(), 5000);
+        assert_eq!(drop.wrapper, "sub");
+    }
+    #[test]
+    fn ordinary_drop_missing_stale_or_unsupported_selection_rejects_whole() {
+        let mut model = model();
+        assert!(model.freeze_drop(Some("missing"), "bundle.zip").is_err());
+        model.selected.insert(RowId::Entry(Uuid::new_v4(), 13));
+        assert!(model.freeze_drop(None, "bundle.zip").is_err());
+        model.selected.clear();
+        model.entries[2]
+            .warning_codes
+            .push("LinkNotExtracted".into());
+        assert!(model.freeze_drop(Some("top/sub"), "bundle.zip").is_err());
     }
 }

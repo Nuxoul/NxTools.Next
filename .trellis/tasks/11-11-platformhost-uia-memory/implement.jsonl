@@ -1,0 +1,9 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"C# Windows APIs and original native/event owners; no GUI/domain rewrite"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Actual native ownership, cancellation versus retirement and bounded diagnostics"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Native boundary pre-development and verification rules"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Original STA/Dispatcher, source HWND, anchor and physical-slot contracts; global managed mechanism is explicitly superseded by A"}
+{"file":".trellis/spec/platformhost/diagnostics.md","reason":"Correlated fixed-state/native-code events without focus/path/secret payloads"}
+{"file":"docs/reference-code/platformhost-uia-memory-repair.md","reason":"Required root repair, incident observations versus allocation inference"}
+{"file":"docs/reference-code/system-shell.md","reason":"SwiftList capture/focus/split-pane reference and original lifetime call chain"}
+{"file":".trellis/tasks/11-11-platformhost-uia-memory/reference-review.md","reason":"Verified startup/helper/session/native API/test effects entries"}
+{"file":".trellis/tasks/11-11-platformhost-uia-memory/design.md","reason":"MTA COM origin, bounded request ownership, retirement and frozen memory protocol"}

@@ -291,6 +291,8 @@ pub struct ArchiveReclamationIntent {
 pub struct ArchiveJobSelection {
     pub browser: ArchiveBrowserContext,
     pub ordinals: Vec<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub strip_prefix: Option<String>,
 }
 impl ArchiveJobExtract {
     pub fn validate(&self) -> Result<(), ArchiveReadError> {
@@ -306,7 +308,6 @@ impl ArchiveJobExtract {
         if let Some(selection) = &self.selection {
             selection.browser.validate()?;
             if selection.ordinals.is_empty()
-                || selection.ordinals.len() > 4096
                 || selection
                     .ordinals
                     .iter()
@@ -315,6 +316,17 @@ impl ArchiveJobExtract {
                     .len()
                     != selection.ordinals.len()
             {
+                return Err(ArchiveReadError::InvalidRequest);
+            }
+            if selection.strip_prefix.as_deref().is_some_and(|prefix| {
+                self.strategy != ArchiveJobStrategy::Here
+                    || prefix.len() > 32767
+                    || prefix.strip_suffix('/').is_none_or(|path| {
+                        path.split('/').any(|part| {
+                            !crate::archive_virtual_drag::valid_drag_name_component(part)
+                        })
+                    })
+            }) {
                 return Err(ArchiveReadError::InvalidRequest);
             }
         }
@@ -337,6 +349,8 @@ pub struct ArchiveJobCreate {
     /// Genuine split volumes are allowed only for a new ZIP/7z target family.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub volume_bytes: Option<u64>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub self_extracting: bool,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -597,6 +611,16 @@ impl ArchiveJobRequest {
                 }
                 let zip = c.format == ArchiveJobFormat::Zip;
                 let seven = c.format == ArchiveJobFormat::SevenZ;
+                if c.self_extracting
+                    && (!zip
+                        || c.password.is_some()
+                        || c.name.len() <= 4
+                        || !c.name.to_ascii_lowercase().ends_with(".exe")
+                        || c.volume_bytes
+                            .is_some_and(|bytes| bytes > u64::from(u32::MAX)))
+                {
+                    return Err(ArchiveReadError::InvalidRequest);
+                }
                 if !seven && (c.solid.is_some() || c.encrypt_header.is_some())
                     || !zip && c.method.is_some()
                     || !zip && !seven && c.password.is_some()
@@ -1445,6 +1469,72 @@ mod tests {
             .validate()
             .is_err()
         );
+    }
+    #[test]
+    fn selected_extract_prefix_defaults_validates_and_keeps_large_selections() {
+        let browser = crate::archive_browser::ArchiveBrowserContext {
+            snapshot_id: Uuid::new_v4(),
+            format: "Zip".into(),
+            comment: String::new(),
+            source: crate::archive_browser::ArchiveSourceBinding {
+                native: "v1:fixture".into(),
+                digest: [1; 32],
+                size: 1,
+                modified_unix_ns: 1,
+            },
+            sevenz_edit: None,
+            tar_edit: None,
+        };
+        let mut extract = ArchiveJobExtract {
+            strategy: ArchiveJobStrategy::Here,
+            single_file_folder: false,
+            conflict: ArchiveJobConflict::Skip,
+            copy_motw: false,
+            selection: Some(ArchiveJobSelection {
+                browser,
+                ordinals: (0..4097).collect(),
+                strip_prefix: None,
+            }),
+            reclamation: None,
+        };
+        assert!(extract.validate().is_ok());
+        let legacy = serde_json::to_value(&extract).expect("selection wire");
+        assert!(legacy["selection"].get("strip_prefix").is_none());
+        assert_eq!(
+            serde_json::from_value::<ArchiveJobExtract>(legacy).expect("legacy decode"),
+            extract
+        );
+        extract.selection.as_mut().expect("selected").strip_prefix = Some("folder/".into());
+        assert!(extract.validate().is_ok());
+        extract.selection.as_mut().expect("selected").strip_prefix =
+            Some(format!("{}/", "界".repeat(86)));
+        assert!(
+            extract.validate().is_ok(),
+            "prefix follows the native UTF-16 component limit"
+        );
+        for invalid in [
+            "",
+            "folder",
+            "/folder/",
+            "folder\\",
+            "../",
+            "folder/../",
+            "CON/",
+        ] {
+            extract.selection.as_mut().expect("selected").strip_prefix = Some(invalid.into());
+            assert!(extract.validate().is_err(), "invalid prefix {invalid:?}");
+        }
+        extract.selection.as_mut().expect("selected").strip_prefix = Some("folder/".into());
+        extract.strategy = ArchiveJobStrategy::Name;
+        assert!(extract.validate().is_err());
+        extract.strategy = ArchiveJobStrategy::Here;
+        extract
+            .selection
+            .as_mut()
+            .expect("selected")
+            .ordinals
+            .push(0);
+        assert!(extract.validate().is_err());
     }
     #[test]
     fn zip_modify_is_bound_and_legacy_fields_omit() {

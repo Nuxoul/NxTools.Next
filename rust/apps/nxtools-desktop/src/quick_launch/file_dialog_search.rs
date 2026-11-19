@@ -1,8 +1,9 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use gpui_kit::base::Root;
 use gpui_kit::component::Icon;
@@ -11,21 +12,32 @@ use gpui_kit::component::input::{
 };
 use gpui_kit::{
     Animation, AnimationExt, AnyWindowHandle, App, Bounds, Context, Entity, EntityInputHandler,
-    Focusable, IntoElement, Render, ScrollStrategy, Subscription, UniformListScrollHandle,
-    WeakEntity, Window, WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind,
-    WindowOptions, div, ease_out_quint, point, prelude::*, px, size, uniform_list,
+    Focusable, HighlightStyle, IntoElement, ObjectFit, Render, ScrollStrategy, SharedString,
+    StyledText, Subscription, UniformListScrollHandle, WeakEntity, Window,
+    WindowBackgroundAppearance, WindowBounds, WindowDecorations, WindowKind, WindowOptions, div,
+    ease_out_quint, img, point, prelude::*, px, size, uniform_list,
 };
+use nxtools_finder::{ApplicationSource, SearchResult, query_requests_file_index_with_commands};
 use nxtools_protocol::{
-    ActivateWindowCommand, DirectoryNavigationHost, IndexSearchBatch, IndexSearchContext,
-    IndexSearchItem, IndexSearchRequest, IndexerCommand, NavigateDirectoryCommand,
-    OpenFileInDialogCommand, PlaceFileDialogSearchWindowCommand, PlatformCommand,
-    QuickLaunchFileDialogSearchHost, SetWindowOwnerCommand, SetWindowTopmostCommand,
-    SetWindowVisibilityCommand,
+    ActivateWindowCommand, DirectoryNavigationHost, IndexSearchBatch, IndexSearchCancel,
+    IndexSearchRequest, IndexerCommand, NavigateDirectoryCommand, OpenFileInDialogCommand,
+    PlaceFileDialogSearchWindowCommand, PlatformCommand, QuickLaunchFileDialogSearchHost,
+    SetWindowOwnerCommand, SetWindowTopmostCommand, SetWindowVisibilityCommand,
 };
 use tracing::{info, warn};
 
-use super::search::is_navigable_directory_target;
-use super::{ImeEnterGate, QuickLaunchApplication, schedule_application_update};
+use super::actions::{QuickLaunchActionTrigger, quick_launch_primary_action};
+use super::panel::source_icon;
+use super::retained_text::QuickLaunchResults;
+use super::search::{
+    IndexSearchSession, elapsed_microseconds, index_status_has_searchable_snapshot,
+    is_navigable_directory_target, quick_launch_match_ranges, should_search_indexer,
+    stable_indexed_results,
+};
+use super::{
+    ICON_PREFETCH_LIMIT, INDEX_CANDIDATE_LIMIT, ImeEnterGate, QuickLaunchApplication,
+    indexed_search_entries, schedule_application_update,
+};
 use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::state::{empty_state, progress_state};
@@ -34,9 +46,7 @@ use crate::ui::metrics::{
     SPACING_12,
 };
 use crate::ui::native_window_handle;
-use crate::ui::typography::{
-    LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL, UI_FONT_FAMILY,
-};
+use crate::ui::typography::{LINE_HEIGHT_BODY, LINE_HEIGHT_LABEL, TEXT_BODY, TEXT_LABEL};
 
 const SEARCH_WIDTH: f32 = 500.0;
 const SEARCH_BAR_HEIGHT: f32 = 36.0;
@@ -44,8 +54,8 @@ const DEFAULT_SOURCE_HEIGHT: f32 = 36.0;
 const SEARCH_RESULTS_HEIGHT: f32 = 264.0;
 const SEARCH_FRAME_HEIGHT: f32 = 2.0;
 const SEARCH_HORIZONTAL_MARGIN: f32 = 16.0;
-const SEARCH_RESULT_LIMIT: usize = 120;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(65);
+const INDEX_FIRST_PUBLISH_DEADLINE: Duration = Duration::from_millis(150);
 const SEARCH_APPEAR_DURATION: Duration = Duration::from_millis(80);
 const FILE_DIALOG_SEARCH_GENERATION_MASK: u64 = 1 << 63;
 
@@ -127,38 +137,81 @@ pub(super) fn file_dialog_search_bounds(
     }
 }
 
+/// The dialog sends the launcher's ordinary index request. Its current folder only ranks
+/// results, `recent:` stays ordinary text, and every generation carries the dialog routing bit.
 fn file_dialog_search_request(
+    index: &mut IndexSearchSession,
     host: &QuickLaunchFileDialogSearchHost,
-    generation: u64,
-    query: String,
-    limit: usize,
-) -> Option<IndexSearchRequest> {
-    if query.trim().is_empty() {
-        return None;
+    query: &str,
+    local_results_empty: bool,
+) -> IndexSearchRequest {
+    index.generation |= FILE_DIALOG_SEARCH_GENERATION_MASK;
+    let mut request = index.begin(query, INDEX_CANDIDATE_LIMIT);
+    request.context.preferred_directory = host.current_directory.clone();
+    request.context.recent_modified = false;
+    request.context.allow_homophone_fallback = local_results_empty;
+    request
+}
+
+fn same_directory(left: &str, right: &str) -> bool {
+    let normalize = |path: &str| {
+        path.replace('/', "\\")
+            .trim_end_matches('\\')
+            .to_lowercase()
+    };
+    normalize(left) == normalize(right)
+}
+
+/// Indexed rows whose parent is the dialog's current folder move ahead of the other indexed
+/// rows. Application, command and calculator rows keep the slots the unified ranking gave them.
+fn prefer_dialog_directory(
+    results: Vec<SearchResult>,
+    directory: Option<&str>,
+) -> Vec<SearchResult> {
+    let Some(directory) = directory.filter(|directory| !directory.trim().is_empty()) else {
+        return results;
+    };
+    let slots = results
+        .iter()
+        .enumerate()
+        .filter(|(_, result)| {
+            matches!(
+                result.entry.source,
+                ApplicationSource::IndexedFile | ApplicationSource::IndexedDirectory
+            )
+        })
+        .map(|(slot, _)| slot)
+        .collect::<Vec<_>>();
+    let mut rows = results.into_iter().map(Some).collect::<Vec<_>>();
+    let (preferred, others): (Vec<SearchResult>, Vec<SearchResult>) = slots
+        .iter()
+        .filter_map(|slot| rows[*slot].take())
+        .partition(|result| {
+            Path::new(&result.entry.target)
+                .parent()
+                .and_then(|parent| parent.to_str())
+                .is_some_and(|parent| same_directory(parent, directory))
+        });
+    for (slot, result) in slots.into_iter().zip(preferred.into_iter().chain(others)) {
+        rows[slot] = Some(result);
     }
-    Some(IndexSearchRequest {
-        generation,
-        query,
-        limit,
-        context: IndexSearchContext {
-            directory: None,
-            preferred_directory: host.current_directory.clone(),
-            include_files: true,
-            include_directories: true,
-            retain_kinds_apart: false,
-            ..Default::default()
-        },
-    })
+    rows.into_iter().flatten().collect()
 }
 
 #[derive(Default)]
 pub(super) struct FileDialogSearchSession {
     host: Option<QuickLaunchFileDialogSearchHost>,
     window: Option<FileDialogSearchWindow>,
-    generation: u64,
-    query: String,
-    items: Vec<IndexSearchItem>,
+    index: IndexSearchSession,
+    pending_index_search: Option<IndexSearchCancel>,
     last_placement: Option<FileDialogSearchPlacementKey>,
+}
+
+impl FileDialogSearchSession {
+    fn invalidate_index(&mut self) {
+        self.index.generation |= FILE_DIALOG_SEARCH_GENERATION_MASK;
+        self.index.invalidate();
+    }
 }
 
 struct FileDialogSearchWindow {
@@ -174,7 +227,9 @@ pub(super) struct FileDialogSearchPanel {
     current_directory: Option<String>,
     default_source: Option<FileDialogDefaultSource>,
     search_input: Entity<InputState>,
-    results: Vec<IndexSearchItem>,
+    results: QuickLaunchResults,
+    committed_query: String,
+    icons: HashMap<String, PathBuf>,
     selected: usize,
     search_pending: bool,
     expanded: bool,
@@ -208,6 +263,7 @@ impl FileDialogSearchPanel {
                     this.search_pending = expanded;
                     if !expanded {
                         this.results.clear();
+                        this.committed_query.clear();
                         this.selected = 0;
                     }
                     if this.expanded != expanded {
@@ -226,7 +282,7 @@ impl FileDialogSearchPanel {
                 }
                 InputEvent::PressEnter { .. } => {
                     if this.ime_enter_gate.consume_enter() {
-                        this.activate_selected(cx);
+                        this.activate_selected(QuickLaunchActionTrigger::Enter, cx);
                     }
                 }
                 InputEvent::Focus | InputEvent::Blur => {}
@@ -272,7 +328,9 @@ impl FileDialogSearchPanel {
             current_directory: host.current_directory.clone(),
             default_source: file_dialog_default_source(host),
             search_input,
-            results: Vec::new(),
+            results: Vec::new().into(),
+            committed_query: String::new(),
+            icons: HashMap::new(),
             selected: 0,
             search_pending: false,
             expanded: false,
@@ -332,6 +390,7 @@ impl FileDialogSearchPanel {
         self.visible = host.visible;
         if directory_changed {
             self.results.clear();
+            self.committed_query.clear();
             self.selected = 0;
             self.search_pending = false;
             self.expanded = false;
@@ -351,17 +410,55 @@ impl FileDialogSearchPanel {
         cx.notify();
     }
 
-    fn set_results(
+    fn set_pending(&mut self, cx: &mut Context<Self>) {
+        if !self.search_pending {
+            self.search_pending = true;
+            cx.notify();
+        }
+    }
+
+    /// Publishes rows for the query still shown in the input; a later merge of the same query
+    /// keeps already admitted rows in place, exactly like the launcher panel.
+    fn publish_results(
         &mut self,
-        results: Vec<IndexSearchItem>,
-        pending: bool,
+        query: &str,
+        results: Vec<SearchResult>,
         cx: &mut Context<Self>,
-    ) {
-        self.results = results;
-        self.search_pending = pending;
+    ) -> bool {
+        if self.search_input.read(cx).value().as_ref() != query {
+            return false;
+        }
+        let same_query = self.committed_query == query;
+        let results = if same_query && !self.search_pending {
+            stable_indexed_results(&self.results, results)
+        } else {
+            results
+        };
+        if !same_query {
+            self.selected = 0;
+        }
+        self.icons
+            .retain(|entry_id, _| results.iter().any(|result| result.entry.id == *entry_id));
+        self.results = results.into();
+        self.committed_query = query.into();
+        self.search_pending = false;
         self.selected = self.selected.min(self.results.len().saturating_sub(1));
         self.ensure_selected_visible();
         cx.notify();
+        true
+    }
+
+    fn set_icons(&mut self, icons: Vec<(String, PathBuf)>, cx: &mut Context<Self>) {
+        let mut changed = false;
+        for (entry_id, path) in icons {
+            if self.icons.get(&entry_id) != Some(&path) {
+                self.icons.insert(entry_id, path);
+                changed = true;
+            }
+        }
+        if changed {
+            cx.notify();
+        }
     }
 
     fn move_selection(&mut self, delta: isize) {
@@ -383,16 +480,20 @@ impl FileDialogSearchPanel {
         }
     }
 
-    fn activate_selected(&self, cx: &mut App) {
+    fn activate_selected(&self, trigger: QuickLaunchActionTrigger, cx: &mut App) {
+        if self.search_pending {
+            return;
+        }
         let Some(result) = self.results.get(self.selected).cloned() else {
             self.activate_default_source(cx);
             return;
         };
+        let query = self.committed_query.clone();
         let application = self.application.clone();
         schedule_application_update(
             application,
             move |application, cx| {
-                application.activate_file_dialog_search_result(result, cx);
+                application.activate_file_dialog_search_result(result, query, trigger, cx);
             },
             cx,
         );
@@ -564,14 +665,69 @@ impl FileDialogSearchPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> gpui_kit::AnyElement {
-        let item = self.results[index].clone();
+        let result = &self.results[index];
+        let display = self.results.display(index);
+        let title = display.title.clone();
+        let subtitle = if display.subtitle.is_empty() {
+            SharedString::from(result.entry.source.label())
+        } else {
+            display.subtitle.clone()
+        };
+        let source = result.entry.source;
+        let icon_path = self.icons.get(&result.entry.id).cloned();
         let selected = index == self.selected;
         let theme = self.theme;
+        let name_highlights = if result
+            .subtitle
+            .as_deref()
+            .is_some_and(|label| label.contains("同音近似"))
+        {
+            nxtools_finder::FileQuery::parse(&self.committed_query)
+                .homophone_match_ranges(&result.entry.name)
+        } else {
+            quick_launch_match_ranges(&result.entry.name, &self.committed_query)
+        }
+        .into_iter()
+        .map(|range| {
+            (
+                range,
+                HighlightStyle {
+                    color: Some(theme.accent.into()),
+                    font_weight: Some(gpui_kit::FontWeight::SEMIBOLD),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect::<Vec<_>>();
         let panel = cx.entity().downgrade();
         let click_panel = panel.clone();
         let navigation_panel = panel.clone();
-        let focus_id =
-            gpui_kit::SharedString::from(format!("file-dialog-result-focus-{}", item.path));
+        let focus_id = SharedString::from(format!("file-dialog-result-focus-{}", result.entry.id));
+        let icon_rail = div()
+            .debug_selector(move || format!("file-dialog-search-result-icon-{index}"))
+            .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_color(if selected {
+                theme.icon
+            } else {
+                theme.icon_muted
+            });
+        let icon_rail = match icon_path {
+            Some(path) => icon_rail.child(
+                img(path)
+                    .size(px(16.0))
+                    .object_fit(ObjectFit::Contain)
+                    .with_fallback(move || {
+                        Icon::new(source_icon(source))
+                            .size(px(16.0))
+                            .into_any_element()
+                    }),
+            ),
+            None => icon_rail.child(Icon::new(source_icon(source)).size(px(16.0))),
+        };
         let row = div()
             .id(("file-dialog-search-row", index))
             .active(move |row| row.bg(theme.surface_pressed))
@@ -603,28 +759,7 @@ impl FileDialogSearchPanel {
                     }
                 });
             })
-            .child(
-                div()
-                    .debug_selector(move || format!("file-dialog-search-result-icon-{index}"))
-                    .size(px(COMPACT_RESULT_ICON_RAIL_WIDTH))
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .child(
-                        gpui_kit::component::Icon::new(if item.is_directory {
-                            MaterialIcon::Folder
-                        } else {
-                            MaterialIcon::TextFields
-                        })
-                        .size(px(16.0))
-                        .text_color(if selected {
-                            theme.icon
-                        } else {
-                            theme.icon_muted
-                        }),
-                    ),
-            )
+            .child(icon_rail)
             .child(
                 div()
                     .debug_selector(move || format!("file-dialog-search-result-copy-{index}"))
@@ -643,7 +778,7 @@ impl FileDialogSearchPanel {
                             .text_size(px(TEXT_BODY))
                             .line_height(px(LINE_HEIGHT_BODY))
                             .text_color(theme.text)
-                            .child(item.name),
+                            .child(StyledText::new(title).with_highlights(name_highlights)),
                     )
                     .child(
                         div()
@@ -655,7 +790,7 @@ impl FileDialogSearchPanel {
                             .text_size(px(TEXT_BODY))
                             .line_height(px(LINE_HEIGHT_LABEL))
                             .text_color(theme.text_muted)
-                            .child(item.path),
+                            .child(subtitle),
                     ),
             )
             .into_any_element();
@@ -666,10 +801,15 @@ impl FileDialogSearchPanel {
             row,
             window,
             cx,
-            move |_event, _window, cx| {
+            move |event, _window, cx| {
+                let trigger = if event.is_keyboard() {
+                    QuickLaunchActionTrigger::Enter
+                } else {
+                    QuickLaunchActionTrigger::Pointer
+                };
                 let _ = click_panel.update(cx, |panel, cx| {
                     panel.selected = index;
-                    panel.activate_selected(cx);
+                    panel.activate_selected(trigger, cx);
                     cx.notify();
                 });
             },
@@ -726,7 +866,6 @@ impl Render for FileDialogSearchPanel {
             .debug_selector(|| "file-dialog-search-window".into())
             .size_full()
             .overflow_hidden()
-            .font_family(UI_FONT_FAMILY)
             .bg(theme.canvas)
             .border_1()
             .border_color(theme.window_border)
@@ -746,7 +885,7 @@ impl Render for FileDialogSearchPanel {
                                     theme,
                                     "file-dialog-search-progress",
                                     "正在搜索",
-                                    "正在合并本地文件与文件夹结果。",
+                                    "正在合并应用、文件与文件夹结果。",
                                 ))
                             } else {
                                 surface.child(empty_state(
@@ -754,7 +893,7 @@ impl Render for FileDialogSearchPanel {
                                     "file-dialog-search-empty",
                                     MaterialIcon::Search,
                                     super::QUICK_LAUNCH_EMPTY_RESULTS_LABEL,
-                                    "尝试缩短关键词，或输入文件与文件夹名称。",
+                                    "尝试缩短关键词，或输入应用、文件与文件夹名称。",
                                 ))
                             }
                         })
@@ -838,11 +977,8 @@ impl QuickLaunchApplication {
         }
         host.current_directory = Some(directory);
         let host = host.clone();
-        self.file_dialog_search.generation =
-            self.file_dialog_search.generation.wrapping_add(1).max(1)
-                | FILE_DIALOG_SEARCH_GENERATION_MASK;
-        self.file_dialog_search.query.clear();
-        self.file_dialog_search.items.clear();
+        self.cancel_file_dialog_index_search("directory_changed", cx);
+        self.file_dialog_search.invalidate_index();
         if let Some(search_window) = self.file_dialog_search.window.as_ref() {
             let panel = search_window.panel.clone();
             let window = search_window.window;
@@ -1076,32 +1212,121 @@ impl QuickLaunchApplication {
         }
         self.file_dialog_search.last_placement = None;
     }
+    /// The dialog bar runs the launcher's ordinary query: local catalog sources, then the
+    /// indexed provider under the same admission, first-merge deadline and Finder ranking.
     pub(super) fn begin_file_dialog_search(&mut self, query: String, cx: &mut Context<Self>) {
-        let Some(host) = self.file_dialog_search.host.as_ref() else {
+        let Some(host) = self.file_dialog_search.host.clone() else {
             return;
         };
-        self.file_dialog_search.generation =
-            self.file_dialog_search.generation.wrapping_add(1).max(1)
-                | FILE_DIALOG_SEARCH_GENERATION_MASK;
-        self.file_dialog_search.query = query.clone();
-        self.file_dialog_search.items.clear();
+        let started = Instant::now();
         if query.trim().is_empty() {
-            self.update_file_dialog_search_results(false, cx);
+            self.cancel_file_dialog_index_search("cleared", cx);
+            self.file_dialog_search.invalidate_index();
+            self.publish_file_dialog_search_results(String::new(), Vec::new(), cx);
             self.apply_file_dialog_search_window_placement(cx);
             return;
         }
-        let Some(request) = file_dialog_search_request(
-            host,
-            self.file_dialog_search.generation,
-            query,
-            SEARCH_RESULT_LIMIT,
-        ) else {
+        let local_results = self.unified_catalog_results(&query, &[], true);
+        let request = file_dialog_search_request(
+            &mut self.file_dialog_search.index,
+            &host,
+            &query,
+            local_results.is_empty(),
+        );
+        let generation = request.generation;
+        let indexer_connected = self.indexer.is_connected();
+        let index_available = index_status_has_searchable_snapshot(self.index_status.as_ref());
+        let search_indexer = should_search_indexer(indexer_connected, index_available)
+            && query_requests_file_index_with_commands(
+                &query,
+                &self.config.quick_launch.custom_commands,
+            );
+        let search_queued = if search_indexer {
+            self.dispatch_file_dialog_index_search(request)
+        } else {
+            self.cancel_file_dialog_index_search("provider_not_requested", cx);
+            false
+        };
+        self.file_dialog_search.index.complete = !search_queued;
+        info!(
+            event = "quick_launch.file_dialog_search.accepted",
+            generation,
+            query_length = query.chars().count(),
+            indexer_connected,
+            index_available,
+            search_queued,
+            local_count = local_results.len(),
+            elapsed_us = elapsed_microseconds(started),
+            "file-dialog search accepted"
+        );
+        if search_queued {
+            self.set_file_dialog_search_pending(cx);
+            cx.spawn(async move |this, cx| {
+                cx.background_executor()
+                    .timer(INDEX_FIRST_PUBLISH_DEADLINE)
+                    .await;
+                let _ = this.update(cx, |application, cx| {
+                    let index = &mut application.file_dialog_search.index;
+                    if index.generation != generation || index.complete || index.first_published {
+                        return;
+                    }
+                    index.deadline_elapsed = true;
+                    application.refresh_file_dialog_search_results(cx);
+                });
+            })
+            .detach();
+            return;
+        }
+        let results = self.file_dialog_combined_results();
+        self.publish_file_dialog_search_results(query, results, cx);
+    }
+
+    fn dispatch_file_dialog_index_search(&mut self, request: IndexSearchRequest) -> bool {
+        let request_id = uuid::Uuid::new_v4();
+        let previous = self
+            .file_dialog_search
+            .pending_index_search
+            .replace(IndexSearchCancel {
+                request_id,
+                generation: request.generation,
+            });
+        match self
+            .indexer
+            .send_command_with_id(IndexerCommand::Search(request), request_id)
+        {
+            Ok(_) => true,
+            Err(error) => {
+                self.file_dialog_search.pending_index_search = previous;
+                warn!(%error, "could not queue file-dialog indexed search");
+                false
+            }
+        }
+    }
+
+    fn cancel_file_dialog_index_search(&mut self, reason: &'static str, cx: &mut Context<Self>) {
+        let Some(cancel) = self.file_dialog_search.pending_index_search.take() else {
             return;
         };
-        if let Err(error) = self.indexer.send_command(IndexerCommand::Search(request)) {
-            warn!(%error, "could not send file-dialog search request");
-            self.update_file_dialog_search_results(false, cx);
-        }
+        let indexer = Rc::clone(&self.indexer);
+        info!(
+            event = "quick_launch.file_dialog_search.cancel_requested",
+            correlation_id = %cancel.request_id,
+            generation = cancel.generation,
+            reason,
+            "file-dialog indexed search retired locally"
+        );
+        cx.spawn(async move |_, _| {
+            let queued = indexer.cancel_search(cancel).await.is_ok();
+            info!(
+                event = "quick_launch.file_dialog_search.cancel_dispatched",
+                correlation_id = %cancel.request_id,
+                generation = cancel.generation,
+                reason,
+                queued,
+                "file-dialog indexed search cancellation dispatch ended"
+            );
+        })
+        .detach();
     }
 
     pub(super) fn handle_file_dialog_search_batch(
@@ -1112,68 +1337,230 @@ impl QuickLaunchApplication {
         if batch.generation & FILE_DIALOG_SEARCH_GENERATION_MASK == 0 {
             return false;
         }
-        if batch.generation != self.file_dialog_search.generation {
+        if batch.complete
+            && self
+                .file_dialog_search
+                .pending_index_search
+                .is_some_and(|pending| pending.generation == batch.generation)
+        {
+            self.file_dialog_search.pending_index_search = None;
+        }
+        if !self.file_dialog_search.index.apply(batch.clone()) {
             return true;
         }
-        self.file_dialog_search.items.extend(batch.items.clone());
-        self.update_file_dialog_search_results(!batch.complete, cx);
+        if batch.complete
+            || (!batch.items.is_empty() && self.file_dialog_search.index.deadline_elapsed)
+        {
+            self.refresh_file_dialog_search_results(cx);
+        }
+        true
+    }
+
+    pub(super) fn handle_file_dialog_search_failure(
+        &mut self,
+        generation: u64,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if generation & FILE_DIALOG_SEARCH_GENERATION_MASK == 0 {
+            return false;
+        }
+        if self
+            .file_dialog_search
+            .pending_index_search
+            .is_some_and(|pending| pending.generation == generation)
+        {
+            self.file_dialog_search.pending_index_search = None;
+        }
+        if generation == self.file_dialog_search.index.generation {
+            warn!(
+                event = "quick_launch.file_dialog_search.provider_failed",
+                generation, "file-dialog indexed search failed; local results remain"
+            );
+            self.file_dialog_search.index.items.clear();
+            self.file_dialog_search.index.complete = true;
+            self.refresh_file_dialog_search_results(cx);
+        }
         true
     }
 
     pub(super) fn handle_file_dialog_search_disconnect(&mut self, cx: &mut Context<Self>) {
-        if self.file_dialog_search.query.trim().is_empty()
-            && self.file_dialog_search.items.is_empty()
+        self.file_dialog_search.pending_index_search = None;
+        let query = self.file_dialog_search.index.query.clone();
+        if query.trim().is_empty() {
+            return;
+        }
+        // Re-run the visible query so local sources stay available without the indexer.
+        self.begin_file_dialog_search(query, cx);
+    }
+
+    pub(super) fn retry_file_dialog_search_after_ready(&mut self, cx: &mut Context<Self>) {
+        let query = self.file_dialog_search.index.query.clone();
+        let visible = self
+            .file_dialog_search
+            .host
+            .as_ref()
+            .is_some_and(|host| host.visible);
+        if !visible || query.trim().is_empty() {
+            return;
+        }
+        info!(
+            event = "quick_launch.file_dialog_search.retry_after_ready",
+            query_length = query.chars().count(),
+            "retrying visible file-dialog query after indexer became ready"
+        );
+        self.begin_file_dialog_search(query, cx);
+    }
+
+    /// Same publication rule as the launcher panel: one bounded first merge, then the terminal
+    /// merge, with intermediate provider batches folded into those two publications.
+    fn refresh_file_dialog_search_results(&mut self, cx: &mut Context<Self>) {
+        let index = &self.file_dialog_search.index;
+        if index.terminal_published
+            || (index.first_published && !index.complete)
+            || (!index.complete && !index.deadline_elapsed)
+            || index.query.trim().is_empty()
         {
             return;
         }
-        self.file_dialog_search.generation =
-            self.file_dialog_search.generation.wrapping_add(1).max(1)
-                | FILE_DIALOG_SEARCH_GENERATION_MASK;
-        self.file_dialog_search.items.clear();
-        self.update_file_dialog_search_results(false, cx);
+        let complete = index.complete;
+        let generation = index.generation;
+        let query = index.query.clone();
+        let results = self.file_dialog_combined_results();
+        if results.is_empty() && !complete {
+            return;
+        }
+        let indexed_visible = results
+            .iter()
+            .filter(|result| {
+                matches!(
+                    result.entry.source,
+                    ApplicationSource::IndexedFile | ApplicationSource::IndexedDirectory
+                )
+            })
+            .count();
+        let result_count = results.len();
+        if self.publish_file_dialog_search_results(query, results, cx) {
+            self.file_dialog_search.index.first_published = true;
+            self.file_dialog_search.index.terminal_published = complete;
+            info!(
+                event = "quick_launch.file_dialog_search.published",
+                generation,
+                complete,
+                indexed_visible,
+                result_count,
+                "file-dialog merged results published"
+            );
+        }
     }
 
-    fn update_file_dialog_search_results(&mut self, pending: bool, cx: &mut Context<Self>) {
-        let Some(search_window) = self.file_dialog_search.window.as_ref() else {
+    fn file_dialog_combined_results(&self) -> Vec<SearchResult> {
+        let index = &self.file_dialog_search.index;
+        if index.query.trim().is_empty() {
+            return Vec::new();
+        }
+        let indexed = indexed_search_entries(&index.items);
+        let results = self.unified_catalog_results(&index.query, &indexed, !index.complete);
+        prefer_dialog_directory(
+            results,
+            self.file_dialog_search
+                .host
+                .as_ref()
+                .and_then(|host| host.current_directory.as_deref()),
+        )
+    }
+
+    fn publish_file_dialog_search_results(
+        &mut self,
+        query: String,
+        results: Vec<SearchResult>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(panel) = self
+            .file_dialog_search
+            .window
+            .as_ref()
+            .map(|window| window.panel.clone())
+        else {
+            return false;
+        };
+        let prefetch = results[..results.len().min(ICON_PREFETCH_LIMIT)].to_vec();
+        let published = panel
+            .update(cx, |panel, cx| panel.publish_results(&query, results, cx))
+            .unwrap_or(false);
+        if published {
+            self.request_icons(&prefetch, cx);
+        }
+        published
+    }
+
+    fn set_file_dialog_search_pending(&mut self, cx: &mut Context<Self>) {
+        if let Some(window) = self.file_dialog_search.window.as_ref() {
+            let _ = window.panel.update(cx, |panel, cx| panel.set_pending(cx));
+        }
+    }
+
+    pub(super) fn deliver_file_dialog_search_icons(
+        &self,
+        icons: Vec<(String, PathBuf)>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(panel) = self
+            .file_dialog_search
+            .window
+            .as_ref()
+            .map(|window| window.panel.clone())
+        else {
             return;
         };
-        let results = self.file_dialog_search.items.clone();
-        let _ = search_window
-            .panel
-            .update(cx, |panel, cx| panel.set_results(results, pending, cx));
+        cx.defer(move |cx| {
+            let _ = panel.update(cx, |panel, cx| panel.set_icons(icons, cx));
+        });
     }
 
     pub(super) fn activate_file_dialog_search_result(
         &mut self,
-        result: IndexSearchItem,
-        _cx: &mut Context<Self>,
+        result: SearchResult,
+        query: String,
+        trigger: QuickLaunchActionTrigger,
+        cx: &mut Context<Self>,
     ) {
-        let Some(host) = self.file_dialog_search.host.as_ref() else {
+        let Some(host_window_handle) = self
+            .file_dialog_search
+            .host
+            .as_ref()
+            .map(|host| host.window_handle)
+        else {
             return;
         };
-        let target_directory = if result.is_directory {
-            result.path.clone()
-        } else {
-            String::new()
+        // Files and folders stay inside the dialog; they never open a second Explorer.
+        let command = match result.entry.source {
+            ApplicationSource::IndexedDirectory => Some(PlatformCommand::NavigateDirectory(
+                NavigateDirectoryCommand {
+                    host: DirectoryNavigationHost::FileDialog,
+                    window_handle: host_window_handle,
+                    target_directory: result.entry.target.clone(),
+                    host_context_id: None,
+                },
+            )),
+            ApplicationSource::IndexedFile if Path::new(&result.entry.target).is_absolute() => {
+                Some(PlatformCommand::OpenFileInDialog(OpenFileInDialogCommand {
+                    window_handle: host_window_handle,
+                    file_path: result.entry.target.clone(),
+                }))
+            }
+            ApplicationSource::IndexedFile => return,
+            _ => None,
         };
-        let command = if result.is_directory {
-            PlatformCommand::NavigateDirectory(NavigateDirectoryCommand {
-                host: DirectoryNavigationHost::FileDialog,
-                window_handle: host.window_handle,
-                target_directory,
-                host_context_id: None,
-            })
-        } else if Path::new(&result.path).is_absolute() {
-            PlatformCommand::OpenFileInDialog(OpenFileInDialogCommand {
-                window_handle: host.window_handle,
-                file_path: result.path,
-            })
-        } else {
+        if let Some(command) = command {
+            if let Err(error) = self.platform.send_command(command) {
+                warn!(%error, "could not activate file-dialog search result");
+            }
             return;
-        };
-        if let Err(error) = self.platform.send_command(command) {
-            warn!(%error, "could not activate file-dialog search result");
         }
+        // Applications, commands, calculator, environment variables and extension rows use
+        // the launcher's own action pipeline.
+        let action = quick_launch_primary_action(&result, false, false);
+        self.execute(result, action, query, trigger, cx);
     }
 
     fn activate_file_dialog_default_source(
@@ -1204,6 +1591,30 @@ impl QuickLaunchApplication {
 }
 
 #[cfg(test)]
+pub(super) fn file_dialog_test_result(target: &str, source: ApplicationSource) -> SearchResult {
+    let name = Path::new(target)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(target)
+        .to_owned();
+    SearchResult {
+        entry: nxtools_finder::ApplicationEntry {
+            id: format!("test:{}", target.to_lowercase()),
+            name,
+            target: target.into(),
+            source,
+        },
+        action: nxtools_finder::SearchResultAction::OpenTarget,
+        subtitle: None,
+        score: 0,
+        activation_count: 0,
+        last_activated_at_unix_ms: None,
+        query_activation_count: 0,
+        last_query_activation_at_unix_ms: None,
+    }
+}
+
+#[cfg(test)]
 pub(super) fn polish_keyboard_fixture(
     window: &mut Window,
     cx: &mut Context<FileDialogSearchPanel>,
@@ -1224,15 +1635,14 @@ pub(super) fn polish_keyboard_fixture(
     panel.expanded = true;
     panel.results = ["first", "second"]
         .into_iter()
-        .map(|name| IndexSearchItem {
-            path: format!(r"C:\synthetic\{name}.txt"),
-            name: name.into(),
-            is_directory: false,
-            size_bytes: None,
-            modified_at_unix_ms: None,
-            score: 0,
+        .map(|name| {
+            file_dialog_test_result(
+                &format!(r"C:\synthetic\{name}.txt"),
+                ApplicationSource::IndexedFile,
+            )
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
     panel
 }
 
@@ -1292,9 +1702,10 @@ mod tests {
         let (_temporary, application, _endpoint) =
             super::super::tests::quick_launch_application_fixture(cx);
         let test_host = host(96);
-        let generation = FILE_DIALOG_SEARCH_GENERATION_MASK | 9;
-        let request = file_dialog_search_request(&test_host, generation, "recent:".into(), 20)
-            .expect("ordinary file-dialog query");
+        let mut index = IndexSearchSession::default();
+        let request = file_dialog_search_request(&mut index, &test_host, "recent:", false);
+        let generation = request.generation;
+        assert_ne!(generation & FILE_DIALOG_SEARCH_GENERATION_MASK, 0);
         assert!(!request.context.recent_modified);
         assert!(!request.context.allow_homophone_fallback);
         assert_eq!(request.query, "recent:");
@@ -1303,15 +1714,20 @@ mod tests {
         let owner = application.downgrade();
         let (_root, window) = cx.add_window_view(move |window, cx| {
             let panel = cx.new(|cx| FileDialogSearchPanel::new(&test_host, owner, window, cx));
-            panel.update(cx, |panel, cx| panel.set_results(Vec::new(), true, cx));
+            panel.update(cx, |panel, cx| {
+                panel
+                    .search_input
+                    .update(cx, |state, cx| state.set_value("recent:", window, cx));
+                panel.search_pending = true;
+            });
             *slot.borrow_mut() = Some(panel.clone());
             Root::new(panel, window, cx)
         });
         let panel = retained.borrow().clone().expect("panel");
         window.update(|window, cx| {
             application.update(cx, |app, _| {
-                app.file_dialog_search.generation = generation;
-                app.file_dialog_search.query = "recent:".into();
+                app.file_dialog_search.index.generation = generation;
+                app.file_dialog_search.index.query = "recent:".into();
                 app.file_dialog_search.window = Some(FileDialogSearchWindow {
                     window: window.window_handle(),
                     panel: panel.downgrade(),
@@ -1466,14 +1882,11 @@ mod tests {
                     cx,
                 );
                 panel.expanded = true;
-                panel.results = vec![IndexSearchItem {
-                    path: r"C:\Work\report.txt".into(),
-                    name: "report.txt".into(),
-                    is_directory: false,
-                    size_bytes: Some(42),
-                    modified_at_unix_ms: None,
-                    score: 1,
-                }];
+                panel.results = vec![file_dialog_test_result(
+                    r"C:\Work\report.txt",
+                    ApplicationSource::IndexedFile,
+                )]
+                .into();
                 panel
             });
             Root::new(panel, window, cx)
@@ -1651,9 +2064,13 @@ mod tests {
             ..host(96)
         };
 
-        let request = file_dialog_search_request(&host, 9, "gram".into(), 120)
-            .expect("global dialog search request");
+        let mut index = IndexSearchSession::default();
+        let request = file_dialog_search_request(&mut index, &host, "gram", false);
         assert_eq!(request.context.directory, None);
+        assert_eq!(
+            request.context.preferred_directory.as_deref(),
+            Some(r"C:\Work")
+        );
         assert_eq!(
             file_dialog_default_source(&host),
             Some(FileDialogDefaultSource {
@@ -1669,6 +2086,50 @@ mod tests {
                 width: 500,
                 height: 74,
             }
+        );
+    }
+
+    #[test]
+    fn dialog_request_matches_the_launcher_index_request() {
+        let mut launcher = IndexSearchSession::default();
+        let launcher_request = launcher.begin("report", INDEX_CANDIDATE_LIMIT);
+        let mut dialog = IndexSearchSession::default();
+        let first = file_dialog_search_request(&mut dialog, &host(96), "report", true);
+        assert_eq!(first.limit, launcher_request.limit);
+        assert_eq!(
+            first.context.retain_kinds_apart,
+            launcher_request.context.retain_kinds_apart
+        );
+        assert!(first.context.allow_homophone_fallback);
+        let next = file_dialog_search_request(&mut dialog, &host(96), "report", false);
+        assert_ne!(next.generation & FILE_DIALOG_SEARCH_GENERATION_MASK, 0);
+        assert!(next.generation > first.generation);
+        assert!(!next.context.allow_homophone_fallback);
+    }
+
+    #[test]
+    fn dialog_folder_ranks_indexed_rows_without_moving_launcher_rows() {
+        let ranked = vec![
+            file_dialog_test_result(r"D:\Other\report.txt", ApplicationSource::IndexedFile),
+            file_dialog_test_result(r"C:\Apps\Report.lnk", ApplicationSource::StartMenu),
+            file_dialog_test_result(r"C:\Work\report.txt", ApplicationSource::IndexedFile),
+            file_dialog_test_result(r"C:\Work\reports", ApplicationSource::IndexedDirectory),
+        ];
+        fn targets(rows: &[SearchResult]) -> Vec<String> {
+            rows.iter().map(|row| row.entry.target.clone()).collect()
+        }
+        assert_eq!(
+            targets(&prefer_dialog_directory(ranked.clone(), Some(r"C:\Work\"))),
+            vec![
+                r"C:\Work\report.txt",
+                r"C:\Apps\Report.lnk",
+                r"C:\Work\reports",
+                r"D:\Other\report.txt",
+            ]
+        );
+        assert_eq!(
+            targets(&prefer_dialog_directory(ranked.clone(), None)),
+            targets(&ranked)
         );
     }
 

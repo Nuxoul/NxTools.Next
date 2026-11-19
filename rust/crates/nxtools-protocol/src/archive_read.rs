@@ -284,6 +284,8 @@ impl ArchiveReadBatch {
                     | "Bzip2"
                     | "Xz"
                     | "Zstd"
+                    | "Alz"
+                    | "Egg"
                     | "Cab"
                     | "Iso"
                     | "Udf"
@@ -320,7 +322,7 @@ impl ArchiveReadBatch {
                         .is_some_and(|cp| cp != 0 && valid_codepage(cp))
                 || entry.provenance == "UncertainCp437" && entry.codepage != Some(437)
                 || entry.provenance == "Heuristic"
-                    && !matches!(entry.codepage, Some(65001 | 936 | 932))
+                    && !matches!(entry.codepage, Some(65001 | 936 | 932 | 949))
                 || entry.warning_codes.len() > 4
                 || entry.warning_codes.iter().any(|code| {
                     !matches!(
@@ -549,7 +551,7 @@ mod large_tests {
         assert_eq!(request.validate(), Err(ArchiveReadError::InvalidRequest));
     }
     #[test]
-    fn heuristic_filename_provenance_accepts_only_the_three_bounded_candidates() {
+    fn heuristic_filename_provenance_accepts_only_the_four_bounded_candidates() {
         let mut batch = ArchiveReadBatch {
             snapshot_id: Uuid::new_v4(),
             sequence: 0,
@@ -574,6 +576,7 @@ mod large_tests {
             Some(65001),
             Some(936),
             Some(932),
+            Some(949),
             Some(437),
             Some(950),
             None,
@@ -581,7 +584,7 @@ mod large_tests {
             batch.entries[0].codepage = cp;
             assert_eq!(
                 batch.validate().is_ok(),
-                matches!(cp, Some(65001 | 936 | 932))
+                matches!(cp, Some(65001 | 936 | 932 | 949))
             );
         }
     }

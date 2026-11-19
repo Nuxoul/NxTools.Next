@@ -14,16 +14,17 @@ use uuid::Uuid;
 use crate::dash::{DashManifest, DashTrackKind};
 use crate::hls::{HlsMediaPlaylist, HlsMediaSegment};
 use crate::{
-    DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest, DownloadSchedule,
-    DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTask, DownloadTaskId,
-    DownloadTaskTimelineEntry, DownloadTaskTimelineEvent, INTERRUPTED_DOWNLOAD_STATUSES,
-    RequestOrigin, ResourceValidator, TransferPlan,
+    BrowserHandoffState, DownloadFault, DownloadProbe, DownloadQueue, DownloadRequest,
+    DownloadSchedule, DownloadSegment, DownloadSegmentState, DownloadStatus, DownloadTask,
+    DownloadTaskId, DownloadTaskTimelineEntry, DownloadTaskTimelineEvent,
+    INTERRUPTED_DOWNLOAD_STATUSES, RequestOrigin, ResourceValidator, TransferPlan,
 };
 
-pub const DOWNLOAD_SCHEMA_VERSION: u32 = 13;
+pub const DOWNLOAD_SCHEMA_VERSION: u32 = 15;
 const GLOBAL_SPEED_LIMIT_SETTING: &str = "global_speed_limit_bytes_per_second";
 const BROWSER_HANDOFF_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1_000;
 const MAX_BROWSER_HANDOFFS: i64 = 4_096;
+pub(crate) const CONTROLLED_BROWSER_HANDOFF_LEASE_MS: i64 = 30_000;
 pub(crate) fn request_fingerprint(
     request: &DownloadRequest,
 ) -> Result<String, DownloadStorageError> {
@@ -43,6 +44,13 @@ struct StoredResolvedRequest {
     resolution: Option<crate::DownloadResolutionProvenance>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     probe: Option<DownloadProbe>,
+    #[serde(
+        default,
+        skip_serializing_if = "crate::DownloadCompletionIntention::is_empty"
+    )]
+    completion_intention: crate::DownloadCompletionIntention,
+    #[serde(default, skip_serializing_if = "crate::is_zero")]
+    completion_attempt: u64,
 }
 
 fn sqlite_extended_code(error: &DownloadStorageError) -> Option<i32> {
@@ -214,6 +222,12 @@ impl SqliteDownloadStore {
         }
         if current < 13 {
             connection.execute_batch(SCHEMA_V13)?;
+        }
+        if current < 14 {
+            connection.execute_batch(SCHEMA_V14)?;
+        }
+        if current < 15 {
+            connection.execute_batch(SCHEMA_V15)?;
         }
 
         Ok(Self {
@@ -407,6 +421,58 @@ impl SqliteDownloadStore {
         Ok(())
     }
 
+    /// Move existing memberships atomically without resetting admission or user pause.
+    pub fn assign_queue_tasks(
+        &self,
+        queue_id: &str,
+        task_ids: &[DownloadTaskId],
+    ) -> Result<usize, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        transaction.execute("INSERT INTO download_queues(queue_id, name, position, max_concurrent_tasks, is_running) VALUES (?1, ?1, 0, 3, 1) ON CONFLICT(queue_id) DO NOTHING", [queue_id])?;
+        let mut moved = 0;
+        for task_id in task_ids {
+            let id = task_id.as_uuid().to_string();
+            let source: String = transaction
+                .query_row(
+                    "SELECT queue_id FROM download_queue_items WHERE task_id = ?1",
+                    [&id],
+                    |row| row.get(0),
+                )
+                .optional()?
+                .ok_or(DownloadStorageError::TaskNotFound(*task_id))?;
+            if source == queue_id {
+                continue;
+            }
+            let position: i64 = transaction.query_row("SELECT COALESCE(MAX(position) + 1, 0) FROM download_queue_items WHERE queue_id = ?1", [queue_id], |row| row.get(0))?;
+            transaction.execute(
+                "UPDATE download_queue_items SET queue_id = ?2, position = ?3 WHERE task_id = ?1",
+                params![id, queue_id, position],
+            )?;
+            transaction.execute(
+                "UPDATE download_tasks SET queue_id = ?2 WHERE task_id = ?1",
+                params![id, queue_id],
+            )?;
+            moved += 1;
+        }
+        transaction.commit()?;
+        Ok(moved)
+    }
+
+    pub(crate) fn queue_id_for_task(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<String, DownloadStorageError> {
+        self.lock()?
+            .query_row(
+                "SELECT queue_id FROM download_queue_items WHERE task_id = ?1",
+                [task_id.as_uuid().to_string()],
+                |row| row.get(0),
+            )
+            .optional()?
+            .ok_or(DownloadStorageError::TaskNotFound(task_id))
+    }
+
     pub fn append_to_queue(
         &self,
         queue_id: &str,
@@ -494,10 +560,15 @@ impl SqliteDownloadStore {
         let connection = self.lock()?;
         let mut statement = connection.prepare(
             r#"
-            SELECT task_id
-            FROM download_queue_items
-            WHERE queue_id = ?1 AND is_eligible = 1
-            ORDER BY position ASC
+            SELECT q.task_id
+            FROM download_queue_items q
+            WHERE q.queue_id = ?1 AND q.is_eligible = 1
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM download_controlled_browser_handoffs h
+                  WHERE h.task_id = q.task_id AND h.state = 'held'
+              )
+            ORDER BY q.position ASC
             "#,
         )?;
         statement
@@ -552,7 +623,7 @@ impl SqliteDownloadStore {
         let mut statement = connection.prepare(
             r#"
             SELECT queue_id, name, position, max_concurrent_tasks, connection_limit,
-                   speed_limit_bytes_per_second, schedule_json, is_running
+                   speed_limit_bytes_per_second, schedule_json, is_running, completion_intention_json
             FROM download_queues
             ORDER BY position ASC
             "#,
@@ -570,6 +641,7 @@ impl SqliteDownloadStore {
                             Box::new(error),
                         )
                     })?;
+                let completion_intention = json_from_text(&row.get::<_, String>(8)?, 8)?;
                 Ok(DownloadQueue {
                     id: row.get(0)?,
                     name: row.get(1)?,
@@ -582,10 +654,50 @@ impl SqliteDownloadStore {
                     default_save_directory: None,
                     schedule,
                     is_running: row.get(7)?,
+                    completion_intention,
                 })
             })?
             .collect::<Result<Vec<_>, _>>()
             .map_err(Into::into)
+    }
+
+    pub fn set_queue_completion_intention(
+        &self,
+        queue_id: &str,
+        mut intention: crate::DownloadCompletionIntention,
+        baseline: Option<crate::DownloadCompletionIntention>,
+    ) -> Result<DownloadQueue, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        if let Some(baseline) = baseline {
+            let json: String = transaction.query_row(
+                "SELECT completion_intention_json FROM download_queues WHERE queue_id=?1",
+                [queue_id],
+                |row| row.get(0),
+            )?;
+            let mut current: crate::DownloadCompletionIntention = serde_json::from_str(&json)?;
+            if intention.action != baseline.action {
+                current.action = intention.action;
+            }
+            if intention.open_directory != baseline.open_directory {
+                current.open_directory = intention.open_directory;
+            }
+            intention = current;
+        }
+        let json = serde_json::to_string(&intention)?;
+        let changed = transaction.execute(
+            "UPDATE download_queues SET completion_intention_json = ?2 WHERE queue_id = ?1",
+            params![queue_id, json],
+        )?;
+        if changed == 0 {
+            return Err(DownloadStorageError::QueueNotFound(queue_id.to_owned()));
+        }
+        transaction.commit()?;
+        drop(connection);
+        self.load_queues()?
+            .into_iter()
+            .find(|queue| queue.id == queue_id)
+            .ok_or_else(|| DownloadStorageError::QueueNotFound(queue_id.to_owned()))
     }
 
     pub fn set_queue_max_concurrent(
@@ -1260,6 +1372,30 @@ impl SqliteDownloadStore {
         Ok(())
     }
 
+    pub(crate) fn save_paused_url_replacement(
+        &self,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        plan: &TransferPlan,
+    ) -> Result<(), DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction()?;
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        let changed = transaction.execute(
+            "UPDATE download_tasks SET transfer_plan_json = ?2 WHERE task_id = ?1",
+            params![
+                task.id().as_uuid().to_string(),
+                serde_json::to_string(plan)?
+            ],
+        )?;
+        if changed != 1 {
+            return Err(DownloadStorageError::TaskNotFound(task.id()));
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub(crate) fn save_task_with_transfer_and_queue(
         &self,
         task: &DownloadTask,
@@ -1641,6 +1777,296 @@ impl SqliteDownloadStore {
         Ok(updated != 0)
     }
 
+    pub(crate) fn prepare_controlled_browser_handoff(
+        &self,
+        handoff_id: Uuid,
+        request_fingerprint: &str,
+        now_unix_ms: i64,
+    ) -> Result<ControlledHandoffPrepare, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let expired = expire_controlled_handoff(&transaction, handoff_id, now_unix_ms)?;
+        if expired {
+            prune_controlled_handoffs(&transaction, handoff_id)?;
+        }
+        if let Some(record) = load_controlled_handoff(&transaction, handoff_id)? {
+            if record
+                .request_fingerprint
+                .as_deref()
+                .is_some_and(|stored| stored != request_fingerprint)
+            {
+                return Err(DownloadStorageError::BrowserHandoffConflict { handoff_id });
+            }
+            transaction.commit()?;
+            return Ok(ControlledHandoffPrepare {
+                record,
+                inserted: false,
+                expired,
+            });
+        }
+        let deadline_unix_ms = now_unix_ms.saturating_add(CONTROLLED_BROWSER_HANDOFF_LEASE_MS);
+        transaction.execute(
+            r#"
+            INSERT INTO download_controlled_browser_handoffs(
+                handoff_id, state, task_id, request_fingerprint, start_now,
+                deadline_unix_ms, created_at_unix_ms, updated_at_unix_ms
+            ) VALUES (?1, 'pending', NULL, ?2, NULL, ?3, ?4, ?4)
+            "#,
+            params![
+                handoff_id.to_string(),
+                request_fingerprint,
+                deadline_unix_ms,
+                now_unix_ms
+            ],
+        )?;
+        prune_controlled_handoffs(&transaction, handoff_id)?;
+        transaction.commit()?;
+        Ok(ControlledHandoffPrepare {
+            record: ControlledBrowserHandoff {
+                handoff_id,
+                state: BrowserHandoffState::Pending,
+                task_id: None,
+                request_fingerprint: Some(request_fingerprint.to_owned()),
+                start_now: None,
+            },
+            inserted: true,
+            expired: false,
+        })
+    }
+
+    pub(crate) fn controlled_browser_handoff_status(
+        &self,
+        handoff_id: Uuid,
+        now_unix_ms: i64,
+        renew_pending: bool,
+    ) -> Result<ControlledHandoffStatus, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let expired = expire_controlled_handoff(&transaction, handoff_id, now_unix_ms)?;
+        if expired {
+            prune_controlled_handoffs(&transaction, handoff_id)?;
+        }
+        let record = load_controlled_handoff(&transaction, handoff_id)?
+            .unwrap_or_else(|| ControlledBrowserHandoff::missing(handoff_id));
+        if renew_pending && record.state == BrowserHandoffState::Pending {
+            let deadline_unix_ms = now_unix_ms.saturating_add(CONTROLLED_BROWSER_HANDOFF_LEASE_MS);
+            transaction.execute(
+                "UPDATE download_controlled_browser_handoffs SET deadline_unix_ms = ?2, updated_at_unix_ms = ?3 WHERE handoff_id = ?1 AND state = 'pending'",
+                params![handoff_id.to_string(), deadline_unix_ms, now_unix_ms],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(ControlledHandoffStatus { record, expired })
+    }
+
+    pub(crate) fn accept_controlled_browser_handoff(
+        &self,
+        handoff_id: Uuid,
+        task: &DownloadTask,
+        state: &StoredTransferState,
+        queue_id: &str,
+        start_now: bool,
+        now_unix_ms: i64,
+    ) -> Result<ControlledHandoffAcceptSave, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        expire_controlled_handoff(&transaction, handoff_id, now_unix_ms)?;
+        let Some(record) = load_controlled_handoff(&transaction, handoff_id)? else {
+            transaction.commit()?;
+            return Ok(ControlledHandoffAcceptSave::Existing(
+                ControlledBrowserHandoff::missing(handoff_id),
+            ));
+        };
+        if record.state != BrowserHandoffState::Pending {
+            transaction.commit()?;
+            return Ok(ControlledHandoffAcceptSave::Existing(record));
+        }
+        save_task_row(&transaction, task)?;
+        save_transfer_state_row(&transaction, task.id(), state)?;
+        append_to_queue_row(&transaction, queue_id, task.id(), false)?;
+        let changed = transaction.execute(
+            r#"
+            UPDATE download_controlled_browser_handoffs
+            SET state = 'held', task_id = ?2, start_now = ?3,
+                deadline_unix_ms = NULL, updated_at_unix_ms = ?4
+            WHERE handoff_id = ?1 AND state = 'pending'
+            "#,
+            params![
+                handoff_id.to_string(),
+                task.id().as_uuid().to_string(),
+                start_now,
+                now_unix_ms
+            ],
+        )?;
+        if changed != 1 {
+            return Err(DownloadStorageError::BrowserHandoffStateConflict { handoff_id });
+        }
+        transaction.commit()?;
+        Ok(ControlledHandoffAcceptSave::Inserted(task.id()))
+    }
+
+    pub(crate) fn commit_controlled_browser_handoff(
+        &self,
+        handoff_id: Uuid,
+        task: &DownloadTask,
+        schedule_due: bool,
+        now_unix_ms: i64,
+    ) -> Result<ControlledHandoffCommit, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let Some(record) = load_controlled_handoff(&transaction, handoff_id)? else {
+            transaction.commit()?;
+            return Ok(ControlledHandoffCommit {
+                record: ControlledBrowserHandoff::missing(handoff_id),
+                changed: false,
+                queue_eligible: false,
+            });
+        };
+        if record.state != BrowserHandoffState::Held {
+            transaction.commit()?;
+            return Ok(ControlledHandoffCommit {
+                record,
+                changed: false,
+                queue_eligible: false,
+            });
+        }
+        if record.task_id != Some(task.id()) {
+            return Err(DownloadStorageError::BrowserHandoffTaskMismatch { handoff_id });
+        }
+        let queue_eligible = record.start_now == Some(true) && schedule_due;
+        if queue_eligible {
+            save_task_row(&transaction, task)?;
+        }
+        let changed = transaction.execute(
+            "UPDATE download_queue_items SET is_eligible = ?2, is_user_paused = 0 WHERE task_id = ?1",
+            params![task.id().as_uuid().to_string(), queue_eligible],
+        )?;
+        if changed != 1 {
+            return Err(DownloadStorageError::TaskNotFound(task.id()));
+        }
+        transaction.execute(
+            "UPDATE download_controlled_browser_handoffs SET state = 'committed', deadline_unix_ms = NULL, updated_at_unix_ms = ?2 WHERE handoff_id = ?1 AND state = 'held'",
+            params![handoff_id.to_string(), now_unix_ms],
+        )?;
+        prune_controlled_handoffs(&transaction, handoff_id)?;
+        let mut committed = record;
+        committed.state = BrowserHandoffState::Committed;
+        transaction.commit()?;
+        Ok(ControlledHandoffCommit {
+            record: committed,
+            changed: true,
+            queue_eligible,
+        })
+    }
+
+    pub(crate) fn abort_controlled_browser_handoff(
+        &self,
+        handoff_id: Uuid,
+        cancelled_task: Option<&DownloadTask>,
+        now_unix_ms: i64,
+    ) -> Result<ControlledHandoffAbort, DownloadStorageError> {
+        let mut connection = self.lock()?;
+        let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let expired = expire_controlled_handoff(&transaction, handoff_id, now_unix_ms)?;
+        if expired {
+            prune_controlled_handoffs(&transaction, handoff_id)?;
+        }
+        let Some(mut record) = load_controlled_handoff(&transaction, handoff_id)? else {
+            transaction.execute(
+                r#"
+                INSERT INTO download_controlled_browser_handoffs(
+                    handoff_id, state, task_id, request_fingerprint, start_now,
+                    deadline_unix_ms, created_at_unix_ms, updated_at_unix_ms
+                ) VALUES (?1, 'aborted', NULL, NULL, NULL, NULL, ?2, ?2)
+                "#,
+                params![handoff_id.to_string(), now_unix_ms],
+            )?;
+            prune_controlled_handoffs(&transaction, handoff_id)?;
+            transaction.commit()?;
+            return Ok(ControlledHandoffAbort {
+                record: ControlledBrowserHandoff {
+                    handoff_id,
+                    state: BrowserHandoffState::Aborted,
+                    task_id: None,
+                    request_fingerprint: None,
+                    start_now: None,
+                },
+                changed: true,
+                cancelled_task_id: None,
+                expired: false,
+            });
+        };
+        if record.state == BrowserHandoffState::Committed
+            || record.state == BrowserHandoffState::Aborted
+            || record.state == BrowserHandoffState::Expired
+        {
+            transaction.commit()?;
+            return Ok(ControlledHandoffAbort {
+                record,
+                changed: false,
+                cancelled_task_id: None,
+                expired,
+            });
+        }
+        let cancelled_task_id = if record.state == BrowserHandoffState::Held {
+            let task = cancelled_task
+                .filter(|task| Some(task.id()) == record.task_id)
+                .ok_or(DownloadStorageError::BrowserHandoffTaskMismatch { handoff_id })?;
+            save_task_row(&transaction, task)?;
+            let changed = transaction.execute(
+                "UPDATE download_queue_items SET is_eligible = 0, is_user_paused = 1 WHERE task_id = ?1",
+                [task.id().as_uuid().to_string()],
+            )?;
+            if changed != 1 {
+                return Err(DownloadStorageError::TaskNotFound(task.id()));
+            }
+            Some(task.id())
+        } else {
+            None
+        };
+        transaction.execute(
+            "UPDATE download_controlled_browser_handoffs SET state = 'aborted', deadline_unix_ms = NULL, updated_at_unix_ms = ?2 WHERE handoff_id = ?1",
+            params![handoff_id.to_string(), now_unix_ms],
+        )?;
+        prune_controlled_handoffs(&transaction, handoff_id)?;
+        record.state = BrowserHandoffState::Aborted;
+        transaction.commit()?;
+        Ok(ControlledHandoffAbort {
+            record,
+            changed: true,
+            cancelled_task_id,
+            expired,
+        })
+    }
+
+    pub(crate) fn is_controlled_browser_handoff_held_task(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<bool, DownloadStorageError> {
+        let connection = self.lock()?;
+        connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM download_controlled_browser_handoffs WHERE task_id = ?1 AND state = 'held')",
+                [task_id.as_uuid().to_string()],
+                |row| row.get(0),
+            )
+            .map_err(Into::into)
+    }
+
+    pub(crate) fn controlled_browser_handoff_start_now(
+        &self,
+        task_id: DownloadTaskId,
+    ) -> Result<Option<bool>, DownloadStorageError> {
+        self.lock()?
+            .query_row(
+                "SELECT start_now FROM download_controlled_browser_handoffs WHERE task_id = ?1 AND state IN ('held', 'committed')",
+                [task_id.as_uuid().to_string()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
     pub(crate) fn save_task_with_transfer_and_eligibility(
         &self,
         task: &DownloadTask,
@@ -1946,6 +2372,155 @@ pub(crate) struct BrowserHandoff {
     pub request_fingerprint: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ControlledBrowserHandoff {
+    pub(crate) handoff_id: Uuid,
+    pub(crate) state: BrowserHandoffState,
+    pub(crate) task_id: Option<DownloadTaskId>,
+    pub(crate) request_fingerprint: Option<String>,
+    pub(crate) start_now: Option<bool>,
+}
+
+impl ControlledBrowserHandoff {
+    fn missing(handoff_id: Uuid) -> Self {
+        Self {
+            handoff_id,
+            state: BrowserHandoffState::Missing,
+            task_id: None,
+            request_fingerprint: None,
+            start_now: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ControlledHandoffPrepare {
+    pub(crate) record: ControlledBrowserHandoff,
+    pub(crate) inserted: bool,
+    pub(crate) expired: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ControlledHandoffStatus {
+    pub(crate) record: ControlledBrowserHandoff,
+    pub(crate) expired: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum ControlledHandoffAcceptSave {
+    Inserted(DownloadTaskId),
+    Existing(ControlledBrowserHandoff),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ControlledHandoffCommit {
+    pub(crate) record: ControlledBrowserHandoff,
+    pub(crate) changed: bool,
+    pub(crate) queue_eligible: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ControlledHandoffAbort {
+    pub(crate) record: ControlledBrowserHandoff,
+    pub(crate) changed: bool,
+    pub(crate) cancelled_task_id: Option<DownloadTaskId>,
+    pub(crate) expired: bool,
+}
+
+fn load_controlled_handoff(
+    connection: &Connection,
+    handoff_id: Uuid,
+) -> Result<Option<ControlledBrowserHandoff>, DownloadStorageError> {
+    connection
+        .query_row(
+            r#"
+            SELECT state, task_id, request_fingerprint, start_now
+            FROM download_controlled_browser_handoffs
+            WHERE handoff_id = ?1
+            "#,
+            [handoff_id.to_string()],
+            |row| {
+                let state_name = row.get::<_, String>(0)?;
+                let state = match state_name.as_str() {
+                    "pending" => BrowserHandoffState::Pending,
+                    "held" => BrowserHandoffState::Held,
+                    "committed" => BrowserHandoffState::Committed,
+                    "aborted" => BrowserHandoffState::Aborted,
+                    "expired" => BrowserHandoffState::Expired,
+                    _ => {
+                        return Err(rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            Box::new(DownloadStorageError::InvalidEnumEncoding),
+                        ));
+                    }
+                };
+                let task_id = row
+                    .get::<_, Option<String>>(1)?
+                    .map(|task_id| {
+                        Uuid::parse_str(&task_id)
+                            .map(DownloadTaskId::from_uuid)
+                            .map_err(|_| {
+                                rusqlite::Error::FromSqlConversionFailure(
+                                    1,
+                                    rusqlite::types::Type::Text,
+                                    Box::new(DownloadStorageError::InvalidTaskId(task_id)),
+                                )
+                            })
+                    })
+                    .transpose()?;
+                Ok(ControlledBrowserHandoff {
+                    handoff_id,
+                    state,
+                    task_id,
+                    request_fingerprint: row.get(2)?,
+                    start_now: row.get(3)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
+}
+
+fn expire_controlled_handoff(
+    connection: &Connection,
+    handoff_id: Uuid,
+    now_unix_ms: i64,
+) -> Result<bool, DownloadStorageError> {
+    Ok(connection.execute(
+        r#"
+        UPDATE download_controlled_browser_handoffs
+        SET state = 'expired', deadline_unix_ms = NULL, updated_at_unix_ms = ?2
+        WHERE handoff_id = ?1 AND state = 'pending'
+          AND deadline_unix_ms IS NOT NULL AND deadline_unix_ms <= ?2
+        "#,
+        params![handoff_id.to_string(), now_unix_ms],
+    )? != 0)
+}
+
+fn prune_controlled_handoffs(
+    connection: &Connection,
+    retained_handoff_id: Uuid,
+) -> Result<(), DownloadStorageError> {
+    connection.execute(
+        r#"
+        DELETE FROM download_controlled_browser_handoffs
+        WHERE handoff_id <> ?1
+          AND state IN ('committed', 'aborted', 'expired')
+          AND handoff_id IN (
+              SELECT handoff_id
+              FROM download_controlled_browser_handoffs
+              WHERE handoff_id <> ?1
+                AND state IN ('committed', 'aborted', 'expired')
+              ORDER BY updated_at_unix_ms DESC, handoff_id DESC
+              LIMIT -1 OFFSET ?2
+          )
+        "#,
+        params![retained_handoff_id.to_string(), MAX_BROWSER_HANDOFFS - 1],
+    )?;
+    Ok(())
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IdempotentSubmissionSave {
     Inserted(DownloadTaskId),
@@ -1963,6 +2538,8 @@ fn save_task_row(connection: &Connection, task: &DownloadTask) -> Result<(), Dow
         request: task.request().clone(),
         resolution: task.resolution().cloned(),
         probe: None,
+        completion_intention: task.completion_intention(),
+        completion_attempt: task.completion_attempt(),
     })?;
     let origin = enum_name(&task.origin)?;
     connection.execute(
@@ -2326,6 +2903,8 @@ fn decode_task_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DownloadTask> {
     };
     task.set_transfer_statistics(statistics);
     task.set_resolution(stored.resolution);
+    task.set_completion_intention(stored.completion_intention);
+    task.set_completion_attempt(stored.completion_attempt);
     Ok(task)
 }
 
@@ -2393,6 +2972,10 @@ pub enum DownloadStorageError {
     IdempotencyConflict { key: Uuid },
     #[error("browser handoff conflicts with an existing request: {handoff_id}")]
     BrowserHandoffConflict { handoff_id: Uuid },
+    #[error("browser handoff changed state during a durable mutation: {handoff_id}")]
+    BrowserHandoffStateConflict { handoff_id: Uuid },
+    #[error("browser handoff task identity does not match: {handoff_id}")]
+    BrowserHandoffTaskMismatch { handoff_id: Uuid },
     #[error("download task does not exist: {0:?}")]
     TaskNotFound(DownloadTaskId),
     #[error("download queue does not exist: {0}")]
@@ -2734,6 +3317,32 @@ ALTER TABLE download_tasks ADD COLUMN active_download_ms INTEGER
     CHECK(active_download_ms IS NULL OR active_download_ms >= 0)
     CHECK((measured_payload_bytes IS NULL) = (active_download_ms IS NULL));
 PRAGMA user_version = 13;
+COMMIT;
+"#;
+
+const SCHEMA_V14: &str = r#"
+BEGIN IMMEDIATE;
+ALTER TABLE download_queues ADD COLUMN completion_intention_json TEXT NOT NULL DEFAULT '{}';
+PRAGMA user_version = 14;
+COMMIT;
+"#;
+
+const SCHEMA_V15: &str = r#"
+BEGIN IMMEDIATE;
+CREATE TABLE download_controlled_browser_handoffs (
+    handoff_id TEXT PRIMARY KEY NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('pending', 'held', 'committed', 'aborted', 'expired')),
+    task_id TEXT UNIQUE,
+    request_fingerprint TEXT,
+    start_now INTEGER,
+    deadline_unix_ms INTEGER,
+    created_at_unix_ms INTEGER NOT NULL,
+    updated_at_unix_ms INTEGER NOT NULL,
+    CHECK((state = 'pending') = (deadline_unix_ms IS NOT NULL))
+);
+CREATE INDEX download_controlled_browser_handoffs_state_updated_idx
+    ON download_controlled_browser_handoffs(state, updated_at_unix_ms DESC);
+PRAGMA user_version = 15;
 COMMIT;
 "#;
 
@@ -3545,6 +4154,7 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -3574,6 +4184,7 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,

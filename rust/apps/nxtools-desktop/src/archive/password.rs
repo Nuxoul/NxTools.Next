@@ -252,7 +252,9 @@ impl ArchiveApplication {
             let alive = Rc::new(std::cell::Cell::new(true));
             let scope = Rc::new(std::cell::RefCell::new(None));
             let captured = source.update(cx, |_, window, cx| {
-                if window.has_active_dialog(cx) { return None; }
+                if window.has_active_dialog(cx) {
+                    return None;
+                }
                 let input = cx.new(|cx| InputState::new(window, cx).masked(true));
                 let retirement_input = input.clone();
                 let owner = owner.clone();
@@ -274,17 +276,22 @@ impl ArchiveApplication {
                             "压缩包需要密码"
                         })
                         .child(Input::new(&input).aria_label("压缩包密码"))
-                        .child("密码不会写入磁盘；解锁拖出的授权仅短期保留在受保护内存。完成后需重新按住拖动。")
+                        .child("密码不会写入磁盘。")
                         .footer(
                             DialogFooter::new()
                                 .child(DialogClose::new().trigger(|button| button.label("取消")))
                                 .child(
-                                    DialogAction::new()
-                                        .child(Button::new("archive-password-ok").label("确定").debug_selector(||"archive-password-ok".into())),
+                                    DialogAction::new().child(
+                                        Button::new("archive-password-ok")
+                                            .label("确定")
+                                            .debug_selector(|| "archive-password-ok".into()),
+                                    ),
                                 ),
                         )
                         .on_ok(move |_, window, cx| {
-                            if !confirm_alive.replace(false) { return true; }
+                            if !confirm_alive.replace(false) {
+                                return true;
+                            }
                             let value = confirm_input.read(cx).value();
                             let secret = PrivatePassword::new(value.as_ref());
                             confirm_input.update(cx, |input, cx| input.set_value("", window, cx));
@@ -298,7 +305,9 @@ impl ArchiveApplication {
                             true
                         })
                         .on_cancel(move |_, window, cx| {
-                            if !cancel_alive.replace(false) { return true; }
+                            if !cancel_alive.replace(false) {
+                                return true;
+                            }
                             cancel_input.update(cx, |input, cx| input.set_value("", window, cx));
                             let owner = cancel_owner.clone();
                             let prompt = cancel_prompt.clone();
@@ -313,9 +322,18 @@ impl ArchiveApplication {
                 Some(retirement_input)
             });
             if let Ok(Some(input)) = captured {
-                let _ = owner.update(cx, |app, _| { app.password_dialogs.insert(prompt.operation_id, PasswordDialog {
-                    session: prompt.session_id, window: source, alive, scope, input,
-                }); });
+                let _ = owner.update(cx, |app, _| {
+                    app.password_dialogs.insert(
+                        prompt.operation_id,
+                        PasswordDialog {
+                            session: prompt.session_id,
+                            window: source,
+                            alive,
+                            scope,
+                            input,
+                        },
+                    );
+                });
             } else {
                 let _ = owner.update(cx, |app, cx| app.queue_password_recovery(host_id, cx));
             }

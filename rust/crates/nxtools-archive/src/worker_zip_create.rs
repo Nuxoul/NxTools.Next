@@ -68,6 +68,15 @@ pub(crate) fn create<W: Write + Send>(
         &limits,
         control,
     )?;
+    if options.self_extracting
+        && (plan.entries().len() > 65536
+            || plan
+                .entries()
+                .iter()
+                .any(|item| item.relative_path().len() > 4096))
+    {
+        return Err(ArchiveError::ResourceLimit);
+    }
     shared.borrow_mut().source_checkpoint("source_validated")?;
     let token = shared.borrow_mut().begin_file(
         request
@@ -274,7 +283,7 @@ pub(crate) fn create<W: Write + Send>(
         shared.borrow_mut().source_checkpoint("source_precommit")?;
         sources.revalidate()?;
         control.checkpoint()?;
-        if request.volume_bytes.is_some() {
+        if request.volume_bytes.is_some() || options.self_extracting {
             shared.borrow_mut().abort_file(token);
             spool.rewind()?;
             crate::worker_volume_output::publish(

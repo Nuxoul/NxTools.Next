@@ -30,7 +30,7 @@ use nxtools_core::{
     DownloadTaskbarProgressOverlaySettings, NetworkProxyMode,
 };
 use nxtools_download::{
-    BrowserBlob, BrowserDownloadDialogRequest, BrowserDownloadDialogSource,
+    BrowserBlob, BrowserDownloadDialogRequest, BrowserDownloadDialogSource, BrowserHandoffState,
     DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction, DownloadCommand,
     DownloadCommandEnvelope, DownloadCommandOutcome, DownloadDailySchedule, DownloadEngine,
     DownloadEngineTask, DownloadEvent, DownloadEventEnvelope, DownloadProbe, DownloadProgress,
@@ -51,14 +51,15 @@ use nxtools_protocol::{
     PickDirectoryCommand, PickProgramCommand, PlaceTaskbarProgressOverlayCommand, PlatformCommand,
     PlatformCommandResult, PlatformEvent, SetTaskbarProgressCommand,
     SetWindowBoundsCenteredCommand, SetWindowTopmostCommand, SetWindowVisibilityCommand,
-    ShellOpenAction, ShutdownSystemCommand, StashWindowBoundsCommand, TaskbarOverlayAnchor,
-    TaskbarProgressState,
+    ShellOpenAction, ShutdownSystemCommand, StashWindowBoundsCommand, SuspendSystemCommand,
+    TaskbarOverlayAnchor, TaskbarProgressState,
 };
 use tracing::{error, info, warn};
 
 use crate::completion_actions::{
     COMPLETION_FEEDBACK_DELAY, COMPLETION_PLATFORM_TIMEOUT, CompletionActionCoordinator,
     CompletionFeedbackBatch, CompletionTerminal, ShutdownCountdown, ShutdownTransition,
+    completion_action_label,
 };
 use crate::download_taskbar_overlay::{
     DownloadTaskbarOverlayModel, DownloadTaskbarOverlaySample, DownloadTaskbarOverlaySegmentSample,
@@ -90,13 +91,39 @@ use crate::ui::typography::{
     TEXT_STATUS_GLYPH, TEXT_TITLE, UI_MONO_FONT_FAMILY,
 };
 
+pub(crate) fn protocol_restart_summary(
+    error: &nxtools_download::DownloadFault,
+) -> Option<&'static str> {
+    if error.code != nxtools_download::DownloadFaultCode::Protocol {
+        return None;
+    }
+    let message = error.message.to_ascii_lowercase();
+    if message.contains("resource changed")
+        || message.contains("validator changed")
+        || message.contains("etag changed")
+    {
+        Some("远程文件已变化，请重新下载")
+    } else if message.contains("ignored the requested byte range")
+        || message.contains("range") && message.contains("http 200")
+    {
+        Some("服务器不支持断点续传，请重新开始")
+    } else {
+        None
+    }
+}
+
 mod artifact_actions;
 mod batch;
 #[cfg(test)]
 mod batch_tests;
 mod browser_handoff_impl;
 mod clipboard_prefill;
+mod completion_intention;
 mod completion_shutdown_impl;
+#[cfg(test)]
+#[path = "downloads/controlled_handoff_tests.rs"]
+mod controlled_handoff_tests;
+use self::completion_intention::{CompletionIntentionTarget, completion_intention_menu};
 #[cfg(debug_assertions)]
 pub(crate) mod completion_transition_preview;
 mod conflict;
@@ -112,10 +139,14 @@ mod directory_picker_tests;
 #[cfg(debug_assertions)]
 pub(crate) mod fixed_transition_preview;
 mod floating_assistant;
+#[cfg(test)]
+mod grouped_completion_tests;
 mod new_download_view;
+mod paused_url;
 #[cfg(test)]
 mod polish_tests;
 mod progress_display;
+mod range_coverage;
 mod schedule_view;
 #[cfg(test)]
 mod server_information_tests;
@@ -220,6 +251,7 @@ pub(crate) enum DownloadDirectoryTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct DownloadSettingsDraft {
+    baseline: Option<DownloadSettings>,
     default_directory: PathBuf,
     chrome_web_store_extension_id: String,
     automatic_categories_enabled: bool,
@@ -233,10 +265,9 @@ struct DownloadSettingsDraft {
     default_cookie: String,
     accept_invalid_certificates: bool,
     default_connection_limit: u16,
-    adaptive_segment_scaling_enabled: bool,
-    adaptive_segment_max_segments: u16,
-    adaptive_segment_min_mib: u16,
     max_concurrent_tasks: u16,
+    max_concurrent_tasks_baseline: Option<u16>,
+    global_speed_limit_edited: bool,
     global_speed_limit_bytes_per_second: Option<u64>,
     background_speed_limit: nxtools_core::BackgroundDownloadLimitSettings,
     show_progress_window: bool,
@@ -254,6 +285,7 @@ struct DownloadSettingsViewInitial {
     log_directory: String,
     database_path: String,
     ffmpeg_install_state: FfmpegInstallViewState,
+    completion_queues: Vec<DownloadQueue>,
 }
 
 const FFMPEG_DOWNLOAD_PAGE_TIMEOUT: Duration = Duration::from_secs(15);
@@ -552,6 +584,25 @@ const DOWNLOAD_TASK_ICON_SIZE: u32 = 48;
 const DOWNLOAD_TASK_ICON_MAX_IN_FLIGHT: usize = 8;
 const DOWNLOAD_TASK_ICON_RETRY_DELAY: Duration = Duration::from_secs(5);
 const DOWNLOAD_TASK_ICON_MAX_ATTEMPTS: u8 = 3;
+const DOWNLOAD_TASK_ICON_STA_RETRY_DELAY: Duration = Duration::from_secs(1);
+
+fn download_task_icon_type_resource(target: &str) -> (String, String) {
+    let extension = Path::new(target)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .filter(|extension| {
+            extension.len() <= 16
+                && !extension.is_empty()
+                && extension.bytes().all(|byte| byte.is_ascii_alphanumeric())
+        })
+        .map(str::to_ascii_lowercase);
+    let suffix =
+        extension.map_or_else(|| "generic".to_owned(), |extension| format!(".{extension}"));
+    (
+        format!("{DOWNLOAD_TASK_ICON_SIZE}:type:{suffix}"),
+        format!("nxtools-file-type:{suffix}"),
+    )
+}
 
 fn download_task_icon_target(task: &DownloadEngineTask) -> Option<String> {
     if task.task.status() == DownloadStatus::Completed
@@ -581,13 +632,7 @@ fn download_task_icon_resource_key(task: &DownloadEngineTask) -> Option<String> 
             target.replace('/', "\\").to_lowercase()
         ));
     }
-    let path = Path::new(&target);
-    let extension = path
-        .extension()
-        .and_then(|extension| extension.to_str())?
-        .trim()
-        .to_ascii_lowercase();
-    (!extension.is_empty()).then(|| format!("{DOWNLOAD_TASK_ICON_SIZE}:type:.{extension}"))
+    Some(download_task_icon_type_resource(&target).0)
 }
 
 struct DownloadShutdownWindow {
@@ -818,6 +863,10 @@ impl DownloadApplication {
                 });
             }
         });
+        let completion_actions = engine
+            .completion_snapshot()
+            .map(|snapshot| CompletionActionCoordinator::from_snapshot(&snapshot))
+            .unwrap_or_default();
         Self {
             engine,
             platform,
@@ -903,7 +952,7 @@ impl DownloadApplication {
             #[cfg(test)]
             ffmpeg_platform_commands: Rc::new(RefCell::new(Vec::new())),
             notified_terminal_states,
-            completion_actions: CompletionActionCoordinator::default(),
+            completion_actions,
             completion_feedback_scheduled: false,
             pending_completion_feedback: HashMap::new(),
             completion_feedback_commands: HashMap::new(),
@@ -1075,6 +1124,10 @@ impl DownloadApplication {
 
     fn settings_draft(&self) -> DownloadSettingsDraft {
         DownloadSettingsDraft {
+            baseline: Some(DownloadSettings {
+                default_directory: self.default_directory.to_string_lossy().into_owned(),
+                ..self.config.download.clone()
+            }),
             default_directory: self.default_directory.clone(),
             chrome_web_store_extension_id: self
                 .config
@@ -1092,13 +1145,16 @@ impl DownloadApplication {
             default_cookie: self.config.download.default_cookie.clone(),
             accept_invalid_certificates: self.config.download.accept_invalid_certificates,
             default_connection_limit: self.config.download.default_connection_limit,
-            adaptive_segment_scaling_enabled: self.config.download.adaptive_segment_scaling_enabled,
-            adaptive_segment_max_segments: self.config.download.adaptive_segment_max_segments,
-            adaptive_segment_min_mib: self.config.download.adaptive_segment_min_mib,
             max_concurrent_tasks: self
                 .default_queue()
                 .and_then(|queue| queue.max_concurrent_tasks)
                 .unwrap_or(3),
+            max_concurrent_tasks_baseline: Some(
+                self.default_queue()
+                    .and_then(|queue| queue.max_concurrent_tasks)
+                    .unwrap_or(3),
+            ),
+            global_speed_limit_edited: true,
             global_speed_limit_bytes_per_second: self.engine.global_speed_limit(),
             background_speed_limit: self.config.download.background_speed_limit.clone(),
             show_progress_window: self.show_progress_window,
@@ -1117,6 +1173,11 @@ impl DownloadApplication {
             log_directory: self.log_directory.display().to_string(),
             database_path: self.database_path.display().to_string(),
             ffmpeg_install_state: self.ffmpeg_install_state.clone(),
+            completion_queues: self
+                .engine
+                .completion_snapshot()
+                .map(|snapshot| snapshot.queues)
+                .unwrap_or_default(),
         }
     }
 
@@ -2715,10 +2776,21 @@ impl DownloadApplication {
         }
         let _ = std::fs::remove_file(&write_probe);
 
-        let previous_concurrency = self
-            .default_queue()
-            .and_then(|queue| queue.max_concurrent_tasks)
-            .unwrap_or(3);
+        let previous_concurrency = match self.execute_correlated(
+            DownloadCommand::Snapshot {
+                query: DownloadQuery::default(),
+            },
+            correlation_id,
+        ) {
+            DownloadCommandOutcome::Snapshot(snapshot) => snapshot
+                .queues
+                .iter()
+                .find(|queue| queue.id == "default")
+                .and_then(|queue| queue.max_concurrent_tasks)
+                .unwrap_or(3),
+            DownloadCommandOutcome::Rejected { fault } => return failed("queue", fault.message),
+            _ => return failed("queue", "下载引擎返回了无效的队列状态".into()),
+        };
         let previous_speed_limit = self.engine.global_speed_limit();
         let next_download_settings = DownloadSettings {
             default_directory: draft.default_directory.to_string_lossy().into_owned(),
@@ -2734,9 +2806,9 @@ impl DownloadApplication {
             default_cookie: draft.default_cookie.clone(),
             accept_invalid_certificates: draft.accept_invalid_certificates,
             default_connection_limit: draft.default_connection_limit,
-            adaptive_segment_scaling_enabled: draft.adaptive_segment_scaling_enabled,
-            adaptive_segment_max_segments: draft.adaptive_segment_max_segments,
-            adaptive_segment_min_mib: draft.adaptive_segment_min_mib,
+            adaptive_segment_scaling_enabled: self.config.download.adaptive_segment_scaling_enabled,
+            adaptive_segment_max_segments: self.config.download.adaptive_segment_max_segments,
+            adaptive_segment_min_mib: self.config.download.adaptive_segment_min_mib,
             show_progress_window: draft.show_progress_window,
             show_completion_window: draft.show_completion_window,
             completion_sound_enabled: draft.completion_sound_enabled,
@@ -2758,49 +2830,64 @@ impl DownloadApplication {
         ) {
             return failed("validation", format!("下载分类设置无效：{error}"));
         }
-        if let Err(error) =
-            self.set_default_queue_concurrency(draft.max_concurrent_tasks, correlation_id)
+        let change_concurrency = draft
+            .max_concurrent_tasks_baseline
+            .is_none_or(|baseline| baseline != draft.max_concurrent_tasks);
+        let change_speed_limit = draft.global_speed_limit_edited;
+        if change_concurrency
+            && let Err(error) =
+                self.set_default_queue_concurrency(draft.max_concurrent_tasks, correlation_id)
         {
             return failed("queue", error);
         }
-        if let Err(error) =
-            self.set_global_speed_limit(draft.global_speed_limit_bytes_per_second, correlation_id)
+        if change_speed_limit
+            && let Err(error) = self
+                .set_global_speed_limit(draft.global_speed_limit_bytes_per_second, correlation_id)
         {
-            return match self.set_default_queue_concurrency(previous_concurrency, correlation_id) {
-                Ok(()) => failed("speed_limit", error),
-                Err(rollback_error) => failed(
+            if change_concurrency
+                && let Err(rollback_error) =
+                    self.set_default_queue_concurrency(previous_concurrency, correlation_id)
+            {
+                return failed(
                     "rollback",
                     format!("{error}；同时无法回滚队列并发：{rollback_error}"),
-                ),
-            };
+                );
+            }
+            return failed("speed_limit", error);
         }
 
-        let next_config =
-            match AppConfig::update_download_settings(&self.config_path, next_download_settings) {
-                Ok(config) => config,
-                Err(error) => {
-                    let mut rollback_errors = Vec::new();
-                    if let Err(rollback_error) =
+        let baseline = draft.baseline.as_ref().unwrap_or(&self.config.download);
+        let next_config = match AppConfig::merge_download_settings(
+            &self.config_path,
+            baseline,
+            next_download_settings,
+        ) {
+            Ok(config) => config,
+            Err(error) => {
+                let mut rollback_errors = Vec::new();
+                if change_concurrency
+                    && let Err(rollback_error) =
                         self.set_default_queue_concurrency(previous_concurrency, correlation_id)
-                    {
-                        rollback_errors.push(format!("队列并发：{rollback_error}"));
-                    }
-                    if let Err(rollback_error) =
-                        self.set_global_speed_limit(previous_speed_limit, correlation_id)
-                    {
-                        rollback_errors.push(format!("全局限速：{rollback_error}"));
-                    }
-                    let rollback = if rollback_errors.is_empty() {
-                        String::new()
-                    } else {
-                        format!("；同时无法完整回滚 {}", rollback_errors.join("、"))
-                    };
-                    return failed(
-                        "persistence",
-                        format!("无法保存下载设置：{error}{rollback}"),
-                    );
+                {
+                    rollback_errors.push(format!("队列并发：{rollback_error}"));
                 }
-            };
+                if change_speed_limit
+                    && let Err(rollback_error) =
+                        self.set_global_speed_limit(previous_speed_limit, correlation_id)
+                {
+                    rollback_errors.push(format!("全局限速：{rollback_error}"));
+                }
+                let rollback = if rollback_errors.is_empty() {
+                    String::new()
+                } else {
+                    format!("；同时无法完整回滚 {}", rollback_errors.join("、"))
+                };
+                return failed(
+                    "persistence",
+                    format!("无法保存下载设置：{error}{rollback}"),
+                );
+            }
+        };
         self.config = next_config;
         if browser_identity_changed
             || !self
@@ -2830,17 +2917,19 @@ impl DownloadApplication {
                 format!("下载设置已保存，但无法同步分类策略：{error}"),
             );
         }
-        let configured_ffmpeg = (!draft.ffmpeg_executable_path.is_empty())
-            .then(|| PathBuf::from(&draft.ffmpeg_executable_path));
+        let configured_ffmpeg = (!self.config.download.ffmpeg_executable_path.is_empty())
+            .then(|| PathBuf::from(&self.config.download.ffmpeg_executable_path));
         if let Err(error) = self.engine.set_ffmpeg_executable_path(configured_ffmpeg) {
             return failed(
                 "runtime_sync",
                 format!("FFmpeg 路径已保存，但无法同步到下载引擎：{error}"),
             );
         }
-        self.default_directory = draft.default_directory;
-        self.show_progress_window = draft.show_progress_window;
-        self.show_completion_window = draft.show_completion_window;
+        if !self.config.download.default_directory.is_empty() {
+            self.default_directory = PathBuf::from(&self.config.download.default_directory);
+        }
+        self.show_progress_window = self.config.download.show_progress_window;
+        self.show_completion_window = self.config.download.show_completion_window;
         let was_editing_taskbar_overlay = self.taskbar_overlay_edit_draft.take().is_some();
         let edit_correlation_id = self.taskbar_overlay_edit_correlation_id.take();
         match self.apply_taskbar_overlay_placement(correlation_id) {
@@ -3051,7 +3140,7 @@ impl DownloadApplication {
             self.pending_extension_export = None;
             self.pending_ffmpeg_operations.clear();
             self.completion_feedback_commands.clear();
-            self.pending_shutdown_command = None;
+            self.disconnect_completion_action(cx);
             self.taskbar_overlay_edit_gesture_active = false;
             cx.notify();
             return;
@@ -3097,6 +3186,7 @@ impl DownloadApplication {
         }
         if let Some(pending) = self.pending_task_icons.remove(&correlation_id) {
             let native_error_code = result.native_error_code;
+            let sta_unavailable = result.error.as_deref() == Some("shell_icon_sta_unavailable");
             let error_present = result.error.is_some();
             self.pending_task_icon_resources
                 .remove(&pending.resource_key);
@@ -3128,7 +3218,21 @@ impl DownloadApplication {
                     "download task Shell icon request completed"
                 );
             } else {
-                self.record_task_icon_failure(pending.resource_key.clone(), cx);
+                if pending.resource_scope == "target" && native_error_code == Some(2) {
+                    self.failed_task_icon_resources.insert(
+                        pending.resource_key.clone(),
+                        DownloadTaskIconFailure {
+                            attempts: DOWNLOAD_TASK_ICON_MAX_ATTEMPTS,
+                            retry_token: None,
+                        },
+                    );
+                } else {
+                    self.record_task_icon_failure(
+                        pending.resource_key.clone(),
+                        sta_unavailable,
+                        cx,
+                    );
+                }
                 let failure = &self.failed_task_icon_resources[&pending.resource_key];
                 warn!(
                     event = "download.list.icon_failed",
@@ -3286,12 +3390,22 @@ impl DownloadApplication {
         self.refresh_snapshot(true, cx);
     }
 
-    fn record_task_icon_failure(&mut self, resource_key: String, cx: &mut Context<Self>) {
-        let attempts = self
-            .failed_task_icon_resources
-            .get(&resource_key)
-            .map_or(1, |failure| failure.attempts + 1)
-            .min(DOWNLOAD_TASK_ICON_MAX_ATTEMPTS);
+    fn record_task_icon_failure(
+        &mut self,
+        resource_key: String,
+        sta_unavailable: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let attempts = if sta_unavailable {
+            self.failed_task_icon_resources
+                .get(&resource_key)
+                .map_or(0, |failure| failure.attempts)
+        } else {
+            self.failed_task_icon_resources
+                .get(&resource_key)
+                .map_or(1, |failure| failure.attempts + 1)
+                .min(DOWNLOAD_TASK_ICON_MAX_ATTEMPTS)
+        };
         let retry_token = (attempts < DOWNLOAD_TASK_ICON_MAX_ATTEMPTS).then(uuid::Uuid::new_v4);
         self.failed_task_icon_resources.insert(
             resource_key.clone(),
@@ -3303,7 +3417,11 @@ impl DownloadApplication {
         let Some(retry_token) = retry_token else {
             return;
         };
-        let retry_delay = DOWNLOAD_TASK_ICON_RETRY_DELAY * (1 << (attempts - 1));
+        let retry_delay = if sta_unavailable {
+            DOWNLOAD_TASK_ICON_STA_RETRY_DELAY
+        } else {
+            DOWNLOAD_TASK_ICON_RETRY_DELAY * (1 << (attempts - 1))
+        };
         cx.spawn(async move |this, cx| {
             cx.background_executor().timer(retry_delay).await;
             let Some(this) = this.upgrade() else {
@@ -3342,16 +3460,32 @@ impl DownloadApplication {
             .tasks
             .iter()
             .filter_map(|task| {
-                Some((
-                    task.task.id(),
-                    download_task_icon_resource_key(task)?,
-                    download_task_icon_target(task)?,
-                ))
+                let resource_key = download_task_icon_resource_key(task)?;
+                let target = download_task_icon_target(task)?;
+                let (resource_key, target) = if resource_key.ends_with(":type:generic")
+                    || (resource_key.contains(":target:")
+                        && self
+                            .failed_task_icon_resources
+                            .get(&resource_key)
+                            .is_some_and(|failure| {
+                                failure.attempts >= DOWNLOAD_TASK_ICON_MAX_ATTEMPTS
+                            })) {
+                    download_task_icon_type_resource(&target)
+                } else {
+                    (resource_key, target)
+                };
+                Some((task.task.id(), resource_key, target))
             })
             .collect::<Vec<_>>();
-        let live_resource_keys = descriptors
+        let live_resource_keys = self
+            .tasks
             .iter()
-            .map(|(_, resource_key, _)| resource_key.clone())
+            .filter_map(download_task_icon_resource_key)
+            .chain(
+                descriptors
+                    .iter()
+                    .map(|(_, resource_key, _)| resource_key.clone()),
+            )
             .collect::<HashSet<_>>();
         self.task_icon_resources
             .retain(|resource_key, _| live_resource_keys.contains(resource_key));
@@ -3428,7 +3562,7 @@ impl DownloadApplication {
                 Err(_) => {
                     self.pending_task_icons.remove(&command_id);
                     self.pending_task_icon_resources.remove(&resource_key);
-                    self.record_task_icon_failure(resource_key.clone(), cx);
+                    self.record_task_icon_failure(resource_key.clone(), false, cx);
                     let failure = &self.failed_task_icon_resources[&resource_key];
                     warn!(
                         event = "download.list.icon_request_failed",

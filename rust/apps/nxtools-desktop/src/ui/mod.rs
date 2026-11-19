@@ -5,6 +5,7 @@ mod extension_feedback;
 #[cfg(debug_assertions)]
 pub(crate) mod final_gallery;
 mod history;
+mod history_filters;
 mod icon_colors;
 pub(crate) mod markdown_document;
 mod markdown_edit;
@@ -58,7 +59,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::clipboard::ClipboardApplication;
 use crate::icons::MaterialIcon;
 use crate::popup_lifecycle::PopupCloseReason;
-use crate::theme::{Theme, UI_FONT_FAMILY};
+use crate::theme::Theme;
 use crate::ui::components::action::focused_action;
 use crate::ui::components::menu::{MenuTone, context_menu_item, context_menu_shell};
 use crate::ui::components::state::progress_state;
@@ -370,6 +371,7 @@ pub(crate) struct ClipboardPanel {
     focus_scope: gpui_kit::FocusHandle,
     search_input: Entity<InputState>,
     search_scope: ClipboardSearchScope,
+    history_filters: history_filters::HistoryFilters,
     armed_number_key: Option<efficiency::ArmedNumberKey>,
     last_shortcut_rejection: Option<(&'static str, Instant)>,
     selected_entry_index: Option<usize>,
@@ -945,6 +947,7 @@ impl ClipboardPanel {
             focus_scope,
             search_input,
             search_scope: ClipboardSearchScope::Content,
+            history_filters: history_filters::HistoryFilters::default(),
             query_dispatch_generation: 0,
             selected_entry_index: has_entries.then_some(0),
             search_pending: false,
@@ -1055,6 +1058,8 @@ impl ClipboardPanel {
     ) {
         let category_id = self.active_category_id.clone();
         let search_scope = self.search_scope;
+        let filters = self.history_filters.query.clone();
+        let filter_diagnostic = self.history_filters.pending.take();
         let replacing = request == ClipboardPageRequest::Replace;
         self.query_error = None;
         if replacing {
@@ -1078,8 +1083,18 @@ impl ClipboardPanel {
                     HISTORY_PAGE_SIZE,
                     known_total,
                     cursor,
+                    filters,
                 )
                 .await;
+            if let Some((id, started)) = filter_diagnostic {
+                let outcome = match &result {
+                    Ok(_) => "loaded",
+                    Err(ClipboardHistoryError::QuerySuperseded) => "superseded",
+                    Err(_) => "failed",
+                };
+                info!(event = "clipboard.history_filter.finished", correlation_id = %id,
+                    outcome, elapsed_ms = started.elapsed().as_millis() as u64);
+            }
             let _ = panel.update(cx, |panel, cx| {
                 let current_query = panel.search_input.read(cx).value().to_string();
                 if !clipboard_query_state_is_current(
@@ -2623,7 +2638,6 @@ impl Render for ClipboardPanel {
             .track_focus(&self.focus_scope)
             .relative()
             .size_full()
-            .font_family(UI_FONT_FAMILY)
             .text_color(theme.text)
             .flex()
             .flex_col()
@@ -2829,6 +2843,7 @@ impl Render for ClipboardPanel {
                     .items_center()
                     .gap_2()
                     .child(
+                        div().min_w_0().flex_1().child(
                         InputGroup::new("clipboard-search-group")
                             .small()
                             .input(Input::new(&self.search_input).aria_label("搜索剪贴板历史"))
@@ -2861,8 +2876,11 @@ impl Render for ClipboardPanel {
                                             }),
                                     ),
                             ),
-                    ),
+                        ),
+                    )
+                    .child(self.render_history_filter_button(cx)),
             ))
+            .child(inset_panel_section(self.render_active_history_filters(cx)))
             .child(inset_panel_section(self.render_capture_failure()))
             .child(inset_panel_section(
                 div()
@@ -2889,25 +2907,7 @@ impl Render for ClipboardPanel {
                         },
                     )
                     .when(entries_empty && !search_loading && !query_failed, |list| {
-                        list.child(div().id("clipboard-history-empty")
-                            .debug_selector(|| "clipboard-history-empty".into())
-                            .size_full().flex().flex_col()
-                            .child(Empty::new().header(EmptyHeader::new()
-                                .media(EmptyMedia::new().child(div()
-                                    .debug_selector(|| "clipboard-kit-empty-icon".into())
-                                    .child(Icon::new(if search_query.is_empty() {
-                                    MaterialIcon::History
-                                } else { MaterialIcon::Search }))))
-                                .title(EmptyTitle::new().child(div()
-                                    .debug_selector(|| "clipboard-kit-empty-title".into())
-                                    .child(if search_query.is_empty() {
-                                        "暂无剪贴板记录"
-                                    } else { "没有匹配的剪贴板记录" })))
-                                .description(EmptyDescription::new().child(div()
-                                    .debug_selector(|| "clipboard-kit-empty-description".into())
-                                    .child(if search_query.is_empty() {
-                                        "复制内容后会自动出现在这里。"
-                                    } else { "尝试缩短关键词，或切换分类和搜索范围。" }))))))
+                        list.child(self.render_history_empty(&search_query, cx))
                     })
                     .when(!entries_empty, |container| {
                         let entries = Rc::clone(&self.entries);

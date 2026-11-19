@@ -95,3 +95,17 @@ This is not a key rotation, downgrade, arbitrary damaged-tree repair or permissi
 remaining records. Existing roots, unknown ownership and access denial still refuse. Diagnostics
 now preserve detection stage and actual process launch/exit before early failure. No real service
 or installed-product recovery is authorized by the implementation fixtures themselves.
+
+## Routine updates and the Bootstrap maintenance floor
+
+The normal installer carries `BootstrapMigrationMinimumSequence` separately from its signed
+application release sequence. The current floor is82, the first compatible Bootstrap generation
+with the historical-key recovery anchor. An approved marker at82or later is reused by ordinary
+newer packages; a new release sequence or different whole-Host binary hash does not itself require
+Bootstrap replacement. Missing/older markers and unfinished maintenance still require explicit
+maintenance. Publisher rotation and all original signature/ownership checks are unchanged.
+
+When a new Bootstrap behavior becomes a release prerequisite, raise
+`$migrationBootstrapMinimumSequence` in `scripts/package.ps1` to that first compatible release
+and extend the original migration fixture. The protected marker's sequence records the actual
+successful maintenance release, not the newest ordinary application update.

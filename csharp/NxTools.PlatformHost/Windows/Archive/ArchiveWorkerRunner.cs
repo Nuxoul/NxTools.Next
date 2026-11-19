@@ -24,7 +24,8 @@ internal sealed record ArchiveWorkerRequest(Guid OperationId, string Operation, 
     ArchiveDragMaterialization? DragMaterialization = null, bool JobLargeCount = false, bool ParallelExtraction = false);
 internal sealed record ArchiveReadTransport(ulong MaxTotalBytes, bool BrowserContext = false);
 internal sealed record ArchiveZipCreateOptions(string Method = "deflate", string Encryption = "none", bool StripSingleRoot = false,
-    IReadOnlyList<string>? ExcludePatterns = null);
+    IReadOnlyList<string>? ExcludePatterns = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition=System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] bool SelfExtracting = false);
 internal sealed record ArchiveTreeCreateOptions(bool StripSingleRoot = false, IReadOnlyList<string>? ExcludePatterns = null);
 internal sealed record ArchiveSevenzCreateOptions(bool Solid = false, string Encryption = "none", bool EncryptHeader = false);
 internal sealed record ArchiveExtractOptions(bool CopyMotw = true,
@@ -184,6 +185,10 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     if (!isSevenz && request.SevenzOptions is not null || !isSevenz && !IsTarCreation(request.Operation) && request.TreeOptions is not null) throw new ArchiveOutputException("invalid_create_request");
                     if (isZip) {
                         var zip = request.ZipOptions ?? new();
+                        if (zip.SelfExtracting && (zip.Encryption != "none" || request.Password is not null ||
+                            request.CreateName!.Length <= 4 || !request.CreateName.EndsWith(".exe",StringComparison.OrdinalIgnoreCase) ||
+                            request.VolumeBytes > 4294967295UL || request.ConfirmedOverwrites is not null || confirmCreateOverwrite is not null))
+                            throw new ArchiveOutputException("invalid_create_request");
                         if (zip.Method is not ("store" or "deflate") || zip.Encryption is not ("none" or "aes256") ||
                             (zip.Method == "store") != (request.CompressionLevel == "store") ||
                             (zip.Encryption == "aes256") != !string.IsNullOrEmpty(request.Password) ||
@@ -267,10 +272,11 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     CryptographicOperations.ZeroMemory(input); input = Pack(privateRequest);
                 }
                 AddRiskFixture(ref input, request);
-                if (request.VolumeBytes is not null || request.JobModify is not null) {
+                if (request.VolumeBytes is not null || request.JobModify is not null || request.ZipOptions?.SelfExtracting == true) {
                     var privateRequest = System.Text.Json.Nodes.JsonNode.Parse(input.AsSpan(4))!;
                     if (request.VolumeBytes is {} size) privateRequest["volume_bytes"] = size;
                     if (request.JobModify is {} edit) privateRequest["job_modify"] = JsonSerializer.SerializeToNode(edit,Protocol.JsonDefaults.Options);
+                    if (request.ZipOptions?.SelfExtracting == true) privateRequest["zip_options"]!["self_extracting"] = true;
                     CryptographicOperations.ZeroMemory(input); input=Pack(privateRequest);
                 }
                 if (request.DeleteSource is { } consent) {
@@ -497,7 +503,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 RecordOperationFailure(new ArchiveFault(failure.Category, failure.NativeCode, failure));
                 Output?.RequestCancellation(); return;
             }
-            if (!(IsModification(Request.Operation) && failure.Action == "commit") && failure.Category is not ("write_file" or "flush_file" or "flush_or_commit") && !failure.Category.StartsWith("reclamation_", StringComparison.Ordinal) && !failure.Category.StartsWith("metadata_", StringComparison.Ordinal) && !failure.Category.StartsWith("motw_", StringComparison.Ordinal) && failure.Category is not ("target_changed" or "target_missing" or "target_directory" or
+            if (!(IsModification(Request.Operation) && failure.Action == "commit") && failure.Category is not ("write_file" or "flush_file" or "flush_or_commit" or "io_failure") && !failure.Category.StartsWith("reclamation_", StringComparison.Ordinal) && !failure.Category.StartsWith("metadata_", StringComparison.Ordinal) && !failure.Category.StartsWith("motw_", StringComparison.Ordinal) && failure.Category is not ("target_changed" or "target_missing" or "target_directory" or
                 "target_reparse" or "target_busy" or "target_denied" or "overwrite_not_supported" or "selected_output_limit" or
                 "commit_outcome_unknown" or "committed_but_verification_failed" or "target_changed_after_commit" or "cancelled")) return;
             // Fail-stop on this exact acknowledged call, never recover from a mutable last error.
@@ -547,7 +553,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     if (run.Failure is not null) throw run.Failure;
                 }
                 run.Output = new ArchiveWorkerOutputBridge(outputRequest, log, prepared, run.BulkRequested);
-                if (run.Request.VolumeBytes is not null) run.Output.ConfigureVolumeOutput(run.Request);
+                if (run.Request.VolumeBytes is not null || run.Request.ZipOptions?.SelfExtracting == true) run.Output.ConfigureVolumeOutput(run.Request);
                 if (prepared is not null) run.Resources.Remove(prepared); // Bridge now owns the SAME held namespace.
                 run.Output.CommitCheckpointProbe = stage => OutputCommitCheckpointProbe?.Invoke(stage);
                 run.Output.ParallelOrdinary = run.Request.ParallelExtraction;
@@ -642,7 +648,8 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                 if (run.Request.JobExecution && run.Request.Operation is "extract" or "create_zip" or "create_7z" or "create_tar" or "create_tgz" or "create_txz" or "create_gzip" or "create_xz") {
                     try {
                         var preferred = run.Request.Operation == "extract" ? null : run.Request.Operation == "create_7z" && run.Request.VolumeBytes is not null
-                            ? run.Request.CreateName + ".001" : run.Request.CreateName;
+                            ? run.Request.CreateName + ".001" : run.Request.ZipOptions?.SelfExtracting == true && run.Request.VolumeBytes is not null
+                            ? Path.GetFileNameWithoutExtension(run.Request.CreateName) + ".zip" : run.Request.CreateName;
                         run.ResultLocation = run.Output?.CreationOutput.ResultLocation(preferred);
                     }
                     catch (Exception) { run.ResultLocation = null; } // Presentation failure never changes publication.
@@ -789,6 +796,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                     if (run.Request.Operation == "extract" && !capabilities.EnumerateArray().Any(item => item.GetString() == "zip_risk_v1")) throw new ArchiveFault("worker_capability_mismatch");
                     if (run.Request.OutputReadmission is not null && !capabilities.EnumerateArray().Any(item => item.GetString() == "zip_output_readmission_v1")) throw new ArchiveFault("worker_capability_mismatch");
                     if (run.Request.VolumeBytes is not null && !capabilities.EnumerateArray().Any(item=>item.GetString()=="volume_create_v1"))throw new ArchiveFault("missing_capability");
+                    if (run.Request.ZipOptions?.SelfExtracting == true && !capabilities.EnumerateArray().Any(item=>item.GetString()=="zip_sfx_v1"))throw new ArchiveFault("missing_capability");
                     if (run.Request.ReadContract == 2 && (ulong)run.OutputBytes > run.Request.ReadTransport!.MaxTotalBytes)
                         throw new ArchiveFault("stdout_total_limit");
                 }
@@ -842,7 +850,7 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                                 run.CreationSources.NamespacePathProbe = SourceNamespacePathProbe;
                                 run.Resources.Add(run.CreationSources);
                                 if(run.Request.JobExecution)await CheckDestination(run,null);
-                                if (run.Request.VolumeBytes is not null) heldOutput.RequireNewVolumeFamily(run.Request.CreateName!,run.Request.Operation=="create_7z");
+                                if (run.Request.VolumeBytes is not null || run.Request.ZipOptions?.SelfExtracting == true) heldOutput.RequireNewVolumeFamily(run.Request.CreateName!,run.Request.Operation=="create_7z",run.Request.ZipOptions?.SelfExtracting==true);
                                 heldOutput.CreatePreparedRoot(() => {
                                     SourceCheckpointProbe?.Invoke("creation_output_preparing");
                                     if (run.Failure is not null) throw new ArchiveOutputException(run.Failure.Category);
@@ -874,7 +882,8 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                                         sevenzOutputPreflight:run.Request.Operation=="extract" && run.Request.OutputReadmission is not null,
                                         rarOutputPreflight:run.Request.Operation=="extract" && run.Request.OutputReadmission is not null,
                                         tarStreamOutputPreflight:run.Request.Operation=="extract" && run.Request.OutputReadmission is not null,
-                                        zipOutputPreflight:run.Request.Operation=="extract" && run.Request.OutputReadmission is not null);
+                                        zipOutputPreflight:run.Request.Operation=="extract" && (run.Request.OutputReadmission is not null || run.Request.JobExtract?.Selection is not null),
+                                        alzegOutputPreflight:run.Request.Operation=="extract" && (run.Request.OutputReadmission is not null || run.Request.JobExtract?.Selection is not null));
                                     run.Source=run.VolumeSources.Primary;run.Resources.Add(run.VolumeSources);
                                 }
                                 if (run.SourceReservation is { } reservation && (run.VolumeSources?.Requested ?? run.Source).ActivityIdentity != reservation.Identity) throw new ArchiveOutputException("source_changed");
@@ -909,13 +918,13 @@ internal sealed partial class ArchiveWorkerRunner : IDisposable
                                 run.FailNative(new(run.Request.OperationId,nativeCall.GetProperty("call_id").GetGuid(),"source_acquire",null,failure.Stage,failure.NativeCode,failure.State));
                             }
                             if (run.Request.ReadContract is not null || run.Request.OutputReadmission is not null || run.Request.BrowserEntry is not null || run.Request.BrowserAuthorize is not null || run.Request.JobExecution)
-                                run.Fail(failure.Stage is "source_changed" or "missing_volume" ? failure.Stage :
+                                run.Fail(failure.Stage is "source_changed" or "missing_volume" or "corrupt_archive" or "unsupported_format" or "unsupported_method" or "unsupported_encryption" or "target_exists" ? failure.Stage :
                                     failure.Stage is "resource_limit" or "read_limit" or "session_entry_limit" ? "resource_limit" : failure.NativeCode is 32 or 33 ? "source_changed" : "source_unavailable", failure.NativeCode);
                             if (failure.Stage.StartsWith("motw_", StringComparison.Ordinal)) run.Fail(failure.Stage, failure.NativeCode);
                             DiagnosticSourceFailure(run, failure);
                             sourceReply = new { version = 1, operation_id = run.Request.OperationId, op = "native_result",
                                 call_id = nativeCall.GetProperty("call_id").GetGuid(), success = false,
-                                error_code = failure.Stage.StartsWith("reclamation_", StringComparison.Ordinal) ? failure.Stage : failure.Stage is "missing_volume" or "resource_limit" or "session_entry_limit" or "read_limit" or "reparse_component" or "source_output_collision" or "source_changed" or "cancelled" ? failure.Stage : failure.NativeCode is 32 or 33 ? "source_changed" : "source_unavailable",
+                                error_code = failure.Stage.StartsWith("reclamation_", StringComparison.Ordinal) ? failure.Stage : failure.Stage is "missing_volume" or "corrupt_archive" or "unsupported_format" or "unsupported_method" or "unsupported_encryption" or "resource_limit" or "session_entry_limit" or "read_limit" or "reparse_component" or "source_output_collision" or "source_changed" or "cancelled" or "target_exists" ? failure.Stage : failure.NativeCode is 32 or 33 ? "source_changed" : "source_unavailable",
                                 native_error_code = failure.NativeCode };
                         }
                         if (!run.Input.Writer.TryWrite(Pack(sourceReply))) throw new ArchiveFault("input_limit");

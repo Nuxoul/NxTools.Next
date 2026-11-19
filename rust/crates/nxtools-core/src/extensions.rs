@@ -224,6 +224,9 @@ impl AppConfig {
                 current == expected_previous,
                 "extension import candidate superseded"
             );
+            if current.as_deref() == Some(preview.content_hash.as_str()) {
+                return Err(nxtools_extensions::PackageError::AlreadyInstalled.into());
+            }
             let staged = preview.stage_into(packages_root)?;
             config
                 .extensions
@@ -1164,6 +1167,51 @@ mod tests {
             newer_hash
         );
         fs::remove_dir_all(root).expect("cleanup");
+    }
+
+    #[test]
+    fn checked_import_repeated_package_preserves_enabled_config() {
+        let root = std::env::temp_dir().join(format!(
+            "nxtools-identical-import-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&root).expect("owned root");
+        let path = root.join("config.json");
+        let packages = root.join("extensions");
+        AppConfig::default().save_to(&path).expect("config");
+        let preview = nxtools_extensions::ImportPreview::from_json(PACKAGE).expect("preview");
+        let mut installed = AppConfig::import_extension_preview_checked(
+            &path,
+            preview.clone(),
+            &packages,
+            "original.zip".into(),
+            None,
+        )
+        .expect("install");
+        installed
+            .extensions
+            .set_enabled(&preview.manifest.id, true, &[])
+            .expect("enable");
+        installed.save_to(&path).expect("save enabled");
+        let before = fs::read(&path).expect("config bytes");
+        let reviewed = Some(preview.content_hash.clone());
+        let _ = AppConfig::import_extension_preview_checked(
+            &path,
+            preview,
+            &packages,
+            "duplicate.zip".into(),
+            reviewed,
+        );
+        let after = fs::read(&path).expect("config bytes");
+        fs::remove_dir_all(root).expect("cleanup");
+        assert!(
+            after == before,
+            "identical import must not reset the configuration"
+        );
     }
 
     #[test]

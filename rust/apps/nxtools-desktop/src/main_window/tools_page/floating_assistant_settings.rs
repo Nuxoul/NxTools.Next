@@ -524,6 +524,7 @@ impl Render for FloatingAssistantSettingsBody {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         crate::theme::observe_theme(window, cx);
         let theme = Theme::active(cx);
+        let source_window_handle = crate::ui::native_window_handle(window).unwrap_or_default();
         let settings = self.settings.clone();
         let (error, busy) = self
             .owner
@@ -561,7 +562,9 @@ impl Render for FloatingAssistantSettingsBody {
                         let picker = picker.clone();
                         cx.defer(move |cx| {
                             if let Some(owner) = picker.upgrade() {
-                                owner.update(cx, |owner, cx| owner.pick_image(cx));
+                                owner.update(cx, |owner, cx| {
+                                    owner.pick_image_from(source_window_handle, cx);
+                                });
                             }
                         });
                     })),

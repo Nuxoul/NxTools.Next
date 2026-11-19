@@ -1,0 +1,542 @@
+{
+  "oracle": "independent CPython struct/literal/format CRC; locale and parent field order; reserved encryption declarations only",
+  "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+  "fixtures": [
+    {
+      "fixture": "spec_raw_names.alz",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "name": "../escape.txt",
+          "raw_name_hex": "2e2e2f6573636170652e747874",
+          "size": 47
+        },
+        {
+          "name": "..\\escape.txt",
+          "raw_name_hex": "2e2e5c6573636170652e747874",
+          "size": 47
+        },
+        {
+          "name": "/rooted.txt",
+          "raw_name_hex": "2f726f6f7465642e747874",
+          "size": 47
+        },
+        {
+          "name": "\\rooted.txt",
+          "raw_name_hex": "5c726f6f7465642e747874",
+          "size": 47
+        },
+        {
+          "name": "C:\\escape.txt",
+          "raw_name_hex": "433a5c6573636170652e747874",
+          "size": 47
+        },
+        {
+          "name": "\\\\server\\share\\escape.txt",
+          "raw_name_hex": "5c5c7365727665725c73686172655c6573636170652e747874",
+          "size": 47
+        },
+        {
+          "name": "dir/../../escape.txt",
+          "raw_name_hex": "6469722f2e2e2f2e2e2f6573636170652e747874",
+          "size": 47
+        },
+        {
+          "name": "dir//empty.txt",
+          "raw_name_hex": "6469722f2f656d7074792e747874",
+          "size": 47
+        },
+        {
+          "name": "./dot.txt",
+          "raw_name_hex": "2e2f646f742e747874",
+          "size": 47
+        },
+        {
+          "name": "NUL.txt",
+          "raw_name_hex": "4e554c2e747874",
+          "size": 47
+        },
+        {
+          "name": "trailing.",
+          "raw_name_hex": "747261696c696e672e",
+          "size": 47
+        },
+        {
+          "name": "trailing ",
+          "raw_name_hex": "747261696c696e6720",
+          "size": 47
+        },
+        {
+          "name": "stream:alternate",
+          "raw_name_hex": "73747265616d3a616c7465726e617465",
+          "size": 47
+        },
+        {
+          "name": "control\u0001.txt",
+          "raw_name_hex": "636f6e74726f6c012e747874",
+          "size": 47
+        },
+        {
+          "name": "",
+          "raw_name_hex": "",
+          "size": 47
+        }
+      ],
+      "typed": null
+    },
+    {
+      "fixture": "spec_raw_names.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 0,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "../escape.txt",
+          "raw_name_hex": "2e2e2f6573636170652e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 1,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "..\\escape.txt",
+          "raw_name_hex": "2e2e5c6573636170652e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 2,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "/rooted.txt",
+          "raw_name_hex": "2f726f6f7465642e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 3,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "\\rooted.txt",
+          "raw_name_hex": "5c726f6f7465642e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 4,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "C:\\escape.txt",
+          "raw_name_hex": "433a5c6573636170652e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 5,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "\\\\server\\share\\escape.txt",
+          "raw_name_hex": "5c5c7365727665725c73686172655c6573636170652e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 6,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "dir/../../escape.txt",
+          "raw_name_hex": "6469722f2e2e2f2e2e2f6573636170652e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 7,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "dir//empty.txt",
+          "raw_name_hex": "6469722f2f656d7074792e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 8,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "./dot.txt",
+          "raw_name_hex": "2e2f646f742e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 9,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "NUL.txt",
+          "raw_name_hex": "4e554c2e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 10,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "trailing.",
+          "raw_name_hex": "747261696c696e672e",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 11,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "trailing ",
+          "raw_name_hex": "747261696c696e6720",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 12,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "stream:alternate",
+          "raw_name_hex": "73747265616d3a616c7465726e617465",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 13,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "control\u0001.txt",
+          "raw_name_hex": "636f6e74726f6c012e747874",
+          "size": 47,
+          "attributes": 0
+        },
+        {
+          "file_id": 14,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "",
+          "raw_name_hex": "",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": null
+    },
+    {
+      "fixture": "spec_egg_locale_0.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 0,
+          "flags": 8,
+          "locale": 0,
+          "parent": null,
+          "name": "system-name.txt",
+          "raw_name_hex": "000073797374656d2d6e616d652e747874",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_locale_932.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 0,
+          "flags": 8,
+          "locale": 932,
+          "parent": null,
+          "name": "\u65e5\u672c\u8a9e.txt",
+          "raw_name_hex": "a40393fa967b8cea2e747874",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_locale_949.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 0,
+          "flags": 8,
+          "locale": 949,
+          "parent": null,
+          "name": "\ud55c\uae00.txt",
+          "raw_name_hex": "b503c7d1b1db2e747874",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_parent.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 10,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "parent",
+          "raw_name_hex": "706172656e74",
+          "size": 0,
+          "attributes": 128
+        },
+        {
+          "file_id": 11,
+          "flags": 16,
+          "locale": null,
+          "parent": 10,
+          "name": "child.txt",
+          "raw_name_hex": "0a0000006368696c642e747874",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_locale_parent.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 10,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "parent",
+          "raw_name_hex": "706172656e74",
+          "size": 0,
+          "attributes": 128
+        },
+        {
+          "file_id": 11,
+          "flags": 24,
+          "locale": 949,
+          "parent": 10,
+          "name": "\uc790\uc2dd.txt",
+          "raw_name_hex": "b5030a000000c0dabdc42e747874",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_encrypted_name.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 0,
+          "flags": 4,
+          "locale": null,
+          "parent": null,
+          "name": null,
+          "raw_name_hex": "6f70617175652d6e616d652d6465636c61726174696f6e",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": "UnsupportedEncryption"
+    },
+    {
+      "fixture": "spec_egg_global_encrypt.egg",
+      "origin": "project-owned specification fixture; not producer evidence",
+      "members": [
+        {
+          "file_id": 0,
+          "flags": 0,
+          "locale": null,
+          "parent": null,
+          "name": "clear-member.txt",
+          "raw_name_hex": "636c6561722d6d656d6265722e747874",
+          "size": 47,
+          "attributes": 0
+        }
+      ],
+      "typed": "UnsupportedEncryption"
+    }
+  ],
+  "unsafe_names": [
+    {
+      "index": 0,
+      "name": "../escape.txt",
+      "raw_name_hex": "2e2e2f6573636170652e747874",
+      "raw_name_base64": "Li4vZXNjYXBlLnR4dA==",
+      "size": 47
+    },
+    {
+      "index": 1,
+      "name": "..\\escape.txt",
+      "raw_name_hex": "2e2e5c6573636170652e747874",
+      "raw_name_base64": "Li5cZXNjYXBlLnR4dA==",
+      "size": 47
+    },
+    {
+      "index": 2,
+      "name": "/rooted.txt",
+      "raw_name_hex": "2f726f6f7465642e747874",
+      "raw_name_base64": "L3Jvb3RlZC50eHQ=",
+      "size": 47
+    },
+    {
+      "index": 3,
+      "name": "\\rooted.txt",
+      "raw_name_hex": "5c726f6f7465642e747874",
+      "raw_name_base64": "XHJvb3RlZC50eHQ=",
+      "size": 47
+    },
+    {
+      "index": 4,
+      "name": "C:\\escape.txt",
+      "raw_name_hex": "433a5c6573636170652e747874",
+      "raw_name_base64": "QzpcZXNjYXBlLnR4dA==",
+      "size": 47
+    },
+    {
+      "index": 5,
+      "name": "\\\\server\\share\\escape.txt",
+      "raw_name_hex": "5c5c7365727665725c73686172655c6573636170652e747874",
+      "raw_name_base64": "XFxzZXJ2ZXJcc2hhcmVcZXNjYXBlLnR4dA==",
+      "size": 47
+    },
+    {
+      "index": 6,
+      "name": "dir/../../escape.txt",
+      "raw_name_hex": "6469722f2e2e2f2e2e2f6573636170652e747874",
+      "raw_name_base64": "ZGlyLy4uLy4uL2VzY2FwZS50eHQ=",
+      "size": 47
+    },
+    {
+      "index": 7,
+      "name": "dir//empty.txt",
+      "raw_name_hex": "6469722f2f656d7074792e747874",
+      "raw_name_base64": "ZGlyLy9lbXB0eS50eHQ=",
+      "size": 47
+    },
+    {
+      "index": 8,
+      "name": "./dot.txt",
+      "raw_name_hex": "2e2f646f742e747874",
+      "raw_name_base64": "Li9kb3QudHh0",
+      "size": 47
+    },
+    {
+      "index": 9,
+      "name": "NUL.txt",
+      "raw_name_hex": "4e554c2e747874",
+      "raw_name_base64": "TlVMLnR4dA==",
+      "size": 47
+    },
+    {
+      "index": 10,
+      "name": "trailing.",
+      "raw_name_hex": "747261696c696e672e",
+      "raw_name_base64": "dHJhaWxpbmcu",
+      "size": 47
+    },
+    {
+      "index": 11,
+      "name": "trailing ",
+      "raw_name_hex": "747261696c696e6720",
+      "raw_name_base64": "dHJhaWxpbmcg",
+      "size": 47
+    },
+    {
+      "index": 12,
+      "name": "stream:alternate",
+      "raw_name_hex": "73747265616d3a616c7465726e617465",
+      "raw_name_base64": "c3RyZWFtOmFsdGVybmF0ZQ==",
+      "size": 47
+    },
+    {
+      "index": 13,
+      "name": "control\u0001.txt",
+      "raw_name_hex": "636f6e74726f6c012e747874",
+      "raw_name_base64": "Y29udHJvbAEudHh0",
+      "size": 47
+    },
+    {
+      "index": 14,
+      "name": "",
+      "raw_name_hex": "",
+      "raw_name_base64": "",
+      "size": 47
+    }
+  ],
+  "payload_base64": "UmF3IG5hbWVzIGFyZSBub3Qgc2FuaXRpemVkIGludG8gb3V0cHV0IHBhdGhzLgo=",
+  "profiles": [
+    {
+      "fixture": "spec_egg_locale_0.egg",
+      "flags": 8,
+      "locale": 0,
+      "name": "system-name.txt",
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_locale_932.egg",
+      "flags": 8,
+      "locale": 932,
+      "name": "\u65e5\u672c\u8a9e.txt",
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_locale_949.egg",
+      "flags": 8,
+      "locale": 949,
+      "name": "\ud55c\uae00.txt",
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_parent.egg",
+      "flags": 16,
+      "locale": null,
+      "parent": 10,
+      "name": "child.txt",
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_locale_parent.egg",
+      "flags": 24,
+      "locale": 949,
+      "parent": 10,
+      "name": "\uc790\uc2dd.txt",
+      "typed": "UnsupportedMethod"
+    },
+    {
+      "fixture": "spec_egg_encrypted_name.egg",
+      "flags": 4,
+      "typed": "UnsupportedEncryption",
+      "declaration_only": true
+    },
+    {
+      "fixture": "spec_egg_global_encrypt.egg",
+      "typed": "UnsupportedEncryption",
+      "declaration_only": true
+    }
+  ]
+}

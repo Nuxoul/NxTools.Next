@@ -4,7 +4,7 @@
 use super::*;
 use std::io::SeekFrom;
 
-pub(super) struct SourceSet {
+pub(crate) struct SourceSet {
     paths: Vec<std::path::PathBuf>,
     revisions: Vec<([u8; 32], u64)>,
     digest: [u8; 32],
@@ -12,7 +12,7 @@ pub(super) struct SourceSet {
 }
 impl SourceSet {
     #[cfg(windows)]
-    pub(super) fn open_rar(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
+    pub(crate) fn open_rar(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
         // RAR metadata must be reachable with a deficient output allowance. Reuse the
         // original finite default for encoded input only, never for actual decode/output.
         let encoded_limit = if request.operation == "extract"
@@ -27,7 +27,7 @@ impl SourceSet {
         };
         Self::open_bounded(request, control, encoded_limit)
     }
-    pub(super) fn open_sevenz(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
+    pub(crate) fn open_sevenz(request: &WorkerRequest, control: &OperationControl) -> Result<Self> {
         let encoded_limit =
             if request.output_readmission.is_some() || request.browser_entry.is_some() {
                 request
@@ -37,6 +37,31 @@ impl SourceSet {
             } else {
                 request.limits.max_output_bytes
             };
+        Self::open_bounded(request, control, encoded_limit)
+    }
+    pub(crate) fn open_formats(
+        request: &WorkerRequest,
+        control: &OperationControl,
+    ) -> Result<Self> {
+        if request.volume_paths.len().max(1) as u64 * 128 > request.limits.max_metadata_bytes {
+            return Err(ArchiveError::ResourceLimit);
+        }
+        let encoded_limit = request
+            .limits
+            .max_output_bytes
+            .max(request.limits.max_metadata_bytes);
+        let encoded_limit = if request.operation == "extract"
+            && (request.output_readmission.is_some()
+                || request.browser_entry.is_some()
+                || request
+                    .job_extract
+                    .as_ref()
+                    .is_some_and(|options| options.selection.is_some()))
+        {
+            encoded_limit.max(ResourceLimits::default().max_output_bytes)
+        } else {
+            encoded_limit
+        };
         Self::open_bounded(request, control, encoded_limit)
     }
     fn open_bounded(
@@ -91,16 +116,16 @@ impl SourceSet {
             length: total,
         })
     }
-    pub(super) fn digest(&self) -> [u8; 32] {
+    pub(crate) fn digest(&self) -> [u8; 32] {
         self.digest
     }
-    pub(super) fn length(&self) -> u64 {
+    pub(crate) fn length(&self) -> u64 {
         self.length
     }
-    pub(super) fn primary(&self) -> &Path {
+    pub(crate) fn primary(&self) -> &Path {
         &self.paths[0]
     }
-    pub(super) fn verify(&self, control: &OperationControl) -> Result<()> {
+    pub(crate) fn verify(&self, control: &OperationControl) -> Result<()> {
         for (path, revision) in self.paths.iter().zip(&self.revisions) {
             if fingerprint(path, control)? != *revision {
                 return Err(ArchiveError::SourceChanged);
@@ -108,7 +133,13 @@ impl SourceSet {
         }
         Ok(())
     }
-    pub(super) fn sevenz_input(&self, control: &OperationControl) -> Result<File> {
+    pub(crate) fn parts(&self) -> impl ExactSizeIterator<Item = (&Path, u64)> {
+        self.paths
+            .iter()
+            .zip(&self.revisions)
+            .map(|(path, revision)| (path.as_path(), revision.1))
+    }
+    pub(crate) fn sevenz_input(&self, control: &OperationControl) -> Result<File> {
         // An anonymous encoded spool is the exact concatenation of a first .7z.001
         // signature + subsequent encoded segments. The original codec retains all
         // header/CRC/dictionary/entry and payload-integrity checks on this seekable file.

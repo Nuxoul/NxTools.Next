@@ -1,0 +1,5 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Exact counts, gates and native levels"}
+{"file":".trellis/spec/nxtools-archive/backend/quality-guidelines.md","reason":"Real-boundary regression and codec/output integrity"}
+{"file":".trellis/spec/nxtools-archive/backend/zip-volumes.md","reason":"Format-aware volumes and no-replace publication"}
+{"file":".trellis/spec/platformhost/diagnostics.md","reason":"Native error and terminal authority/privacy"}
+{"file":"docs/reference-code/archive-volumes.md","reason":"Preserve existing split and raw-join behavior"}

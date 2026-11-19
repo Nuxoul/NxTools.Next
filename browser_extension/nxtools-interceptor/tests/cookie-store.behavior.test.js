@@ -2,15 +2,16 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { loadBackground } = require("./harness/load-background.cjs");
+const { loadBackground, createControlledHandoffResponder } = require("./harness/load-background.cjs");
 const URL = "https://files.example.test/archive.zip";
 
 function desktop() {
-  return { respond(message) {
+  const controlled = createControlledHandoffResponder({ fallback(message) {
     if (message.type === "create_task") return { ok: true, accepted: true, handoffId: message.payload.handoffId, taskId: "fixture-task" };
     if (message.type === "create_tasks") return { ok: true, data: { results: message.payload.items.map(item => ({ handoffId: item.handoffId, accepted: true, taskId: item.handoffId })) } };
     return { ok: true, data: { tasks: [] } };
-  } };
+  } });
+  return { respond: controlled.respond };
 }
 function item(id, context = {}) {
   return { id, url: URL, finalUrl: URL, filename: "archive.zip", totalBytes: 2048,
@@ -30,7 +31,7 @@ async function download(bg, download) {
   const before = bg.chrome.callsNamed("downloads.cancel").length;
   event.fire(download, () => { suggested += 1; });
   await bg.waitFor(() => bg.chrome.callsNamed("downloads.cancel").length > before, "accepted browser download cancellation");
-  return bg.desktop.requestsOfType("create_task").at(-1)?.message.payload;
+  return bg.desktop.requestsOfType("prepare_browser_handoff").at(-1)?.message.payload;
 }
 
 test("REF-02 Firefox same URL queries originating container and private stores at native handoff", async () => {

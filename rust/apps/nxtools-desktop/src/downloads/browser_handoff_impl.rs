@@ -15,7 +15,7 @@ pub(super) struct PendingNewDownloadHandoff {
     source: AnyWindowHandle,
     source_view: gpui_kit::WeakEntity<NewDownloadView>,
     generation: u64,
-    target: AnyWindowHandle,
+    pub(super) target: AnyWindowHandle,
     target_view: Entity<NewDownloadView>,
     source_native: i64,
     target_native: i64,
@@ -93,9 +93,24 @@ impl DownloadApplication {
         let target: AnyWindowHandle = match opened {
             Ok(window) => window.into(),
             Err(_) => {
+                if let Some(context) = source_view
+                    .upgrade()
+                    .and_then(|view| view.read(cx).controlled_handoff.clone())
+                    && context.claim_abort_for_window(source)
+                {
+                    self.abort_controlled_browser_handoff(
+                        &context,
+                        "confirmation_window_create_failed",
+                        cx,
+                    );
+                }
                 let _ = source_view.update(cx, |view, cx| {
                     view.handoff_pending = false;
-                    view.error = Some("确认窗口未能打开，可重试打开确认；无需重新探测".into());
+                    view.error = Some(if view.controlled_handoff.is_some() {
+                        "确认窗口未能打开，浏览器接管已结束；请从浏览器重新发起".into()
+                    } else {
+                        "确认窗口未能打开，可重试打开确认；无需重新探测".into()
+                    });
                     cx.notify();
                 });
                 warn!(event = "download.fixed_confirmation.failed", correlation_id = %operation_id, reason = "window_create", "fixed confirmation could not be created");
@@ -216,11 +231,25 @@ impl DownloadApplication {
             pending.generation,
             cx,
         );
-        let ready = success && current && cx.windows().contains(&pending.target);
+        let mut ready = success && current && cx.windows().contains(&pending.target);
+        if ready {
+            ready = pending
+                .target_view
+                .read(cx)
+                .transfer_controlled_handoff_owner(pending.source, pending.target);
+        }
         info!(event = "download.fixed_confirmation.finished", correlation_id = %command_id,
             source_native = pending.source_native, target_native = pending.target_native, generation = pending.generation,
             success = ready, reason, elapsed_ms = pending.started_at.elapsed().as_millis(), "fixed confirmation handoff finished");
         if !ready {
+            if let Some(context) = pending
+                .source_view
+                .upgrade()
+                .and_then(|view| view.read(cx).controlled_handoff.clone())
+                && context.claim_abort_for_window(pending.source)
+            {
+                self.abort_controlled_browser_handoff(&context, "confirmation_window_failed", cx);
+            }
             let _ = pending
                 .target
                 .update(cx, |_, window, _| window.remove_window());
@@ -233,7 +262,11 @@ impl DownloadApplication {
             {
                 let _ = pending.source_view.update(cx, |view, cx| {
                     view.handoff_pending = false;
-                    view.error = Some("确认窗口未能打开，可重试打开确认；无需重新探测".into());
+                    view.error = Some(if view.controlled_handoff.is_some() {
+                        "确认窗口未能打开，浏览器接管已结束；请从浏览器重新发起".into()
+                    } else {
+                        "确认窗口未能打开，可重试打开确认；无需重新探测".into()
+                    });
                     cx.notify();
                 });
             }
@@ -303,6 +336,182 @@ impl DownloadApplication {
         };
         self.refresh(cx);
         Ok(task_id)
+    }
+
+    pub(crate) fn controlled_browser_handoff_status(
+        &self,
+        context: &ControlledBrowserDialogContext,
+    ) -> Result<(BrowserHandoffState, Option<DownloadTaskId>), String> {
+        match self.execute_correlated(
+            DownloadCommand::BrowserHandoffStatus {
+                handoff_id: context.handoff_id,
+            },
+            context.correlation_id,
+        ) {
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state,
+                task_id,
+            } if handoff_id == context.handoff_id => Ok((state, task_id)),
+            DownloadCommandOutcome::BrowserHandoff { .. } => {
+                Err("下载引擎返回了不匹配的浏览器接管身份".into())
+            }
+            DownloadCommandOutcome::Rejected { fault } => Err(fault.message),
+            _ => Err("下载引擎返回了无效的浏览器接管状态".into()),
+        }
+    }
+
+    pub(crate) fn accept_controlled_browser_handoff(
+        &mut self,
+        context: &ControlledBrowserDialogContext,
+        request: DownloadRequest,
+        mode: DownloadSubmitMode,
+        resolution: nxtools_download::DownloadResolutionOptions,
+        cx: &mut Context<Self>,
+    ) -> Result<DownloadTaskId, String> {
+        match self.controlled_browser_handoff_status(context)? {
+            (BrowserHandoffState::Pending, None) => {}
+            (BrowserHandoffState::Held, Some(task_id)) => {
+                self.refresh(cx);
+                return Ok(task_id);
+            }
+            (BrowserHandoffState::Aborted, _) => {
+                context.claim_abort();
+                return Err("浏览器接管已取消，不能再确认此下载".into());
+            }
+            (BrowserHandoffState::Expired, _) => {
+                context.claim_abort();
+                return Err("浏览器接管确认已过期，请从浏览器重新发起".into());
+            }
+            (BrowserHandoffState::Missing, _) => {
+                context.claim_abort();
+                return Err("浏览器接管记录不存在，请从浏览器重新发起".into());
+            }
+            (BrowserHandoffState::Committed, _) => {
+                context.claim_abort();
+                return Err("浏览器接管已由原操作完成，不能重复确认".into());
+            }
+            _ => return Err("浏览器接管状态与任务身份不一致".into()),
+        }
+        let outcome = self.execute_correlated(
+            DownloadCommand::BrowserAcceptHandoff {
+                handoff_id: context.handoff_id,
+                request,
+                mode,
+                resolution,
+            },
+            context.correlation_id,
+        );
+        let task_id = match outcome {
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state: BrowserHandoffState::Held,
+                task_id: Some(task_id),
+            } if handoff_id == context.handoff_id => task_id,
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state: BrowserHandoffState::Aborted,
+                ..
+            } if handoff_id == context.handoff_id => {
+                context.claim_abort();
+                return Err("浏览器接管已取消，不能再确认此下载".into());
+            }
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state: BrowserHandoffState::Expired,
+                ..
+            } if handoff_id == context.handoff_id => {
+                context.claim_abort();
+                return Err("浏览器接管确认已过期，请从浏览器重新发起".into());
+            }
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state: BrowserHandoffState::Missing,
+                ..
+            } if handoff_id == context.handoff_id => {
+                context.claim_abort();
+                return Err("浏览器接管记录不存在，请从浏览器重新发起".into());
+            }
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state: BrowserHandoffState::Committed,
+                ..
+            } if handoff_id == context.handoff_id => {
+                context.claim_abort();
+                return Err("浏览器接管已由原操作完成，不能重复确认".into());
+            }
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state: BrowserHandoffState::Pending,
+                ..
+            } if handoff_id == context.handoff_id => {
+                return Err("浏览器接管尚未完成持久化，请重试确认".into());
+            }
+            DownloadCommandOutcome::BrowserHandoff { .. } => {
+                return Err("下载引擎返回了不匹配的浏览器接管身份".into());
+            }
+            DownloadCommandOutcome::Rejected { fault } => return Err(fault.message),
+            _ => return Err("下载引擎返回了无效的浏览器接管结果".into()),
+        };
+        self.refresh(cx);
+        info!(
+            event = "download.browser_handoff.held",
+            correlation_id = %context.correlation_id,
+            handoff_id = %context.handoff_id,
+            task_id = %task_id.as_uuid(),
+            ?mode,
+            "browser handoff accepted into held state"
+        );
+        Ok(task_id)
+    }
+
+    pub(crate) fn abort_controlled_browser_handoff(
+        &mut self,
+        context: &ControlledBrowserDialogContext,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        let outcome = self.execute_correlated(
+            DownloadCommand::BrowserAbortHandoff {
+                handoff_id: context.handoff_id,
+            },
+            context.correlation_id,
+        );
+        match outcome {
+            DownloadCommandOutcome::BrowserHandoff {
+                handoff_id,
+                state,
+                task_id,
+            } if handoff_id == context.handoff_id => {
+                if task_id.is_some() {
+                    self.refresh(cx);
+                }
+                info!(
+                    event = "download.browser_handoff.desktop_terminal",
+                    correlation_id = %context.correlation_id,
+                    handoff_id = %context.handoff_id,
+                    ?state,
+                    reason,
+                    "desktop browser handoff ownership ended"
+                );
+            }
+            DownloadCommandOutcome::Rejected { fault } => warn!(
+                event = "download.browser_handoff.desktop_abort_failed",
+                correlation_id = %context.correlation_id,
+                handoff_id = %context.handoff_id,
+                fault_code = ?fault.code,
+                retryable = fault.retryable,
+                reason,
+                "desktop could not abort browser handoff"
+            ),
+            _ => warn!(
+                event = "download.browser_handoff.desktop_abort_failed",
+                correlation_id = %context.correlation_id,
+                handoff_id = %context.handoff_id,
+                reason,
+                "desktop received an invalid browser handoff abort result"
+            ),
+        }
     }
 
     pub(crate) fn discard_browser_blob(&self, context: &BrowserBlobDialogContext) {
@@ -433,10 +642,10 @@ impl DownloadApplication {
         result: &PlatformCommandResult,
         cx: &mut Context<Self>,
     ) -> bool {
-        if !self
+        if self
             .pending_extension_export
             .as_ref()
-            .is_some_and(|pending| pending.command_id == command_id)
+            .is_none_or(|pending| pending.command_id != command_id)
         {
             return false;
         }
@@ -572,6 +781,12 @@ impl DownloadApplication {
             BrowserDownloadDialogSource::Download(request) => {
                 NewDownloadInitialSource::Download(*request)
             }
+            BrowserDownloadDialogSource::ControlledDownload(request) => {
+                NewDownloadInitialSource::ControlledDownload {
+                    request: *request,
+                    context: ControlledBrowserDialogContext::new(correlation_id, handoff_id),
+                }
+            }
             BrowserDownloadDialogSource::Blob {
                 blob,
                 save_directory,
@@ -629,8 +844,11 @@ impl DownloadApplication {
                                         return;
                                     }
                                     view.update(cx, |view, cx| {
-                                        view.prefill_clipboard_url(url, window, cx);
+                                        let prefilled = view.prefill_clipboard_url(url, window, cx);
                                         view.focus_url_input(window, cx);
+                                        if prefilled {
+                                            view.begin_probe(window, cx);
+                                        }
                                     });
                                 });
                             });
@@ -669,7 +887,14 @@ impl DownloadApplication {
             .filter(|category| category.enabled)
             .cloned()
             .collect::<Vec<_>>();
-        let auto_probe = matches!(initial_source, Some(NewDownloadInitialSource::Download(_)));
+        let auto_probe = matches!(
+            initial_source.as_ref(),
+            Some(
+                NewDownloadInitialSource::Url { .. }
+                    | NewDownloadInitialSource::Download(_)
+                    | NewDownloadInitialSource::ControlledDownload { .. }
+            )
+        );
         let prefill_clipboard = initial_source.is_none();
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
@@ -912,7 +1137,7 @@ impl DownloadApplication {
 }
 
 impl DownloadApplication {
-    pub(super) fn request_browser_registration(
+    pub(crate) fn request_browser_registration(
         &mut self,
         correlation_id: uuid::Uuid,
         cx: &mut Context<Self>,
@@ -991,7 +1216,7 @@ impl DownloadApplication {
 pub(super) const FIREFOX_STORE_URL: &str =
     "https://addons.mozilla.org/zh-CN/firefox/addon/nxtools-download-interceptor/";
 impl DownloadApplication {
-    pub(super) fn open_chrome_store(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn open_chrome_store(&mut self, cx: &mut Context<Self>) {
         self.open_browser_store(
             "chrome",
             format!("https://chromewebstore.google.com/detail/nxtools-download-intercep/{CHROME_STORE_EXTENSION_ID}"),
@@ -999,7 +1224,7 @@ impl DownloadApplication {
         );
     }
 
-    pub(super) fn open_firefox_store(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn open_firefox_store(&mut self, cx: &mut Context<Self>) {
         self.open_browser_store("firefox", FIREFOX_STORE_URL.into(), cx);
     }
 

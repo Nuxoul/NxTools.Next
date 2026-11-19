@@ -13,7 +13,7 @@ namespace NxTools.PlatformHost.Tests;
 internal static class ArchiveDropLocateTests
 {
     private static void Check(bool value, string detail) { if (!value) throw new InvalidOperationException(detail); }
-    private static string Root() => Directory.CreateDirectory(Path.Combine(Environment.GetEnvironmentVariable("PI_SCRATCH_DIR")!, "archive-product-" + Guid.NewGuid())).FullName;
+    private static string Root() => Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "archive-product-" + Guid.NewGuid())).FullName;
     private static ArchiveBrowserContext Synthetic() => new(Guid.NewGuid(), "Zip", "", new("v1:fixture", Enumerable.Repeat(1u, 32).ToArray(), 1, 1));
     private static ProtocolEnvelope Wire(ArchiveVirtualDragCommand c) => ProtocolEnvelope.Create("platform_command", new { command = "archive_virtual_drag", data = c }, c.OperationId);
     private static ArchiveVirtualDragItem Item(Guid session, string name, bool directory, ArchiveBrowserContext browser) =>
@@ -24,6 +24,11 @@ internal static class ArchiveDropLocateTests
         var session = Guid.NewGuid();
         return new(1, Guid.NewGuid(), session, 1, "locate", 42, [Item(session, wrapper, true, Synthetic())]);
     }
+    private static ArchiveVirtualDragCommand LocateFile(string name)
+    {
+        var session = Guid.NewGuid();
+        return new(1, Guid.NewGuid(), session, 1, "locate", 42, [Item(session, name, false, Synthetic())]);
+    }
 
     internal static Task LocateWireAdmitsOnlyOneWrapper()
     {
@@ -31,9 +36,10 @@ internal static class ArchiveDropLocateTests
         var parsed = ArchiveVirtualDragWire.Parse(Wire(command));
         Check(parsed.Action == "locate" && parsed.Items!.Single() is { Name: "Photos", Directory: true } && parsed.Plan is not null, "single wrapper admitted");
         var browser = command.Items![0].Entry.Browser!;
+        var direct = command with { Items = [Item(command.SessionId, "selected-files", false, browser)] };
+        Check(!ArchiveVirtualDragWire.Parse(Wire(direct)).Items![0].Directory, "direct marker file admitted without a wrapper");
         foreach (var invalid in new[] {
             command with { Items = [command.Items[0], Item(command.SessionId, "Photos/a.txt", false, browser)] },
-            command with { Items = [Item(command.SessionId, "Photos", false, browser)] },
             command with { Items = [Item(command.SessionId, "Photos/inner", true, browser)] },
             command with { AuthorizationId = Guid.NewGuid() },
             command with { SourceWindowHandle = 0 },
@@ -63,11 +69,28 @@ internal static class ArchiveDropLocateTests
         foreach (var file in Directory.GetFiles(source)) File.Copy(file, Path.Combine(target, Path.GetFileName(file)));
         return (0x00040100, 1);
     }
+    private static (int, int) CopyMarkerReceiver(System.Runtime.InteropServices.ComTypes.IDataObject data, string destination)
+    {
+        var format = new FORMATETC { cfFormat = 15, dwAspect = DVASPECT.DVASPECT_CONTENT, lindex = -1, tymed = TYMED.TYMED_HGLOBAL };
+        data.GetData(ref format, out var medium);
+        string source;
+        try {
+            Check(DragQueryFileW(medium.unionmember, 0xFFFFFFFF, null, 0) == 1, "exactly one dragged marker");
+            var buffer = new StringBuilder(32768);
+            DragQueryFileW(medium.unionmember, 0, buffer, (uint)buffer.Capacity);
+            source = buffer.ToString();
+        } finally { ReleaseStgMedium(ref medium); }
+        Check(File.Exists(source), "dragged path is a real marker file");
+        File.Copy(source, Path.Combine(destination, Path.GetFileName(source)));
+        return (0x00040100, 1);
+    }
 
     private static ArchiveVirtualDragSession Session(ArchiveEntrySession entries, string root, string watched, ArchiveOleLoop loop,
         IReadOnlyList<string>? probes = null, bool watch = true, TimeSpan? window = null) =>
         new(entries, validSource: (_, _) => true, prepare: _ => null, pressed: () => true, loop: loop, escape: () => false) {
-            CreateLocator = (operation, wrapper) => ArchiveDropLocator.Create(operation, wrapper, Path.Combine(root, "temp"), watch ? [watched] : []),
+        CreateLocator = (operation, wrapper, direct) => direct
+            ? ArchiveDropLocator.CreateDirect(operation, wrapper, Path.Combine(root, "temp"), watch ? [watched] : [])
+            : ArchiveDropLocator.Create(operation, wrapper, Path.Combine(root, "temp"), watch ? [watched] : []),
             LocateProbeFolders = () => probes ?? [],
             LocateWindow = window ?? TimeSpan.FromSeconds(10),
             UnconfirmedLocateWindow = TimeSpan.FromMilliseconds(300)
@@ -115,6 +138,21 @@ internal static class ArchiveDropLocateTests
                 Check(Destination(result) == Path.Combine(drop, "Video"), "probe fallback reported folder");
                 AssertClean(root, Path.Combine(drop, "Video"));
             }
+        } finally { Directory.Delete(root, true); }
+    }
+
+    internal static async Task DirectMarkerLocatesParentWithoutWrapper()
+    {
+        var root = Root();
+        try {
+            await using var entries = ArchiveEntrySession.ForOwnedTestPackage(root);
+            var watched = Directory.CreateDirectory(Path.Combine(root, "explorer")).FullName;
+            var drop = Directory.CreateDirectory(Path.Combine(watched, "Downloads")).FullName;
+            await using var drag = Session(entries, root, watched, (data, _) => CopyMarkerReceiver(data, drop));
+            var result = await drag.Dispatch(Wire(LocateFile("selected-files")), 1).WaitAsync(TimeSpan.FromSeconds(20));
+            Check(Destination(result) == drop, "direct marker reports the receiver parent");
+            AssertClean(root, drop);
+            Check(!Directory.EnumerateDirectories(drop).Any(), "direct marker never creates a wrapper folder");
         } finally { Directory.Delete(root, true); }
     }
 

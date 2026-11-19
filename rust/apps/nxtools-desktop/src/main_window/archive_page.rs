@@ -4,7 +4,7 @@ use crate::archive::shell_integration::IntegrationOutcome;
 use gpui_kit::component::Size;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::checkbox::Checkbox;
-use gpui_kit::component::group_box::GroupBoxVariant;
+use gpui_kit::component::group_box::{GroupBox, GroupBoxVariant, GroupBoxVariants};
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
 use gpui_kit::component::setting::{
     SettingField, SettingGroup, SettingItem, SettingPage, Settings,
@@ -230,6 +230,9 @@ impl ArchiveSettingsView {
                 }
                 if requested.double_click_action != previous_integration.double_click_action {
                     target.double_click_action = requested.double_click_action;
+                }
+                if requested.set_default != previous_integration.set_default {
+                    target.set_default = requested.set_default;
                 }
                 if requested.menu_layout != previous_integration.menu_layout {
                     target.menu_layout = requested.menu_layout;
@@ -533,6 +536,144 @@ impl ArchiveSettingsView {
             cx,
         );
         cx.notify();
+    }
+    pub(super) fn apply_recommended_integration(&mut self, cx: &mut Context<Self>) {
+        let mut settings = self.settings.clone();
+        settings.shell_integration.classic_cascade = true;
+        settings.shell_integration.open_with = true;
+        settings.shell_integration.set_default = true;
+        settings.shell_integration.extensions = ARCHIVE_SHELL_EXTENSIONS
+            .iter()
+            .map(|extension| (*extension).to_owned())
+            .collect();
+        if settings.shell_integration.menu_commands.is_empty() {
+            settings.shell_integration.menu_commands = vec![
+                ArchiveMenuCommand::Open,
+                ArchiveMenuCommand::ExtractSmart,
+                ArchiveMenuCommand::ExtractHere,
+                ArchiveMenuCommand::ExtractName,
+                ArchiveMenuCommand::Test,
+                ArchiveMenuCommand::CreateZip,
+                ArchiveMenuCommand::CreateSevenZ,
+                ArchiveMenuCommand::Create,
+            ];
+        }
+        self.save(settings, cx);
+        if self.error.is_none() {
+            self.request_integration(ArchiveShellIntegrationAction::Apply, cx);
+        }
+    }
+    /// Readable state of the last correlated native observation; never derived from saved intent.
+    pub(super) fn integration_status(&self) -> (IntegrationTone, SharedString) {
+        let desired = &self.settings.shell_integration;
+        if self.integration_pending {
+            return (
+                IntegrationTone::Pending,
+                "正在写入 Windows 并刷新资源管理器…".into(),
+            );
+        }
+        let Some(outcome) = &self.integration else {
+            return (
+                IntegrationTone::Neutral,
+                "尚未应用。选择会自动保存，点击“应用”后写入 Windows，资源管理器会立即刷新。".into(),
+            );
+        };
+        let result = match outcome {
+            IntegrationOutcome::DefaultAppsOpened => {
+                return (
+                    IntegrationTone::Neutral,
+                    "Windows 默认应用设置已打开；关联状态未改变。".into(),
+                );
+            }
+            IntegrationOutcome::NotDelivered(reason) => {
+                return (
+                    IntegrationTone::Error,
+                    format!(
+                        "请求未送达原生组件（{reason}）；Windows 状态未确认，请稍后点击“刷新状态”。"
+                    )
+                    .into(),
+                );
+            }
+            IntegrationOutcome::Observed(result) => result,
+        };
+        let applied_revision = result.applied_revision.unwrap_or_default();
+        match result.state {
+            ArchiveShellIntegrationState::Disabled => (
+                IntegrationTone::Error,
+                "当前版本未授权写入注册表：应用被拒绝，未修改任何 Windows 设置。".into(),
+            ),
+            ArchiveShellIntegrationState::NotApplied if result.removed + result.restored > 0 => (
+                IntegrationTone::Neutral,
+                format!(
+                    "已移除旧版本的 {} 项、恢复 {} 项；当前选择没有需要写入的内容。",
+                    result.removed, result.restored
+                )
+                .into(),
+            ),
+            ArchiveShellIntegrationState::NotApplied => (
+                IntegrationTone::Neutral,
+                "当前未应用（无 NxTools 写入记录）。".into(),
+            ),
+            ArchiveShellIntegrationState::Applied
+                if result.applied_revision != Some(desired.desired_revision) =>
+            {
+                (
+                    IntegrationTone::Warning,
+                    format!(
+                        "新的选择尚未应用；Windows 仍使用版本 {applied_revision}。点击“应用”即可直接替换。"
+                    )
+                    .into(),
+                )
+            }
+            ArchiveShellIntegrationState::Applied
+                if result.failure.as_deref() == Some("user_choice_locked") =>
+            {
+                (
+                    IntegrationTone::Warning,
+                    "已应用；部分格式的默认程序被 Windows 锁定未能切换，可在“Windows 默认应用设置”中手动选择 NxTools。".into(),
+                )
+            }
+            ArchiveShellIntegrationState::Applied if desired.set_default => (
+                IntegrationTone::Success,
+                format!(
+                    "已应用（共 {} 项）：所选格式的图标和双击已由 NxTools 接管，无需重启。",
+                    result.applied_values
+                )
+                .into(),
+            ),
+            ArchiveShellIntegrationState::Applied => (
+                IntegrationTone::Success,
+                format!(
+                    "已应用版本 {applied_revision}（共 {} 项），资源管理器已刷新。",
+                    result.applied_values
+                )
+                .into(),
+            ),
+            ArchiveShellIntegrationState::Reverted => (
+                IntegrationTone::Success,
+                format!(
+                    "已撤销：移除 {} 项，恢复 {} 项，保留被修改的 {} 项；原来的默认程序已还原。",
+                    result.removed, result.restored, result.preserved
+                )
+                .into(),
+            ),
+            ArchiveShellIntegrationState::RevertRequired => (
+                IntegrationTone::Warning,
+                "已有已应用版本；请先撤销，再应用新的选择。".into(),
+            ),
+            ArchiveShellIntegrationState::Failed => (
+                IntegrationTone::Error,
+                format!(
+                    "应用失败：{}。Windows 状态未确认，请点击“刷新状态”。",
+                    integration_failure_label(result.failure.as_deref())
+                )
+                .into(),
+            ),
+        }
+    }
+    pub(super) fn integration_status_alert(&self, id: &'static str) -> AnyElement {
+        let (tone, text) = self.integration_status();
+        status_alert(id, tone, text)
     }
     fn request_default_apps(&mut self, cx: &mut Context<Self>) {
         if self.default_apps_pending {
@@ -848,53 +989,7 @@ impl ArchiveSettingsView {
         )
         .layout(gpui_kit::Axis::Vertical)
         .keywords(["扩展名", "zip", "7z", "rar"]);
-        let observed: SharedString = match &self.integration {
-            Some(IntegrationOutcome::DefaultAppsOpened) => {
-                "Windows 默认应用设置已打开；关联状态未改变。".into()
-            }
-            None => "尚未查询。保存的选择只是期望状态，不代表已写入 Windows。".into(),
-            Some(IntegrationOutcome::NotDelivered(reason)) => format!(
-                "请求未取得有效原生结果（{reason}）；Windows 应用状态未确认，请刷新状态后重试。"
-            )
-            .into(),
-            Some(IntegrationOutcome::Observed(result)) => match result.state {
-                ArchiveShellIntegrationState::Disabled => {
-                    "当前版本未授权写入注册表：应用被拒绝，未写入、未修改任何 Windows 设置。".into()
-                }
-                ArchiveShellIntegrationState::NotApplied => {
-                    "当前未应用（无 NxTools 写入记录）。".into()
-                }
-                ArchiveShellIntegrationState::Applied
-                    if result.applied_revision != Some(desired.desired_revision) =>
-                {
-                    format!(
-                        "已保存版本 {}，尚未应用；Windows 仍使用版本 {}。",
-                        desired.desired_revision,
-                        result.applied_revision.unwrap_or_default()
-                    )
-                    .into()
-                }
-                ArchiveShellIntegrationState::Applied => format!(
-                    "已应用版本 {}，共 {} 项。",
-                    result.applied_revision.unwrap_or_default(),
-                    result.applied_values
-                )
-                .into(),
-                ArchiveShellIntegrationState::Reverted => format!(
-                    "已撤销：移除 {} 项，恢复 {} 项，保留被修改的 {} 项。",
-                    result.removed, result.restored, result.preserved
-                )
-                .into(),
-                ArchiveShellIntegrationState::RevertRequired => {
-                    "已有已应用版本；请先撤销，再应用新的选择。".into()
-                }
-                ArchiveShellIntegrationState::Failed => format!(
-                    "操作失败：{}。应用状态未确认，请刷新状态后重试。",
-                    result.failure.as_deref().unwrap_or("unknown")
-                )
-                .into(),
-            },
-        };
+        let (tone, observed) = self.integration_status();
         let actions_owner = owner.clone();
         let actions = SettingItem::new(
             "应用状态",
@@ -907,12 +1002,7 @@ impl ArchiveSettingsView {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(
-                        div()
-                            .debug_selector(|| "archive-shell-observed".into())
-                            .text_sm()
-                            .child(observed.clone()),
-                    )
+                    .child(status_alert("archive-shell-observed", tone, observed.clone()))
                     .child(
                         div()
                             .flex()
@@ -979,7 +1069,7 @@ impl ArchiveSettingsView {
         vec![
             note(
                 "范围",
-                "仅影响当前用户的经典右键菜单与“打开方式”列表，不更改默认应用。",
+                "仅影响当前用户。开启“设为默认程序”后，所选格式的图标和双击立即改由 NxTools 处理；撤销会还原原来的默认程序。",
             ),
             flag(
                 "archive-shell-cascade",
@@ -992,6 +1082,12 @@ impl ArchiveSettingsView {
                 "加入“打开方式”",
                 desired.open_with,
                 |s, value| s.open_with = value,
+            ),
+            flag(
+                "archive-shell-set-default",
+                "设为默认程序（图标与双击）",
+                desired.set_default,
+                |s, value| s.set_default = value,
             ),
             extensions,
             self.default_apps_item(owner.clone()),
@@ -1022,11 +1118,238 @@ impl ArchiveSettingsView {
             self.menu_commands_item(owner.clone()),
             note(
                 "保存与应用",
-                "选择会自动保存；点击“应用”后，以实际返回的 Windows 状态为准。",
+                "选择会自动保存；点击“应用”会直接替换已应用的旧版本并刷新资源管理器，无需重启或先撤销。",
             ),
             actions,
         ]
     }
+    pub(super) fn inline_integration_controls(&self, owner: WeakEntity<Self>) -> AnyElement {
+        let desired = self.settings.shell_integration.clone();
+        let toggle = |id: &'static str,
+                      label: &'static str,
+                      value: bool,
+                      apply: fn(&mut ArchiveShellIntegrationSettings, bool)| {
+            let owner = owner.clone();
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .child(label)
+                .child(
+                    div().debug_selector(move || id.into()).child(
+                        Switch::new(id)
+                            .checked(value)
+                            .accessibility_label(label)
+                            .on_change(move |requested, _, cx| {
+                                let requested = *requested;
+                                let owner = owner.clone();
+                                cx.defer(move |cx| {
+                                    let _ = owner.update(cx, |view, cx| {
+                                        view.save_integration(
+                                            |settings| apply(settings, requested),
+                                            cx,
+                                        )
+                                    });
+                                });
+                            }),
+                    ),
+                )
+                .into_any_element()
+        };
+        let extensions = ARCHIVE_SHELL_EXTENSIONS.iter().fold(
+            div().flex().flex_wrap().gap_2(),
+            |row, extension| {
+                let owner = owner.clone();
+                let id = SharedString::from(format!("archive-shell-ext-{extension}"));
+                row.child(
+                    Checkbox::new(id.clone())
+                        .debug_selector(move || id.to_string())
+                        .label(*extension)
+                        .checked(desired.extensions.iter().any(|value| value == extension))
+                        .on_change(move |requested, _, cx| {
+                            let requested = *requested;
+                            let owner = owner.clone();
+                            let extension = (*extension).to_owned();
+                            cx.defer(move |cx| {
+                                let _ = owner.update(cx, |view, cx| {
+                                    view.save_integration(
+                                        |settings| {
+                                            settings.extensions.retain(|value| value != &extension);
+                                            if requested {
+                                                settings.extensions.push(extension.clone());
+                                                settings.extensions.sort_by_key(|value| {
+                                                    ARCHIVE_SHELL_EXTENSIONS
+                                                        .iter()
+                                                        .position(|known| known == value)
+                                                });
+                                            }
+                                        },
+                                        cx,
+                                    )
+                                });
+                            });
+                        }),
+                )
+            },
+        );
+        let commands = ArchiveMenuCommand::ALL.iter().fold(
+            div().flex().flex_wrap().gap_2(),
+            |row, command| {
+                let owner = owner.clone();
+                let id =
+                    SharedString::from(format!("archive-menu-command-{}", command.wire_name()));
+                let label = match command {
+                    ArchiveMenuCommand::Create => "新建压缩包…",
+                    _ => command.label(),
+                };
+                row.child(
+                    Checkbox::new(id.clone())
+                        .debug_selector(move || id.to_string())
+                        .label(label)
+                        .checked(desired.menu_commands.contains(command))
+                        .on_change(move |requested, _, cx| {
+                            let requested = *requested;
+                            let owner = owner.clone();
+                            let command = *command;
+                            cx.defer(move |cx| {
+                                let _ = owner.update(cx, |view, cx| {
+                                    view.save_integration(
+                                        |settings| {
+                                            settings
+                                                .menu_commands
+                                                .retain(|value| *value != command);
+                                            if requested {
+                                                settings.menu_commands.push(command);
+                                                settings.menu_commands.sort_by_key(|value| {
+                                                    ArchiveMenuCommand::ALL
+                                                        .iter()
+                                                        .position(|known| known == value)
+                                                });
+                                            }
+                                        },
+                                        cx,
+                                    )
+                                });
+                            });
+                        }),
+                )
+            },
+        );
+        let apply_owner = owner.clone();
+        let revert_owner = owner.clone();
+        let status_owner = owner.clone();
+        let pending = self.integration_pending;
+        div()
+            .w_full()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .p_3()
+            .child(
+                GroupBox::new()
+                    .title("关联方式")
+                    .with_variant(GroupBoxVariant::Outline)
+                    .child(
+                        div()
+                            .flex()
+                            .gap_4()
+                            .child(div().flex_1().min_w_0().child(toggle(
+                                "archive-shell-cascade",
+                                "右键菜单",
+                                desired.classic_cascade,
+                                |settings, value| settings.classic_cascade = value,
+                            )))
+                            .child(div().flex_1().min_w_0().child(toggle(
+                                "archive-shell-open-with",
+                                "加入“打开方式”",
+                                desired.open_with,
+                                |settings, value| settings.open_with = value,
+                            )))
+                            .child(div().flex_1().min_w_0().child(toggle(
+                                "archive-shell-set-default",
+                                "设为默认程序",
+                                desired.set_default,
+                                |settings, value| settings.set_default = value,
+                            ))),
+                    ),
+            )
+            .child(
+                GroupBox::new()
+                    .title("支持格式")
+                    .with_variant(GroupBoxVariant::Outline)
+                    .child(extensions),
+            )
+            .child(
+                GroupBox::new()
+                    .title("右键菜单命令")
+                    .with_variant(GroupBoxVariant::Outline)
+                    .child(commands),
+            )
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        Button::new("archive-shell-apply")
+                            .debug_selector(|| "archive-shell-apply".into())
+                            .label("按以上选择应用")
+                            .outline()
+                            .loading(pending)
+                            .disabled(pending)
+                            .on_click(move |_, _, cx| {
+                                let owner = apply_owner.clone();
+                                cx.defer(move |cx| {
+                                    let _ = owner.update(cx, |view, cx| {
+                                        view.request_integration(
+                                            ArchiveShellIntegrationAction::Apply,
+                                            cx,
+                                        )
+                                    });
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("archive-shell-revert")
+                            .debug_selector(|| "archive-shell-revert".into())
+                            .label("撤销")
+                            .outline()
+                            .disabled(pending)
+                            .on_click(move |_, _, cx| {
+                                let owner = revert_owner.clone();
+                                cx.defer(move |cx| {
+                                    let _ = owner.update(cx, |view, cx| {
+                                        view.request_integration(
+                                            ArchiveShellIntegrationAction::Revert,
+                                            cx,
+                                        )
+                                    });
+                                });
+                            }),
+                    )
+                    .child(
+                        Button::new("archive-shell-status")
+                            .debug_selector(|| "archive-shell-status".into())
+                            .label("刷新状态")
+                            .outline()
+                            .disabled(pending)
+                            .on_click(move |_, _, cx| {
+                                let owner = status_owner.clone();
+                                cx.defer(move |cx| {
+                                    let _ = owner.update(cx, |view, cx| {
+                                        view.request_integration(
+                                            ArchiveShellIntegrationAction::Status,
+                                            cx,
+                                        )
+                                    });
+                                });
+                            }),
+                    )
+            )
+            .into_any_element()
+    }
+
     fn recent_items(&self, owner: WeakEntity<Self>) -> Vec<SettingItem> {
         let limit = self.settings.recent_limit;
         let number_owner = owner.clone();
@@ -1074,6 +1397,44 @@ impl ArchiveSettingsView {
                 }))
             })).layout(gpui_kit::Axis::Vertical),
         ]
+    }
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum IntegrationTone {
+    Neutral,
+    Pending,
+    Success,
+    Warning,
+    Error,
+}
+fn status_alert(id: &'static str, tone: IntegrationTone, text: SharedString) -> AnyElement {
+    let text = text.to_string();
+    let alert = match tone {
+        IntegrationTone::Neutral | IntegrationTone::Pending => Alert::info(id, text),
+        IntegrationTone::Success => Alert::success(id, text),
+        IntegrationTone::Warning => Alert::warning(id, text),
+        IntegrationTone::Error => Alert::error(id, text),
+    };
+    div()
+        .debug_selector(move || id.into())
+        .w_full()
+        .min_w_0()
+        .child(alert.small())
+        .into_any_element()
+}
+fn integration_failure_label(failure: Option<&str>) -> String {
+    match failure {
+        Some("desktop_identity_unavailable") => "未找到已安装的 NxTools 主程序，请使用安装版".into(),
+        Some("selection_helper_identity_unavailable") => {
+            "右键菜单组件未通过完整性校验，请重新安装".into()
+        }
+        Some("replace_revert_incomplete") => "替换旧版本时未能完全撤销".into(),
+        Some("ledger_unreadable") => "无法读取上次应用记录".into(),
+        Some("write_failed_compensated") => "写入注册表失败，已恢复原状".into(),
+        Some("cancelled") => "操作已取消".into(),
+        Some("native_operation_unconfirmed") => "原生组件未在时限内确认".into(),
+        Some(other) => other.into(),
+        None => "未知原因".into(),
     }
 }
 fn note(label: &'static str, text: &'static str) -> SettingItem {

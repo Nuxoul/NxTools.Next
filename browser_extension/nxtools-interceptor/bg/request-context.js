@@ -680,6 +680,7 @@ function registerHeaderCapture() {
 
   chrome.webRequest.onResponseStarted.addListener(
     (details) => {
+      noteFirefoxResponseTerminal(details, "started");
       void captureNetworkResource(details);
     },
     { urls: ["http://*/*", "https://*/*"] },

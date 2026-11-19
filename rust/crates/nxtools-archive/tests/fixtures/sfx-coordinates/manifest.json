@@ -1,0 +1,498 @@
+{
+  "magic": "NXTOOLS-ZIP-SFX1",
+  "descriptor_bytes": 48,
+  "pe_bytes": 512,
+  "executable": false,
+  "profiles": [
+    {
+      "profile": "ordinary-store",
+      "executable": false,
+      "origin": "project-owned format specification; data-only PE-shaped prefix",
+      "prefix_bytes": 560,
+      "volume_bytes": null,
+      "parts": [
+        {
+          "name": "ordinary-store.exe",
+          "size": 9260
+        }
+      ],
+      "entries": [
+        {
+          "name": "资料/",
+          "size": 0,
+          "method": 0,
+          "disk": 0,
+          "offset": 560,
+          "crc32": 0
+        },
+        {
+          "name": "资料/data.bin",
+          "size": 8193,
+          "method": 0,
+          "disk": 0,
+          "offset": 613,
+          "crc32": 180577203
+        },
+        {
+          "name": "empty.txt",
+          "size": 0,
+          "method": 0,
+          "disk": 0,
+          "offset": 8867,
+          "crc32": 0
+        },
+        {
+          "name": "hello.txt",
+          "size": 37,
+          "method": 0,
+          "disk": 0,
+          "offset": 8922,
+          "crc32": 1228537054
+        }
+      ],
+      "payload_boundaries": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "decoded_bytes": 8230
+    },
+    {
+      "profile": "ordinary-deflate",
+      "executable": false,
+      "origin": "project-owned format specification; data-only PE-shaped prefix",
+      "prefix_bytes": 560,
+      "volume_bytes": null,
+      "parts": [
+        {
+          "name": "ordinary-deflate.exe",
+          "size": 9269
+        }
+      ],
+      "entries": [
+        {
+          "name": "资料/",
+          "size": 0,
+          "method": 0,
+          "disk": 0,
+          "offset": 560,
+          "crc32": 0
+        },
+        {
+          "name": "资料/data.bin",
+          "size": 8193,
+          "method": 8,
+          "disk": 0,
+          "offset": 613,
+          "crc32": 180577203
+        },
+        {
+          "name": "empty.txt",
+          "size": 0,
+          "method": 8,
+          "disk": 0,
+          "offset": 8872,
+          "crc32": 0
+        },
+        {
+          "name": "hello.txt",
+          "size": 37,
+          "method": 8,
+          "disk": 0,
+          "offset": 8929,
+          "crc32": 1228537054
+        }
+      ],
+      "payload_boundaries": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "decoded_bytes": 8230
+    },
+    {
+      "profile": "split-store",
+      "executable": false,
+      "origin": "project-owned format specification; data-only PE-shaped prefix",
+      "prefix_bytes": 560,
+      "volume_bytes": 768,
+      "parts": [
+        {
+          "name": "split-store.exe",
+          "size": 768
+        },
+        {
+          "name": "split-store.z02",
+          "size": 768
+        },
+        {
+          "name": "split-store.z03",
+          "size": 768
+        },
+        {
+          "name": "split-store.z04",
+          "size": 768
+        },
+        {
+          "name": "split-store.z05",
+          "size": 768
+        },
+        {
+          "name": "split-store.z06",
+          "size": 768
+        },
+        {
+          "name": "split-store.z07",
+          "size": 768
+        },
+        {
+          "name": "split-store.z08",
+          "size": 768
+        },
+        {
+          "name": "split-store.z09",
+          "size": 768
+        },
+        {
+          "name": "split-store.z10",
+          "size": 768
+        },
+        {
+          "name": "split-store.z11",
+          "size": 768
+        },
+        {
+          "name": "split-store.z12",
+          "size": 739
+        },
+        {
+          "name": "split-store.zip",
+          "size": 77
+        }
+      ],
+      "entries": [
+        {
+          "name": "资料/",
+          "size": 0,
+          "method": 0,
+          "disk": 0,
+          "offset": 564,
+          "crc32": 0
+        },
+        {
+          "name": "资料/data.bin",
+          "size": 8193,
+          "method": 0,
+          "disk": 0,
+          "offset": 617,
+          "crc32": 180577203
+        },
+        {
+          "name": "empty.txt",
+          "size": 0,
+          "method": 0,
+          "disk": 11,
+          "offset": 423,
+          "crc32": 0
+        },
+        {
+          "name": "hello.txt",
+          "size": 37,
+          "method": 0,
+          "disk": 11,
+          "offset": 478,
+          "crc32": 1228537054
+        }
+      ],
+      "payload_boundaries": [
+        0,
+        11,
+        0,
+        0
+      ],
+      "decoded_bytes": 8230
+    },
+    {
+      "profile": "split-deflate",
+      "executable": false,
+      "origin": "project-owned format specification; data-only PE-shaped prefix",
+      "prefix_bytes": 560,
+      "volume_bytes": 768,
+      "parts": [
+        {
+          "name": "split-deflate.exe",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z02",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z03",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z04",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z05",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z06",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z07",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z08",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z09",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z10",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z11",
+          "size": 768
+        },
+        {
+          "name": "split-deflate.z12",
+          "size": 748
+        },
+        {
+          "name": "split-deflate.zip",
+          "size": 77
+        }
+      ],
+      "entries": [
+        {
+          "name": "资料/",
+          "size": 0,
+          "method": 0,
+          "disk": 0,
+          "offset": 564,
+          "crc32": 0
+        },
+        {
+          "name": "资料/data.bin",
+          "size": 8193,
+          "method": 8,
+          "disk": 0,
+          "offset": 617,
+          "crc32": 180577203
+        },
+        {
+          "name": "empty.txt",
+          "size": 0,
+          "method": 8,
+          "disk": 11,
+          "offset": 428,
+          "crc32": 0
+        },
+        {
+          "name": "hello.txt",
+          "size": 37,
+          "method": 8,
+          "disk": 11,
+          "offset": 485,
+          "crc32": 1228537054
+        }
+      ],
+      "payload_boundaries": [
+        0,
+        11,
+        0,
+        0
+      ],
+      "decoded_bytes": 8230
+    },
+    {
+      "profile": "ordinary-deflate-zip64",
+      "executable": false,
+      "origin": "project-owned format specification; data-only PE-shaped prefix",
+      "prefix_bytes": 560,
+      "volume_bytes": null,
+      "parts": [
+        {
+          "name": "ordinary-deflate-zip64.exe",
+          "size": 9585
+        }
+      ],
+      "entries": [
+        {
+          "name": "资料/",
+          "size": 0,
+          "method": 0,
+          "disk": 0,
+          "offset": 560,
+          "crc32": 0
+        },
+        {
+          "name": "资料/data.bin",
+          "size": 8193,
+          "method": 8,
+          "disk": 0,
+          "offset": 641,
+          "crc32": 180577203
+        },
+        {
+          "name": "empty.txt",
+          "size": 0,
+          "method": 8,
+          "disk": 0,
+          "offset": 8928,
+          "crc32": 0
+        },
+        {
+          "name": "hello.txt",
+          "size": 37,
+          "method": 8,
+          "disk": 0,
+          "offset": 9013,
+          "crc32": 1228537054
+        }
+      ],
+      "payload_boundaries": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "decoded_bytes": 8230
+    },
+    {
+      "profile": "split-deflate-zip64",
+      "executable": false,
+      "origin": "project-owned format specification; data-only PE-shaped prefix",
+      "prefix_bytes": 560,
+      "volume_bytes": 768,
+      "parts": [
+        {
+          "name": "split-deflate-zip64.exe",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z02",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z03",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z04",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z05",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z06",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z07",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z08",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z09",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z10",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z11",
+          "size": 768
+        },
+        {
+          "name": "split-deflate-zip64.z12",
+          "size": 691
+        },
+        {
+          "name": "split-deflate-zip64.zip",
+          "size": 450
+        }
+      ],
+      "entries": [
+        {
+          "name": "资料/",
+          "size": 0,
+          "method": 0,
+          "disk": 0,
+          "offset": 564,
+          "crc32": 0
+        },
+        {
+          "name": "资料/data.bin",
+          "size": 8193,
+          "method": 8,
+          "disk": 0,
+          "offset": 645,
+          "crc32": 180577203
+        },
+        {
+          "name": "empty.txt",
+          "size": 0,
+          "method": 8,
+          "disk": 11,
+          "offset": 484,
+          "crc32": 0
+        },
+        {
+          "name": "hello.txt",
+          "size": 37,
+          "method": 8,
+          "disk": 11,
+          "offset": 569,
+          "crc32": 1228537054
+        }
+      ],
+      "payload_boundaries": [
+        0,
+        11,
+        0,
+        0
+      ],
+      "decoded_bytes": 8230
+    }
+  ],
+  "expected": [
+    {
+      "name": "资料/",
+      "path": "expected/0.bin",
+      "size": 0
+    },
+    {
+      "name": "资料/data.bin",
+      "path": "expected/1.bin",
+      "size": 8193
+    },
+    {
+      "name": "empty.txt",
+      "path": "expected/2.bin",
+      "size": 0
+    },
+    {
+      "name": "hello.txt",
+      "path": "expected/3.bin",
+      "size": 37
+    }
+  ]
+}

@@ -12,12 +12,12 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'windows-build-tools.ps1')
 if ([string]::IsNullOrWhiteSpace($SigningKeyPath)) {
-    $SigningKeyPath = Join-Path $env:USERPROFILE '.nxtools-release-keys\nxtools-next-release.pem'
+    $SigningKeyPath = 'D:\NxTools-private-release-keys\nxtools-next-release.pem'
 }
 $SigningKeyPath = [IO.Path]::GetFullPath($SigningKeyPath)
 $ledgerPath = $SigningKeyPath + '.release-sequence.json'
 $packageDirectory = Join-Path $root 'artifacts\win-x64'
-$installerPath = Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.0.exe'
+$installerPath = Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.2.exe'
 if (-not (Test-Path -LiteralPath $SigningKeyPath -PathType Leaf)) {
     throw "Existing release PEM not found: $SigningKeyPath. See PACKAGING.md; do not generate a replacement key."
 }

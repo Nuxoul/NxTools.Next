@@ -1,0 +1,26 @@
+﻿{
+    "fail":  0,
+    "run_count":  2,
+    "list_count":  2,
+    "run_exit":  0,
+    "run_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-handoff.log",
+    "pass":  2,
+    "list_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-handoff-list.log",
+    "selection":  [
+                      "test",
+                      "--locked",
+                      "--offline",
+                      "-p",
+                      "nxtools-desktop",
+                      "--bin",
+                      "nxtools-desktop",
+                      "task_window_handoff_"
+                  ],
+    "filter":  "task_window_handoff_",
+    "target":  "bin:nxtools-desktop",
+    "list_exit":  0,
+    "expected_count":  0,
+    "package":  "nxtools-desktop",
+    "skip":  0,
+    "not_run":  0
+}

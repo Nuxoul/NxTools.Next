@@ -201,6 +201,25 @@ impl OperationForm {
                             .accessibility_label("语义压缩等级")
                             .disabled(busy),
                     ),
+            )
+            .child(
+                Field::new()
+                    .col_span(2)
+                    .visible(draft.format == ArchiveCreateFormat::Zip)
+                    .description(
+                        "Windows x64；仅 Store / Deflate，不支持密码。分卷需容纳完整自解压前缀。",
+                    )
+                    .child(
+                        Checkbox::new("archive-self-extracting")
+                            .debug_selector(|| "archive-self-extracting".into())
+                            .label("创建自解压 ZIP（EXE）")
+                            .with_size(Size::Small)
+                            .checked(draft.self_extracting)
+                            .disabled(busy)
+                            .on_change(cx.listener(|this, value, window, cx| {
+                                this.self_extracting(*value, window, cx);
+                            })),
+                    ),
             );
         let password_open = self.space.password_open
             || !self.password.read(cx).value().is_empty()

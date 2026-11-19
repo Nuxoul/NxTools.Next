@@ -382,6 +382,7 @@ fn typed_request(case: CreateCase, paths: Vec<String>, destination: String) -> A
             test_after_create: true,
             name: case.output.into(),
             volume_bytes: case.volume_bytes,
+            self_extracting: false,
         }),
         modify: None,
         readmission: None,
@@ -423,6 +424,7 @@ fn worker_request(case: CreateCase, path: String) -> WorkerRequest {
                 .into(),
                 strip_single_root: tree.strip_single_root,
                 exclude_patterns: tree.exclude_patterns,
+                self_extracting: false,
             });
         }
         ArchiveJobFormat::SevenZ => {

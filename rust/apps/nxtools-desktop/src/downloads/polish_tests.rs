@@ -392,6 +392,7 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -482,7 +483,7 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
         let focused = surface.update(|window, _| {
             gpui_kit::base::test_support::snapshots(window)
                 .into_iter()
-                .any(|node| node.label() == Some("展开分段详情") && node.focused() == Some(true))
+                .any(|node| node.label() == Some("展开详情") && node.focused() == Some(true))
         });
         if focused {
             break;
@@ -495,7 +496,7 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
     assert!(
         surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)
             .into_iter()
-            .any(|node| node.label() == Some("展开分段详情") && node.focused() == Some(true))),
+            .any(|node| node.label() == Some("展开详情") && node.focused() == Some(true))),
         "original disclosure reached through actual Tab order"
     );
     surface.simulate_event(gpui_kit::KeyDownEvent {
@@ -513,7 +514,10 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
     surface.run_until_parked();
     assert!(cx.read(|cx| task_view.read(cx).details_expanded));
     assert_eq!(cx.read(|cx| application.read(cx).task_windows.len()), 1);
-    surface.simulate_resize(size(px(440.0), px(280.0)));
+    surface.simulate_resize(download_task_window_size_for_details(
+        DownloadWindowPhase::Progress,
+        true,
+    ));
     surface.refresh().expect("expanded unchanged budget");
     let capabilities = surface
         .debug_bounds("download-window-progress-capabilities")
@@ -547,7 +551,7 @@ fn polished_progress_disclosure_keyup_reuses_the_task_window(cx: &mut TestAppCon
             .expect("shell")
             .size
             .height,
-        px(280.0)
+        px(TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT)
     );
     let cancel = surface
         .debug_bounds("download-window-cancel")
@@ -993,6 +997,7 @@ fn collapsed_task_completion_changes_content_without_native_resize(cx: &mut Test
                 headers: vec![],
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -1313,16 +1318,7 @@ fn auxiliary_shutdown_readable_consequence_and_pending_actions(cx: &mut TestAppC
     cx.update(gpui_kit::init);
     let (application, directory, endpoint) = window_fixture(cx);
     endpoint.set_connected_for_contract_test(true);
-    let task_id = DownloadTaskId::new();
-    application.update(cx, |application, cx| {
-        application
-            .completion_actions
-            .set_shutdown_armed(task_id, true);
-        let transition = application
-            .completion_actions
-            .evaluate_shutdown([(task_id, DownloadStatus::Completed)], Instant::now());
-        application.apply_shutdown_transition(transition, cx);
-    });
+    super::tests::b5_complete_original_task_for_test(&application, cx);
     cx.run_until_parked();
     let handle = cx.read(|cx| {
         application
@@ -1360,6 +1356,17 @@ fn auxiliary_shutdown_readable_consequence_and_pending_actions(cx: &mut TestAppC
     let now = surface
         .debug_bounds("download-shutdown-danger-now-action")
         .expect("now");
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        assert!(
+            !matches!(
+                envelope.message,
+                nxtools_protocol::Message::PlatformCommand(
+                    PlatformCommand::ShutdownSystem(_) | PlatformCommand::SuspendSystem(_)
+                )
+            ),
+            "successful completion alone must not dispatch a power action before countdown execution"
+        );
+    }
     surface.simulate_click(now.center(), Modifiers::default());
     surface.run_until_parked();
     let envelope = endpoint
@@ -1408,6 +1415,7 @@ fn auxiliary_delete_long_path_and_consequence_keep_cancel_presentation_only(
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -2382,11 +2390,12 @@ fn queue05_task_uses_official_xsmall_aggregate_progress(cx: &mut TestAppContext)
     assert!(
         nodes
             .iter()
-            .any(|node| node.role() == Some(gpui_kit::Role::CheckBox)
+            .any(|node| node.role() == Some(gpui_kit::Role::Button)
+                && node.label() == Some("下载选项")
                 && node
                     .path()
                     .contains(&gpui_kit::ElementId::from("download-task-window-toolbar"))),
-        "real Checkbox under actual Toolbar"
+        "real Options Button under actual Toolbar"
     );
     assert!(
         nodes
@@ -2403,7 +2412,8 @@ fn queue05_task_uses_official_xsmall_aggregate_progress(cx: &mut TestAppContext)
             gpui_kit::base::test_support::snapshots(window)
                 .into_iter()
                 .any(|node| {
-                    node.role() == Some(gpui_kit::Role::CheckBox)
+                    node.role() == Some(gpui_kit::Role::Button)
+                        && node.label() == Some("下载选项")
                         && node.focused() == Some(true)
                         && node
                             .path()
@@ -2421,12 +2431,13 @@ fn queue05_task_uses_official_xsmall_aggregate_progress(cx: &mut TestAppContext)
     assert!(
         surface.update(|window, _| gpui_kit::base::test_support::snapshots(window)
             .into_iter()
-            .any(|node| node.role() == Some(gpui_kit::Role::CheckBox)
+            .any(|node| node.role() == Some(gpui_kit::Role::Button)
+                && node.label() == Some("下载选项")
                 && node.focused() == Some(true)
                 && node
                     .path()
                     .contains(&gpui_kit::ElementId::from("download-task-window-toolbar")))),
-        "original Toolbar checkbox has real focus"
+        "original Toolbar Options Button has real focus"
     );
     let first = surface
         .update(|window, cx| window.focused(cx))
@@ -2784,6 +2795,7 @@ fn download_monitor_footer_controls_are_vertically_centered(cx: &mut TestAppCont
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(8),
                     speed_limit_bytes_per_second: None,
@@ -2845,7 +2857,7 @@ fn download_monitor_footer_controls_are_vertically_centered(cx: &mut TestAppCont
             .expect("fixed footer");
         assert_eq!(footer.size.height, px(44.0));
         for selector in [
-            "download-window-shutdown-arm-button",
+            "download-window-options",
             if downloading {
                 "download-window-pause"
             } else {
@@ -2892,11 +2904,13 @@ fn download_monitor_capabilities_distinguish_active_connections_from_total_segme
         active_connections: 8,
         segments: (0..11)
             .map(|segment_index| nxtools_download::DownloadSegmentProgress {
+                start_byte: None,
                 segment_index,
                 downloaded_bytes: if segment_index < 3 { 1024 } else { 0 },
                 total_bytes: Some(1024),
             })
             .collect(),
+        finishing: None,
     };
     let label = super::task_window::task_window_capabilities(
         "支持续传",

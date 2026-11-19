@@ -1,6 +1,7 @@
 /target/
 /artifacts/
 /.diagnostics/
+/.trellis/tasks/**/evidence/
 /.pipeline/
 /target-ui-check/
 **/bin/

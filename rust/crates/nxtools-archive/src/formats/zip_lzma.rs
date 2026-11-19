@@ -2,7 +2,7 @@
 use crate::{ArchiveError, OperationControl, ResourceLimits, Result};
 use std::io::{Read, Take};
 
-pub(super) struct Lzma<R: Read> {
+pub(crate) struct Lzma<R: Read> {
     input: Take<R>,
     decoder: lzma_rust2::LzmaStream,
     buffer: [u8; 8192],
@@ -13,18 +13,37 @@ pub(super) struct Lzma<R: Read> {
 }
 impl<R: Read> Lzma<R> {
     pub(super) fn new(
+        input: Take<R>,
+        size: u64,
+        flags: u16,
+        limits: &ResourceLimits,
+        control: OperationControl,
+    ) -> Result<Self> {
+        Self::framed(input, size, flags, limits, control, true)
+    }
+    #[cfg(feature = "isolated-codecs")]
+    pub(crate) fn egg(
+        input: Take<R>,
+        size: u64,
+        limits: &ResourceLimits,
+        control: OperationControl,
+    ) -> Result<Self> {
+        Self::framed(input, size, 0, limits, control, false)
+    }
+    fn framed(
         mut input: Take<R>,
         size: u64,
         flags: u16,
         limits: &ResourceLimits,
         control: OperationControl,
+        zip_properties_size: bool,
     ) -> Result<Self> {
         control.checkpoint()?;
         let mut header = [0; 9];
         input
             .read_exact(&mut header)
             .map_err(super::zip::payload_error)?;
-        if u16::from_le_bytes([header[2], header[3]]) != 5 {
+        if zip_properties_size && u16::from_le_bytes([header[2], header[3]]) != 5 {
             return Err(ArchiveError::UnsupportedMethod);
         }
         let dictionary = u32::from_le_bytes(header[5..9].try_into().expect("fixed dictionary"));
@@ -56,7 +75,7 @@ impl<R: Read> Lzma<R> {
             control,
         })
     }
-    pub(super) fn consumed(&self) -> u64 {
+    pub(crate) fn consumed(&self) -> u64 {
         9 + self.decoder.total_in() - self.decoder.unused_input().len() as u64
     }
 }

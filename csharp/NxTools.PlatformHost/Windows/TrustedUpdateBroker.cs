@@ -289,7 +289,7 @@ internal static class TrustedUpdateBroker
         string? pipeName = null, TimeSpan? handshakeTimeout = null, TimeSpan? readTimeout = null)
     {
         var transaction = new TrustedUpdateTransaction(Store, Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64),
-            new NativeDeployment(log), log);
+            new NativeDeployment(log), log, Convert.FromBase64String(LegacyUpdateTrust.PublicKeySpkiBase64));
         if (recover is null) await transaction.RecoverAsync(Guid.NewGuid(), CancellationToken.None);
         else await recover();
         if (cancellationToken.IsCancellationRequested) return null;

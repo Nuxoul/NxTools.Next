@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/11-13-browser-handoff-lifecycle/prd.md","reason":"Acceptance at public browser, durable engine and GPUI boundaries"}
+{"file":".trellis/tasks/11-13-browser-handoff-lifecycle/design.md","reason":"Controlled lifecycle and external auto-resolution contracts"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Real SQLite, HTTP and admission regression"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Original window, generation, lease and cancellation checks"}
+{"file":".trellis/spec/shared/verification.md","reason":"Serial Cargo memory constraints and relevant source/native evidence levels"}

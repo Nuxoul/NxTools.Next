@@ -2465,19 +2465,28 @@ impl ArchiveApplication {
     ) {
         self.open_form(None, Some((path, selection, None, None)), None, cx);
     }
-    /// Root drop: the receiver already created the archive-named folder, so the whole archive is
-    /// extracted directly into it through the ordinary job, with the user's conflict/MOTW policy.
+    /// The receiver-created folder is filled by the original ordinary extraction job.
     pub(in crate::archive) fn extract_dropped(
         &mut self,
         drop: crate::archive::browser::LocatedDrop,
         cx: &mut Context<Self>,
     ) {
+        let operation = drop.operation;
+        let selected_count = drop
+            .selection
+            .as_ref()
+            .map(|selection| selection.ordinals.len());
         let mut draft = crate::archive::draft::ExtractDraft::new(&self.settings, drop.source, None);
         draft.destination = drop.destination;
         draft.strategy = nxtools_core::archive::ArchiveDestination::Here;
         let submitted = draft.request(&self.settings).and_then(|mut request| {
             request.codepage = drop.codepage;
-            self.submit_job(
+            request.extract.as_mut().expect("extract options").selection = drop.selection;
+            request
+                .validate()
+                .map_err(|_| "拖出选区已失效或超过任务传输限制，请刷新后重试。".to_owned())?;
+            self.submit_job_with_id(
+                operation,
                 request,
                 FormCompletion {
                     keep_open: self.settings.keep_extract_progress_open,
@@ -2488,8 +2497,11 @@ impl ArchiveApplication {
         });
         tracing::info!(
             event = "archive.drop_extract.submitted",
+            correlation_id = %operation,
+            job_id = ?submitted.as_ref().ok(),
+            selected_count,
             success = submitted.is_ok(),
-            "archive root drop extraction"
+            "archive drop extraction"
         );
         if let Err(message) = submitted
             && let Some(center) = crate::notifications::current(cx)
@@ -2672,6 +2684,7 @@ impl ArchiveApplication {
                     generation,
                 },
             );
+            let _ = window.update(cx, |_, window, _| window.activate_window());
             if let Some(origin) = modify_origin {
                 self.jobs.edit_forms.insert(id, origin);
             }

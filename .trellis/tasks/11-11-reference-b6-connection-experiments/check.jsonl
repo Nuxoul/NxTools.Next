@@ -1,0 +1,9 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Nonzero LIST then identical RUN, actual RED/prerequisite distinction, one Cargo lane and exact evidence"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Original HTTP/engine/resolution/storage/rate/artifact contract preservation"}
+{"file":".trellis/spec/nxtools-network/backend/quality-guidelines.md","reason":"Actual immutable route/proxy/connector/expiry/cancel checks, not external proxy claims"}
+{"file":".trellis/spec/nxtools-download/backend/server-information.md","reason":"Same-response metadata without extra GET/Ping or sensitive diagnostics"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Deferred original entity/window/input/close ownership and B4/B5 preservation"}
+{"file":".trellis/tasks/11-11-reference-b5-completion-intentions/coordinator-acceptance.md","reason":"Read-only accepted completion/source-round/action/Exit baseline"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/prd.md","reason":"Independent B6 boundaries, read-only UIA/release materials and no B7"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/reference-review.md","reason":"Actual probe/no-op receipt, adaptive checkpoint, locked family-race and proxy boundaries"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/design.md","reason":"Per-REF frozen AB/BA/AB trials, output/resource/cost thresholds and independent decisions"}

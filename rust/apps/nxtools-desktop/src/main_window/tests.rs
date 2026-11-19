@@ -218,6 +218,7 @@ fn download_row_transfer_uses_live_values_only_for_active_tasks() {
         bytes_per_second: 5 * 1024 * 1024,
         active_connections: 4,
         segments: Vec::new(),
+        finishing: None,
     };
     let active = super::download_row_transfer_presentation(
         DownloadStatus::Downloading,
@@ -301,6 +302,39 @@ fn titlebar_global_settings_click_keeps_its_controller_alive(cx: &mut TestAppCon
     let settings = window
         .debug_bounds("global-network-settings")
         .expect("global settings trigger");
+    assert!(window.debug_bounds("global-integration-setup-button").is_none());
+    let about = window
+        .debug_bounds("global-about-entry")
+        .expect("About replaces the integration setup entry");
+    for _ in 0..2 {
+        window.simulate_click(about.center(), Modifiers::default());
+        window.run_until_parked();
+    }
+    let about_window = window.update(|source, cx| {
+        let other: Vec<_> = cx
+            .windows()
+            .into_iter()
+            .filter(|handle| handle.window_id() != source.window_handle().window_id())
+            .collect();
+        assert_eq!(other.len(), 1, "About is a single auxiliary window");
+        other[0]
+    });
+    window.update(|_, cx| {
+        about_window
+            .update(cx, |_, window, _| window.remove_window())
+            .expect("close About");
+    });
+    window.simulate_click(about.center(), Modifiers::default());
+    window.run_until_parked();
+    window.update(|source, cx| {
+        let replacement = cx
+            .windows()
+            .into_iter()
+            .find(|handle| handle.window_id() != source.window_handle().window_id())
+            .expect("About can reopen after close");
+        assert_ne!(replacement.window_id(), about_window.window_id());
+    });
+
     window.simulate_click(settings.center(), Modifiers::default());
     window.run_until_parked();
 
@@ -582,6 +616,48 @@ fn foundation_tools_workspace_keeps_continuous_bounds_at_minimum_size(cx: &mut T
         window.read(|cx| main.read(cx).tool_settings_windows.len()),
         1
     );
+}
+
+#[gpui_kit::test]
+fn markdown_reader_tool_configures_without_opening_preview(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let mut main = MainWindow::new(
+            gpui_kit::WeakEntity::new_invalid(),
+            gpui_kit::WeakEntity::new_invalid(),
+            gpui_kit::WeakEntity::new_invalid(),
+            MainWindowShellContext {
+                settings: None,
+                platform: None,
+                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+            },
+            notifications,
+            window,
+            cx,
+        );
+        main.shell.activate(MainModule::Tools);
+        main
+    });
+    surface.simulate_resize(size(px(1060.0), px(540.0)));
+    surface.refresh().expect("Other Tools workspace");
+    assert!(surface.debug_bounds("tool-markdown-reader-status-dot").is_some());
+    assert!(surface.debug_bounds("tool-markdown-reader-open").is_none());
+    let configure = surface.debug_bounds("tool-markdown-reader-configure").expect("Configure Markdown reader").center();
+    let initial = surface.windows();
+    surface.simulate_click(configure, Modifiers::default());
+    surface.run_until_parked();
+    let settings = surface.windows().into_iter().find(|id| !initial.contains(id)).expect("configuration window");
+    surface.update(|_, cx| settings.update(cx, |root, _, cx| {
+        let root = root.downcast::<gpui_kit::base::Root>().expect("feature window root");
+        assert!(root.read(cx).view().clone().downcast::<crate::tools::markdown_reader::SettingsView>().is_ok());
+    }).unwrap());
+    surface.simulate_click(configure, Modifiers::default());
+    surface.run_until_parked();
+    assert_eq!(surface.windows().len(), initial.len() + 1);
+    assert!(surface.windows().contains(&settings));
+    assert!(surface.read(crate::tools::markdown_reader::enabled));
 }
 
 #[gpui_kit::test]
@@ -3481,6 +3557,7 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
         start_on_login_silently: false,
         close_to_tray: true,
         theme: nxtools_core::ThemePreference::Dark,
+        ui_font_family: nxtools_core::default_ui_font_family(),
         notification_position: Default::default(),
         notification_duration_seconds: nxtools_core::default_notification_duration(),
     }));
@@ -3977,6 +4054,7 @@ fn download_search_sort_and_context_selection_follow_reference_semantics() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -4001,6 +4079,7 @@ fn download_search_sort_and_context_selection_follow_reference_semantics() {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -4327,6 +4406,7 @@ fn completed_download_context_menu_renders_only_terminal_actions(cx: &mut TestAp
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -4779,6 +4859,7 @@ fn production_download_row_renders_resolved_shell_icon_without_generic_tile(
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -4878,6 +4959,24 @@ fn production_download_row_renders_resolved_shell_icon_without_generic_tile(
             .is_none(),
         "a resolved Shell icon must replace the generic fallback"
     );
+    for (name, corrupt) in [("missing.png", false), ("corrupt.png", true)] {
+        let missing_path = icon_fixture.path().join(name);
+        if corrupt {
+            std::fs::write(&missing_path, b"not a PNG").expect("corrupt image fixture");
+        }
+        window.update(|_, cx| {
+            downloads.update(cx, |application, cx| {
+                application.replace_task_icon_for_test(task_id, missing_path, cx);
+            });
+        });
+        window.refresh().expect("start failed image load");
+        window.run_until_parked();
+        window.refresh().expect("render failed image fallback");
+        let fallback = window
+            .debug_bounds("download-task-image-load-fallback")
+            .expect("unreadable cached PNG renders the original File icon");
+        assert_eq!(fallback.size, size(px(30.0), px(30.0)));
+    }
     let row_source = include_str!("../main_window/download_page.rs")
         .split("fn download_task_row(")
         .nth(1)
@@ -4917,6 +5016,7 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(4),
                 speed_limit_bytes_per_second: None,
@@ -4941,6 +5041,7 @@ fn production_download_rows_and_detail_remain_coherent_at_compact_width(cx: &mut
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(4),
                 speed_limit_bytes_per_second: None,
@@ -5465,6 +5566,7 @@ async fn production_download_batch_toolbar_appears_for_multi_select_and_dispatch
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(2),
         speed_limit_bytes_per_second: None,
@@ -5714,6 +5816,7 @@ fn double_clicking_a_download_row_reuses_one_deferred_task_window(cx: &mut TestA
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -6430,6 +6533,7 @@ fn desktop_snapshot_projection_benchmark_uses_1000_and_10000_task_fixtures() {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -6495,7 +6599,6 @@ fn quick_settings_switches_preserve_single_deferred_section_save(cx: &mut TestAp
     let mut config = AppConfig::default();
     config.quick_launch.auto_quick_switch = false;
     config.quick_launch.file_dialog_search = false;
-    config.quick_launch.suppress_in_exclusive_fullscreen = false;
     config
         .save_to(&config_path)
         .expect("seed temporary configuration");
@@ -6539,12 +6642,6 @@ fn quick_settings_switches_preserve_single_deferred_section_save(cx: &mut TestAp
     window.simulate_resize(size(px(1060.0), px(650.0)));
     for (page, selector, label, index) in [
         (
-            QuickLaunchSettingsPage::General,
-            "quick-launch-exclusive-fullscreen-suppression",
-            "全屏游戏中暂不呼出",
-            2,
-        ),
-        (
             QuickLaunchSettingsPage::Context,
             "quick-launch-auto-quick-switch",
             "自动快速切换",
@@ -6579,11 +6676,7 @@ fn quick_settings_switches_preserve_single_deferred_section_save(cx: &mut TestAp
                 .refresh()
                 .expect("deferred application update and repaint");
             let state = window.read(|cx| application.read(cx).settings());
-            let values = [
-                state.auto_quick_switch,
-                state.file_dialog_search,
-                state.suppress_in_exclusive_fullscreen,
-            ];
+            let values = [state.auto_quick_switch, state.file_dialog_search];
             assert_eq!(
                 values[index], requested,
                 "controlled requested value reaches original owner"
@@ -6593,7 +6686,6 @@ fn quick_settings_switches_preserve_single_deferred_section_save(cx: &mut TestAp
             let values = [
                 disk.quick_launch.auto_quick_switch,
                 disk.quick_launch.file_dialog_search,
-                disk.quick_launch.suppress_in_exclusive_fullscreen,
             ];
             assert_eq!(
                 values[index], requested,
@@ -6618,7 +6710,6 @@ fn quick_settings_switches_preserve_single_deferred_section_save(cx: &mut TestAp
             let values = [
                 command.auto_quick_switch_enabled,
                 command.file_dialog_search_enabled,
-                command.suppress_in_exclusive_fullscreen,
             ];
             assert_eq!(
                 values[index], requested,
@@ -6631,7 +6722,6 @@ fn quick_settings_switches_preserve_single_deferred_section_save(cx: &mut TestAp
         }
     }
 }
-
 fn kit_download_control_bounds(
     window: &mut VisualTestContext,
     id: &'static str,
@@ -6753,6 +6843,127 @@ fn extensions_workspace_switch_preserves_manager_and_draft_without_tools_route(
         );
     });
     assert!(quick.read_with(cx, |app, _| app.settings().custom_commands.is_empty()));
+}
+
+#[gpui_kit::test]
+fn extension_settings_failure_report_opens_main_workspace_draft(cx: &mut TestAppContext) {
+    struct ReportHost;
+    impl gpui_kit::Render for ReportHost {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<Self>,
+        ) -> impl gpui_kit::IntoElement {
+            gpui_kit::div()
+        }
+    }
+    cx.update(gpui_kit::init);
+    let temp = tempfile::tempdir().expect("owned");
+    let path = temp.path().join("config.json");
+    let mut config = AppConfig::default();
+    let preview = nxtools_extensions::ImportPreview::from_json(
+        br#"{
+        "schema_version":1,"id":"fixture.report","name":"Report fixture","version":"1",
+        "settings":[{"key":"name","title":"Report setting","type":"text","default":""}],
+        "handlers":[{"id":"web","title":"Web","feature":"tools","entry":"action",
+          "action":{"type":"website","url_template":"https://fixture.test"}}]}
+    "#,
+    )
+    .expect("manifest");
+    config
+        .extensions
+        .install(preview, "owned".into(), false)
+        .expect("install");
+    config.save_to(&path).expect("config");
+    let original = std::fs::read(&path).expect("before");
+    let (platform, _endpoint) = platform_bridge(8);
+    let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+    let notifications = cx.new(|_| NotificationCenter::default());
+    let quick = cx.new(|_| {
+        QuickLaunchApplication::new(
+            FinderCatalog::open(temp.path().join("history.db"), &[]).expect("catalog"),
+            Rc::new(platform),
+            Rc::new(indexer),
+            config,
+            path.clone(),
+            temp.path().join("logs"),
+            notifications.clone(),
+        )
+    });
+    let quick_handle = quick.downgrade();
+    let slot = Rc::new(RefCell::new(None));
+    let mounted = slot.clone();
+    let (_, main_surface) = cx.add_window_view(move |window, cx| {
+        window.resize(size(px(920.0), px(480.0)));
+        let main = cx.new(|cx| {
+            let mut main = MainWindow::new(
+                gpui_kit::WeakEntity::new_invalid(),
+                quick_handle,
+                gpui_kit::WeakEntity::new_invalid(),
+                MainWindowShellContext {
+                    settings: None,
+                    platform: None,
+                    system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            );
+            main.shell.activate(MainModule::Tools);
+            main
+        });
+        *mounted.borrow_mut() = Some(main.clone());
+        gpui_kit::base::Root::new(main, window, cx)
+    });
+    let main = slot.borrow().clone().expect("main");
+    let main_handle = main_surface.update(|window, _| window.window_handle());
+    let owner = main.read_with(main_surface, |main, _| {
+        main.extension_application.clone().expect("extensions")
+    });
+    let id = owner.update(main_surface, |app, _| {
+        app.seed_manual_settings_failure("fixture.report")
+    });
+    let (_, report) = cx.add_window_view(|window, cx| {
+        let content = cx.new(|_| ReportHost);
+        gpui_kit::base::Root::new(content, window, cx)
+    });
+    report.simulate_resize(size(px(300.0), px(440.0)));
+    report.update(|window, cx| {
+        crate::extensions::manual_actions::show_run(owner, id, None, window, cx);
+        window.draw(cx).clear(cx);
+    });
+    report.run_until_parked();
+    report.update(|window, cx| window.draw(cx).clear(cx));
+    let button = report
+        .debug_bounds("extension-feedback-open-settings")
+        .expect("recovery button");
+    assert!(
+        button.left() >= px(0.0)
+            && button.right() <= px(300.0)
+            && button.top() >= px(0.0)
+            && button.bottom() <= px(440.0),
+        "the recovery control must fit the real clipboard-size viewport: {button:?}"
+    );
+    report.simulate_click(button.center(), Modifiers::default());
+    report.run_until_parked();
+    report.update(|_, cx| {
+        main_handle
+            .update(cx, |_, window, cx| {
+                window.draw(cx).clear(cx);
+                assert_eq!(main.read(cx).shell.active_module(), MainModule::Extensions);
+                assert!(
+                    gpui_kit::base::test_support::snapshots(window)
+                        .iter()
+                        .any(|node| node.label() == Some("Report setting")
+                            && node.role() == Some(gpui_kit::Role::TextInput))
+                );
+            })
+            .expect("original main")
+    });
+    assert_eq!(
+        std::fs::read(path).expect("navigation does not save"),
+        original
+    );
 }
 
 #[gpui_kit::test]

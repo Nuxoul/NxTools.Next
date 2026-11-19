@@ -23,17 +23,17 @@ use crate::{
     ArtifactAllocation, BrowserBlob, DOWNLOAD_COMMAND_PROTOCOL_VERSION, DownloadBatchAction,
     DownloadBatchItemResult, DownloadCommand, DownloadCommandEnvelope, DownloadCommandOutcome,
     DownloadCommandResult, DownloadEvent, DownloadEventEnvelope, DownloadEventSequencer,
-    DownloadFault, DownloadFaultCode, DownloadHttpPolicy, DownloadHttpPolicyError,
-    DownloadOrganizationPolicy, DownloadOrganizationPolicyError, DownloadProbe, DownloadProgress,
-    DownloadRateLimitError, DownloadRateLimiter, DownloadRequest, DownloadRequestError,
-    DownloadRequestMedia, DownloadSegment, DownloadSegmentError, DownloadSegmentProgress,
-    DownloadSegmentState, DownloadSegmentTransferControl, DownloadSegmentTransferOutcome,
-    DownloadStatus, DownloadStorageCapacityError, DownloadStorageError, DownloadStorageRequirement,
-    DownloadSubmitMode, DownloadTask, DownloadTaskAction, DownloadTaskError, DownloadTaskId,
-    DownloadTransferContext, DownloadTransferControl, DownloadWeekday, FfmpegInstallControl,
-    FfmpegInstallOperation, HttpDownloadClient, HttpDownloadError, NetworkPolicy,
-    NetworkPolicyError, RequestOrigin, SegmentedArtifact, SqliteDownloadStore, TransferPlan,
-    TransferPlanError, TransferProtocol,
+    DownloadFault, DownloadFaultCode, DownloadFinishingProgress, DownloadFinishingStage,
+    DownloadHttpPolicy, DownloadHttpPolicyError, DownloadOrganizationPolicy,
+    DownloadOrganizationPolicyError, DownloadProbe, DownloadProgress, DownloadRateLimitError,
+    DownloadRateLimiter, DownloadRequest, DownloadRequestError, DownloadRequestMedia,
+    DownloadSegment, DownloadSegmentError, DownloadSegmentProgress, DownloadSegmentState,
+    DownloadSegmentTransferControl, DownloadStatus, DownloadStorageCapacityError,
+    DownloadStorageError, DownloadStorageRequirement, DownloadSubmitMode, DownloadTask,
+    DownloadTaskAction, DownloadTaskError, DownloadTaskId, DownloadTransferContext,
+    DownloadTransferControl, DownloadWeekday, FfmpegInstallControl, FfmpegInstallOperation,
+    HttpDownloadClient, HttpDownloadError, NetworkPolicy, NetworkPolicyError, RequestOrigin,
+    SegmentedArtifact, SqliteDownloadStore, TransferPlan, TransferPlanError, TransferProtocol,
 };
 
 static DOWNLOAD_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
@@ -61,6 +61,7 @@ type OperationHttpClients = HashMap<(u64, String, bool), (HttpDownloadClient, In
 pub(crate) struct DownloadEngineInner {
     http_template: HttpDownloadClient,
     http_clients: Mutex<OperationHttpClients>,
+    connection_ceilings: Mutex<connection_ceiling::ConnectionCeilings>,
     network_policy: NetworkPolicy,
     download_http_policy: DownloadHttpPolicy,
     download_organization_policy: DownloadOrganizationPolicy,
@@ -72,7 +73,11 @@ pub(crate) struct DownloadEngineInner {
     capacity_probe: Arc<dyn StorageCapacityProbe>,
     tasks: Mutex<HashMap<DownloadTaskId, EngineTaskState>>,
     resolution: Mutex<resolution::ResolutionState>,
-    scheduler_gate: Mutex<()>,
+    scheduler_gate: Mutex<HashMap<String, u64>>,
+    draining: AtomicBool,
+    work_revision: AtomicU64,
+    workers: Mutex<tokio::task::JoinSet<()>>,
+    worker_failure: AtomicBool,
     schedule_wake_generation: AtomicU64,
     daily_schedule_wake_generation: AtomicU64,
     event_sender: async_channel::Sender<DownloadEventEnvelope>,
@@ -119,6 +124,7 @@ pub enum BrowserDownloadDialogSource {
         blob: BrowserBlob,
         save_directory: PathBuf,
     },
+    ControlledDownload(Box<DownloadRequest>),
 }
 
 #[derive(Clone)]
@@ -128,6 +134,9 @@ struct EngineTaskState {
     control: Option<DownloadTransferControl>,
     last_progress_event: Option<Instant>,
     transfer_rate: Option<TransferRateSampler>,
+    paused_url_replacement: Option<paused_url::PausedUrlReplacement>,
+    accepted_revision: u64,
+    completion_batch_id: Option<uuid::Uuid>,
 }
 
 impl EngineTaskState {
@@ -152,22 +161,25 @@ const PROGRESS_EVENT_MIN_INTERVAL: Duration = Duration::from_millis(100);
 /// How long a built HTTP client (with its warm connection pool) is reused for
 /// probes and transfers before the system proxy is re-read.
 const HTTP_CLIENT_REUSE_TTL: Duration = Duration::from_secs(30);
-const ADAPTIVE_SAMPLE_COUNT: usize = 5;
-const ADAPTIVE_STABILITY_PERCENT: u64 = 15;
-const ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT: u64 = 80;
-/// A transfer whose average speed stays below this share of the baseline for
-/// a full stability window shrinks back one segment at a time, down to the
-/// initial segment count.
-const ADAPTIVE_SHRINK_SPEED_SHARE_PERCENT: u64 = 60;
-const MIB: u64 = 1024 * 1024;
 
 mod browser;
+mod connection_ceiling;
+mod controlled_handoff;
 mod dash_runner;
 mod hls_runner;
+mod paused_url;
 mod projection;
 mod queue;
 mod resolution;
+pub(crate) mod segment_planner;
+mod segment_workers;
 mod segmented_runner;
+
+#[cfg(test)]
+mod connection_experiments;
+
+#[cfg(test)]
+mod fault_recovery;
 
 use browser::BrowserBlobImportRequest;
 use projection::snapshot_from_state;
@@ -176,175 +188,6 @@ pub use queue::daily_schedule_window_contains;
 pub(crate) use dash_runner::*;
 pub(crate) use hls_runner::*;
 pub(crate) use segmented_runner::*;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AdaptiveConnectionDecision {
-    Hold,
-    Grow,
-    Shrink,
-    DisabledAfterRetry,
-    DisabledForLowBenefit,
-}
-
-#[derive(Debug)]
-struct AdaptiveSegmentController {
-    max_segments: u16,
-    samples: VecDeque<u64>,
-    pending_evaluation: Option<(u64, u16, u16)>,
-    disabled: bool,
-    /// Baseline speed recorded right before the last growth batch; shrink
-    /// compares the current average against it.
-    growth_baseline: Option<(u64, u16)>,
-}
-
-impl AdaptiveSegmentController {
-    fn new(max_segments: u16, enabled: bool) -> Self {
-        Self {
-            max_segments,
-            samples: VecDeque::with_capacity(ADAPTIVE_SAMPLE_COUNT),
-            pending_evaluation: None,
-            disabled: !enabled || max_segments <= 1,
-            growth_baseline: None,
-        }
-    }
-
-    fn observe(
-        &mut self,
-        bytes_per_second: u64,
-        segment_count: u16,
-        initial_segment_count: u16,
-        retry_observed: bool,
-    ) -> AdaptiveConnectionDecision {
-        if self.disabled {
-            return AdaptiveConnectionDecision::Hold;
-        }
-        if retry_observed {
-            self.disabled = true;
-            self.samples.clear();
-            self.pending_evaluation = None;
-            return AdaptiveConnectionDecision::DisabledAfterRetry;
-        }
-        if bytes_per_second == 0 {
-            return AdaptiveConnectionDecision::Hold;
-        }
-        if let Some((_, _, target_segments)) = self.pending_evaluation
-            && segment_count < target_segments
-        {
-            self.samples.clear();
-            return AdaptiveConnectionDecision::Hold;
-        }
-        self.samples.push_back(bytes_per_second);
-        while self.samples.len() > ADAPTIVE_SAMPLE_COUNT {
-            self.samples.pop_front();
-        }
-        if self.samples.len() < ADAPTIVE_SAMPLE_COUNT || !adaptive_samples_are_stable(&self.samples)
-        {
-            return AdaptiveConnectionDecision::Hold;
-        }
-        let average = self.samples.iter().copied().sum::<u64>()
-            / u64::try_from(self.samples.len()).unwrap_or(1);
-        // Sample once and give shedding an already-grown plan priority over
-        // benefit failure or another growth batch. Neither may consume/clear
-        // the stable window before shrink inspects it.
-        if self.shrink_from_window(average, segment_count, initial_segment_count) {
-            self.samples.clear();
-            self.pending_evaluation = None;
-            return AdaptiveConnectionDecision::Shrink;
-        }
-        if let Some((baseline_speed, baseline_segments, target_segments)) = self.pending_evaluation
-        {
-            let baseline_segments = baseline_segments.max(1);
-            let added_segments = target_segments.saturating_sub(baseline_segments);
-            let required_gain_percent = u128::from(added_segments)
-                .saturating_mul(100)
-                .saturating_mul(u128::from(ADAPTIVE_MIN_PROPORTIONAL_GAIN_PERCENT))
-                / u128::from(baseline_segments)
-                / 100;
-            let required = u128::from(baseline_speed)
-                .saturating_mul(100_u128.saturating_add(required_gain_percent))
-                / 100;
-            if u128::from(average) < required {
-                self.disabled = true;
-                self.samples.clear();
-                self.pending_evaluation = None;
-                return AdaptiveConnectionDecision::DisabledForLowBenefit;
-            }
-            self.pending_evaluation = None;
-            self.samples.clear();
-            return AdaptiveConnectionDecision::Hold;
-        }
-        if segment_count >= self.max_segments {
-            // A resumed grown plan has no in-memory pre-growth history. Its
-            // first full stable window is the baseline for later slowdown.
-            if self.growth_baseline.is_none() && segment_count > initial_segment_count {
-                self.growth_baseline = Some((average, segment_count));
-                self.samples.clear();
-            }
-            return AdaptiveConnectionDecision::Hold;
-        }
-        let baseline_segments = segment_count.max(1);
-        self.growth_baseline = Some((average, baseline_segments));
-        self.pending_evaluation = Some((average, baseline_segments, baseline_segments));
-        self.samples.clear();
-        AdaptiveConnectionDecision::Grow
-    }
-
-    /// Read the window collected by observe; never feed a sample a second time.
-    fn shrink_from_window(
-        &self,
-        average: u64,
-        segment_count: u16,
-        initial_segment_count: u16,
-    ) -> bool {
-        if segment_count <= initial_segment_count || segment_count <= 1 {
-            return false;
-        }
-        let Some((baseline_speed, baseline_segments)) = self.growth_baseline else {
-            return false;
-        };
-        let baseline_segments = u128::from(baseline_segments.max(1));
-        let grown_segments = u128::from(segment_count.max(1));
-        // The baseline earned by baseline_segments is the reference; the
-        // per-segment fair share decides whether the extra segments still
-        // carry meaningful traffic.
-        let expected = u128::from(baseline_speed)
-            .saturating_mul(grown_segments)
-            .saturating_div(baseline_segments)
-            .saturating_mul(u128::from(ADAPTIVE_SHRINK_SPEED_SHARE_PERCENT))
-            / 100;
-        u128::from(average) < expected
-    }
-
-    fn confirm_growth_target(&mut self, target_segments: u16) {
-        let Some((baseline_speed, baseline_segments, _)) = self.pending_evaluation else {
-            return;
-        };
-        self.pending_evaluation = Some((
-            baseline_speed,
-            baseline_segments,
-            target_segments.max(baseline_segments),
-        ));
-        self.samples.clear();
-    }
-
-    fn cancel_growth(&mut self) {
-        self.pending_evaluation = None;
-        self.samples.clear();
-    }
-}
-
-fn adaptive_samples_are_stable(samples: &VecDeque<u64>) -> bool {
-    let Some(minimum) = samples.iter().copied().min() else {
-        return false;
-    };
-    let Some(maximum) = samples.iter().copied().max() else {
-        return false;
-    };
-    let average = samples.iter().copied().sum::<u64>() / u64::try_from(samples.len()).unwrap_or(1);
-    average > 0
-        && maximum.saturating_sub(minimum).saturating_mul(100)
-            <= average.saturating_mul(ADAPTIVE_STABILITY_PERCENT)
-}
 
 impl TransferRateSampler {
     const MIN_SAMPLE_INTERVAL: Duration = Duration::from_millis(500);
@@ -401,6 +244,27 @@ pub struct DownloadEngineTask {
     #[serde(default)]
     pub scheduled: bool,
 }
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadCompletionSnapshot {
+    pub generation: u64,
+    pub work_revision: u64,
+    pub queue_invalidations: HashMap<String, u64>,
+    pub tasks: Vec<DownloadCompletionTask>,
+    pub queues: Vec<crate::DownloadQueue>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DownloadCompletionTask {
+    pub task_id: DownloadTaskId,
+    pub status: DownloadStatus,
+    pub attempt: u64,
+    pub accepted_revision: u64,
+    pub queue_id: String,
+    pub intention: crate::DownloadCompletionIntention,
+    pub directory: Option<PathBuf>,
+    pub completion_batch_id: Option<uuid::Uuid>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DownloadScheduleMoment {
     pub weekday: DownloadWeekday,
@@ -611,6 +475,9 @@ impl DownloadEngine {
                     control: None,
                     last_progress_event: None,
                     transfer_rate: None,
+                    paused_url_replacement: None,
+                    completion_batch_id: None,
+                    accepted_revision: 0,
                 },
             );
         }
@@ -619,6 +486,7 @@ impl DownloadEngine {
         let engine = Self {
             inner: Arc::new(DownloadEngineInner {
                 http_template: http,
+                connection_ceilings: Mutex::new(connection_ceiling::ConnectionCeilings::default()),
                 http_clients: Mutex::new(HashMap::new()),
                 network_policy,
                 download_http_policy,
@@ -636,7 +504,11 @@ impl DownloadEngine {
                 capacity_probe,
                 tasks: Mutex::new(tasks),
                 resolution: Mutex::new(resolution::ResolutionState::default()),
-                scheduler_gate: Mutex::new(()),
+                scheduler_gate: Mutex::new(HashMap::new()),
+                draining: AtomicBool::new(false),
+                work_revision: AtomicU64::new(0),
+                workers: Mutex::new(tokio::task::JoinSet::new()),
+                worker_failure: AtomicBool::new(false),
                 schedule_wake_generation: AtomicU64::new(0),
                 daily_schedule_wake_generation: AtomicU64::new(0),
                 event_sender,
@@ -702,6 +574,126 @@ impl DownloadEngine {
     }
     pub fn session_generation(&self) -> u64 {
         self.inner.session_generation
+    }
+
+    /// One serialized view of accepted queue membership and task state.
+    pub fn completion_snapshot(&self) -> Result<DownloadCompletionSnapshot, DownloadEngineError> {
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        let tasks = self.inner.lock_tasks()?;
+        let queues = self.inner.store.load_queues()?;
+        let mut members = Vec::new();
+        for queue in &queues {
+            for task_id in self.inner.store.load_queue_order(&queue.id)? {
+                if let Some(state) = tasks.get(&task_id) {
+                    // Retry admission precedes dispatch when its queue is stopped.
+                    let status = if state.task.status() == DownloadStatus::Failed
+                        && self.inner.store.is_queue_task_eligible(task_id)?
+                    {
+                        DownloadStatus::Waiting
+                    } else {
+                        state.task.status()
+                    };
+                    members.push(DownloadCompletionTask {
+                        task_id,
+                        status,
+                        attempt: state.task.completion_attempt(),
+                        completion_batch_id: state.completion_batch_id,
+                        accepted_revision: state.accepted_revision,
+                        queue_id: queue.id.clone(),
+                        intention: state.task.completion_intention(),
+                        directory: if state.task.status() == DownloadStatus::Completed
+                            && state.transfer.final_committed
+                        {
+                            state
+                                .transfer
+                                .final_path
+                                .as_ref()
+                                .and_then(|path| path.parent().map(Path::to_path_buf))
+                        } else {
+                            None
+                        },
+                    });
+                }
+            }
+        }
+        Ok(DownloadCompletionSnapshot {
+            generation: self.inner.session_generation,
+            work_revision: self.inner.work_revision.load(Ordering::SeqCst),
+            queue_invalidations: _scheduler.clone(),
+            tasks: members,
+            queues,
+        })
+    }
+
+    /// Close new admissions, request resumable pauses and await all owned transfer workers.
+    pub fn shutdown_and_wait(&self) -> Result<(), DownloadEngineError> {
+        self.shutdown_and_wait_correlated(uuid::Uuid::new_v4())
+    }
+
+    pub fn shutdown_and_wait_correlated(
+        &self,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        let started = Instant::now();
+        {
+            let _scheduler = self
+                .inner
+                .scheduler_gate
+                .lock()
+                .map_err(|_| DownloadEngineError::LockPoisoned)?;
+            self.inner.draining.store(true, Ordering::SeqCst);
+            self.inner
+                .schedule_wake_generation
+                .fetch_add(1, Ordering::SeqCst);
+            self.inner
+                .daily_schedule_wake_generation
+                .fetch_add(1, Ordering::SeqCst);
+            let tasks = self.inner.lock_tasks()?;
+            for state in tasks.values() {
+                state.cancel_paused_url_candidate();
+                if let Some(control) = &state.control {
+                    control.pause();
+                }
+            }
+        }
+        info!(event = "download.engine.drain_started", %correlation_id,
+            generation = self.inner.session_generation, "download worker drain started");
+        let mut handles = std::mem::take(
+            &mut *self
+                .inner
+                .workers
+                .lock()
+                .map_err(|_| DownloadEngineError::LockPoisoned)?,
+        );
+        let count = handles.len();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        download_runtime()?.spawn(async move {
+            let mut failed = false;
+            while let Some(result) = handles.join_next().await {
+                failed |= result.is_err();
+            }
+            let _ = sender.send(failed);
+        });
+        let failed = receiver
+            .recv()
+            .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?;
+        if failed || self.inner.worker_failure.load(Ordering::SeqCst) {
+            self.inner.worker_failure.store(true, Ordering::SeqCst);
+            warn!(event = "download.engine.drain_failed", %correlation_id,
+                generation = self.inner.session_generation, workers = count,
+                elapsed_ms = started.elapsed().as_millis(), "owned download worker failed; all handles retired");
+            return Err(DownloadEngineError::Runtime(
+                "owned download worker failed".into(),
+            ));
+        }
+        info!(event = "download.engine.drain_completed", %correlation_id,
+            generation = self.inner.session_generation, workers = count,
+            elapsed_ms = started.elapsed().as_millis(), "download workers drained");
+        Ok(())
     }
 
     pub fn event_sequence(&self) -> u64 {
@@ -832,7 +824,6 @@ impl DownloadEngine {
         install_root: PathBuf,
         preserve_executable: Option<PathBuf>,
     ) -> Result<FfmpegInstallOperation, DownloadEngineError> {
-        let runtime = download_runtime()?;
         let network = self.inner.network_policy.snapshot()?;
         let network_proxy_mode = network.mode();
         let network_proxy_source = network.source();
@@ -853,19 +844,35 @@ impl DownloadEngine {
         let (progress_sender, progress) = async_channel::bounded(32);
         let (completion_sender, completion) = async_channel::bounded(1);
         let inner = self.inner.clone();
-        runtime.spawn(async move {
-            let result = crate::ffmpeg_install::run_ffmpeg_install(
-                correlation_id,
-                install_root,
-                preserve_executable,
-                control,
-                progress_sender,
-                network,
-            )
-            .await;
+        let cancel_control = control.clone();
+        if let Err(error) = self.inner.spawn_owned_worker(async move {
+            let result = {
+                let future = crate::ffmpeg_install::run_ffmpeg_install(
+                    correlation_id,
+                    install_root,
+                    preserve_executable,
+                    control,
+                    progress_sender,
+                    network,
+                );
+                tokio::pin!(future);
+                loop {
+                    tokio::select! {
+                        result = &mut future => break result,
+                        () = tokio::time::sleep(Duration::from_millis(10)) => {
+                            if inner.draining.load(Ordering::SeqCst) { cancel_control.cancel(); }
+                        }
+                    }
+                }
+            };
             inner.ffmpeg_install_active.store(false, Ordering::Release);
             let _ = completion_sender.send(result).await;
-        });
+        }) {
+            self.inner
+                .ffmpeg_install_active
+                .store(false, Ordering::Release);
+            return Err(error);
+        }
         Ok(FfmpegInstallOperation {
             correlation_id,
             network_proxy_mode,
@@ -965,6 +972,61 @@ impl DownloadEngine {
         Ok(())
     }
 
+    fn set_task_completion_intention(
+        &self,
+        task_id: DownloadTaskId,
+        intention: crate::DownloadCompletionIntention,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        let started_at = Instant::now();
+        info!(event = "download.completion_intention.started", %correlation_id,
+            task_id = %task_id.as_uuid(), generation = self.inner.session_generation,
+            action = ?intention.action, open_directory = intention.open_directory,
+            "task completion intention update started");
+        let saved = (|| {
+            let mut tasks = self.inner.lock_tasks()?;
+            let state = tasks
+                .get_mut(&task_id)
+                .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+            if matches!(
+                state.task.status(),
+                DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+            ) {
+                return Err(DownloadEngineError::InvalidAction {
+                    task_id,
+                    action: "set_completion_intention",
+                    status: state.task.status(),
+                });
+            }
+            let mut task = state.task.clone();
+            task.set_completion_intention(intention);
+            self.inner.store.save_task(&task)?;
+            state.task = task.clone();
+            Ok::<_, DownloadEngineError>(task)
+        })();
+        match saved {
+            Ok(task) => {
+                self.inner.emit(DownloadEvent::TaskChanged {
+                    task: Box::new(task),
+                });
+                info!(event = "download.completion_intention.accepted", %correlation_id,
+                    task_id = %task_id.as_uuid(), generation = self.inner.session_generation,
+                    action = ?intention.action, open_directory = intention.open_directory,
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "task completion intention persisted");
+                Ok(())
+            }
+            Err(error) => {
+                warn!(event = "download.completion_intention.failed", %correlation_id,
+                    task_id = %task_id.as_uuid(), generation = self.inner.session_generation,
+                    fault_code = ?error.fault().code, native_error_code = error.native_os_error(),
+                    elapsed_ms = started_at.elapsed().as_millis(),
+                    "task completion intention was not persisted");
+                Err(error)
+            }
+        }
+    }
+
     pub fn handle_command(&self, envelope: DownloadCommandEnvelope) -> DownloadCommandResult {
         let request_id = envelope.request_id;
         if envelope.protocol_version != DOWNLOAD_COMMAND_PROTOCOL_VERSION {
@@ -1035,6 +1097,36 @@ impl DownloadEngine {
                 .map(|(task_id, duplicate)| {
                     DownloadCommandOutcome::BrowserAccepted { task_id, duplicate }
                 })
+            }
+            DownloadCommand::BrowserPrepareHandoff {
+                handoff_id,
+                request,
+                open_dialog,
+                mode,
+            } => self.prepare_browser_handoff_correlated(
+                handoff_id,
+                request,
+                open_dialog,
+                mode,
+                handoff_id,
+            ),
+            DownloadCommand::BrowserAcceptHandoff {
+                handoff_id,
+                request,
+                mode,
+                resolution,
+            } => self.accept_browser_handoff_correlated(
+                handoff_id, request, mode, resolution, handoff_id,
+            ),
+            DownloadCommand::BrowserHandoffStatus { handoff_id } => {
+                self.browser_handoff_status_correlated(handoff_id)
+            }
+            DownloadCommand::BrowserCommitHandoff {
+                handoff_id,
+                task_id,
+            } => self.commit_browser_handoff_correlated(handoff_id, task_id, handoff_id),
+            DownloadCommand::BrowserAbortHandoff { handoff_id } => {
+                self.abort_browser_handoff_correlated(handoff_id)
             }
             DownloadCommand::Submit {
                 request,
@@ -1133,6 +1225,25 @@ impl DownloadEngine {
             } => self
                 .discard_browser_blob(handoff_id, blob_id, request_id)
                 .map(|()| DownloadCommandOutcome::Accepted { task_id: None }),
+            DownloadCommand::ReplacePausedUrl(replacement) => {
+                let task_id = replacement.task_id;
+                self.replace_paused_url_with_control(
+                    replacement,
+                    request_id,
+                    crate::DownloadResolutionControl::default(),
+                )
+                .map(|()| DownloadCommandOutcome::Accepted {
+                    task_id: Some(task_id),
+                })
+            }
+            DownloadCommand::CancelPausedUrlReplacement {
+                task_id,
+                operation_id,
+            } => self
+                .cancel_paused_url_replacement(task_id, operation_id)
+                .map(|()| DownloadCommandOutcome::Accepted {
+                    task_id: Some(task_id),
+                }),
             DownloadCommand::Task { task_id, action } => self
                 .run_task_action(task_id, action, request_id)
                 .map(|result_task_id| DownloadCommandOutcome::Accepted {
@@ -1246,21 +1357,24 @@ impl DownloadEngine {
                 request.validate()?;
                 let client = client?.0;
                 let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-                download_runtime()?.spawn(async move {
-                let result = if let Some(operation) = operation {
-                    let future = client.probe_timed(&request);
-                    tokio::pin!(future);
-                    loop {
-                        tokio::select! {
-                            result = &mut future => break result.map_err(DownloadEngineError::from),
-                            () = tokio::time::sleep(Duration::from_millis(10)) => {
-                                if let Err(error) = operation.check() { break Err(error.into()); }
+                let inner = Arc::clone(&self.inner);
+                self.inner.spawn_owned_worker(async move {
+                    let result = {
+                        let future = client.probe_timed(&request);
+                        tokio::pin!(future);
+                        loop {
+                            tokio::select! {
+                                result = &mut future => break result.map_err(DownloadEngineError::from),
+                                () = tokio::time::sleep(Duration::from_millis(10)) => {
+                                    if inner.draining.load(Ordering::SeqCst) { break Err(DownloadEngineError::Draining); }
+                                    if let Some(operation) = &operation
+                                        && let Err(error) = operation.check() { break Err(error.into()); }
+                                }
                             }
                         }
-                    }
-                } else { client.probe_timed(&request).await.map_err(DownloadEngineError::from) };
-                let _ = sender.send(result);
-            });
+                    };
+                    let _ = sender.send(result);
+                })?;
                 receiver
                     .recv()
                     .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
@@ -1331,6 +1445,7 @@ impl DownloadEngine {
         action: DownloadTaskAction,
         correlation_id: uuid::Uuid,
     ) -> Result<DownloadTaskId, DownloadEngineError> {
+        self.ensure_task_not_held(task_id)?;
         match action {
             DownloadTaskAction::Pause => {
                 self.pause(task_id)?;
@@ -1351,6 +1466,10 @@ impl DownloadEngine {
             }
             DownloadTaskAction::SetSpeedLimit { bytes_per_second } => {
                 self.set_task_speed_limit_correlated(task_id, bytes_per_second, correlation_id)?;
+                Ok(task_id)
+            }
+            DownloadTaskAction::SetCompletionIntention { intention } => {
+                self.set_task_completion_intention(task_id, intention, correlation_id)?;
                 Ok(task_id)
             }
             DownloadTaskAction::Remove { delete_artifact } => {
@@ -1615,6 +1734,8 @@ impl DownloadEngine {
             return Ok((task_id, true));
         }
         let mut tasks = self.inner.lock_tasks()?;
+        self.inner.check_admission()?;
+        self.inner.next_work_revision()?;
         apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
         request.validate()?;
         let resolution_acceptance = self.lock_resolution_acceptance(&prepared)?;
@@ -1670,6 +1791,7 @@ impl DownloadEngine {
                 is_eligible,
             )?;
         }
+        let accepted_revision = self.inner.bump_work_revision();
         drop(resolution_acceptance);
         tasks.insert(
             task_id,
@@ -1679,6 +1801,9 @@ impl DownloadEngine {
                 control: None,
                 last_progress_event: None,
                 transfer_rate: None,
+                paused_url_replacement: None,
+                completion_batch_id: None,
+                accepted_revision,
             },
         );
         drop(tasks);
@@ -1753,29 +1878,31 @@ impl DownloadEngine {
             "download acceptance file-name probe started"
         );
         let probe_request = request.clone();
-        let result =
-            (|| {
-                let client = client?;
-                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-                download_runtime()?.spawn(async move {
-                let result = if let Some(operation) = operation {
-                    let future = client.probe(&probe_request);
-                    tokio::pin!(future);
-                    loop {
-                        tokio::select! {
-                            result = &mut future => break result.map_err(DownloadEngineError::from),
-                            () = tokio::time::sleep(Duration::from_millis(10)) => {
-                                if let Err(error) = operation.check() { break Err(error.into()); }
+        let result = (|| {
+            let client = client?;
+            let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+            let inner = Arc::clone(&self.inner);
+            self.inner.spawn_owned_worker(async move {
+                    let result = {
+                        let future = client.probe(&probe_request);
+                        tokio::pin!(future);
+                        loop {
+                            tokio::select! {
+                                result = &mut future => break result.map_err(DownloadEngineError::from),
+                                () = tokio::time::sleep(Duration::from_millis(10)) => {
+                                    if inner.draining.load(Ordering::SeqCst) { break Err(DownloadEngineError::Draining); }
+                                    if let Some(operation) = &operation
+                                        && let Err(error) = operation.check() { break Err(error.into()); }
+                                }
                             }
                         }
-                    }
-                } else { client.probe(&probe_request).await.map_err(DownloadEngineError::from) };
-                let _ = sender.send(result);
-            });
-                receiver
-                    .recv()
-                    .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
-            })();
+                    };
+                    let _ = sender.send(result);
+                })?;
+            receiver
+                .recv()
+                .map_err(|error| DownloadEngineError::Runtime(error.to_string()))?
+        })();
         let file_name = match result.and_then(|probe| {
             probe
                 .file_name
@@ -1818,6 +1945,7 @@ impl DownloadEngine {
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        self.ensure_task_not_held(task_id)?;
         let mut tasks = self.inner.lock_tasks()?;
         let state = tasks
             .get_mut(&task_id)
@@ -1849,15 +1977,15 @@ impl DownloadEngine {
             self.refresh_delayed_schedule_wake()?;
             return Ok(());
         }
-        let dash_finalizing = state.task.status() == DownloadStatus::Finalizing
+        let media_finalizing = state.task.status() == DownloadStatus::Finalizing
             && matches!(
                 state.task.request().media.as_ref(),
-                Some(DownloadRequestMedia::Dash(_))
+                Some(DownloadRequestMedia::Dash(_) | DownloadRequestMedia::Hls(_))
             );
         if !matches!(
             state.task.status(),
             DownloadStatus::Probing | DownloadStatus::Waiting | DownloadStatus::Downloading
-        ) && !dash_finalizing
+        ) && !media_finalizing
         {
             return Err(DownloadEngineError::InvalidAction {
                 task_id,
@@ -1938,7 +2066,15 @@ impl DownloadEngine {
         let new_name = candidate
             .file_name
             .ok_or(DownloadRequestError::InvalidFileName)?;
+        self.inner.check_admission()?;
+        self.inner.next_work_revision()?;
         let mut updated = state.clone();
+        let next = updated
+            .task
+            .completion_attempt()
+            .checked_add(1)
+            .ok_or(DownloadEngineError::CompletionOverflow)?;
+        updated.task.set_completion_attempt(next);
         let updated_at = now_unix_ms();
         updated.task.set_file_name(new_name.clone(), updated_at);
         updated.task.clear_scheduled_start(updated_at);
@@ -1949,6 +2085,7 @@ impl DownloadEngine {
             true,
             false,
         )?;
+        updated.accepted_revision = self.inner.bump_work_revision();
         tasks.insert(task_id, updated.clone());
         drop(tasks);
         drop(_scheduler);
@@ -1957,7 +2094,7 @@ impl DownloadEngine {
         });
         if let Err(error) = self
             .refresh_delayed_schedule_wake()
-            .and_then(|()| self.schedule_queue("default", correlation_id))
+            .and_then(|()| self.schedule_task_queue(task_id, correlation_id))
         {
             warn!(event = "download.queue.resume_deferred", %correlation_id, ?task_id,
                 error = %error, "resume intent was committed and remains eligible for a later refill");
@@ -2044,6 +2181,8 @@ impl DownloadEngine {
         }
         request.validate()?;
         self.resolve_missing_file_name_before_acceptance(&mut request, correlation_id)?;
+        self.inner.check_admission()?;
+        self.inner.next_work_revision()?;
         let mut tasks = self.inner.lock_tasks()?;
         apply_organization_to_request(&self.inner, &mut request, &tasks, correlation_id)?;
         request.validate()?;
@@ -2075,8 +2214,12 @@ impl DownloadEngine {
                         control: None,
                         last_progress_event: None,
                         transfer_rate: None,
+                        paused_url_replacement: None,
+                        completion_batch_id: None,
+                        accepted_revision: self.inner.next_work_revision()?,
                     },
                 );
+                self.inner.bump_work_revision();
                 drop(tasks);
                 self.inner.emit_task(task_id);
                 Ok(task_id)
@@ -2260,11 +2403,32 @@ impl DownloadEngine {
         task_id: DownloadTaskId,
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
+        let _scheduler = self
+            .inner
+            .scheduler_gate
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        self.ensure_task_not_held(task_id)?;
+        self.inner.check_admission()?;
+        self.inner.next_work_revision()?;
+        let newly_admitted;
         {
             let mut tasks = self.inner.lock_tasks()?;
+
             let state = tasks
                 .get_mut(&task_id)
                 .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+            if state
+                .paused_url_replacement
+                .as_ref()
+                .is_some_and(|operation| operation.active)
+            {
+                return Err(DownloadEngineError::InvalidAction {
+                    task_id,
+                    action: "resume_while_replacing_url",
+                    status: state.task.status(),
+                });
+            }
             if !matches!(
                 state.task.status(),
                 DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed
@@ -2275,9 +2439,26 @@ impl DownloadEngine {
                     status: state.task.status(),
                 });
             }
-            if state.task.request().scheduled_at_unix_ms.is_some() {
-                let mut committed = state.clone();
+            newly_admitted = !self.inner.store.is_queue_task_eligible(task_id)?;
+            let mut committed = state.clone();
+            if committed.task.status() == DownloadStatus::Failed && newly_admitted {
+                let next = committed
+                    .task
+                    .completion_attempt()
+                    .checked_add(1)
+                    .ok_or(DownloadEngineError::CompletionOverflow)?;
+                committed.task.set_completion_attempt(next);
+            }
+            if committed.task.request().scheduled_at_unix_ms.is_some() {
                 committed.task.clear_scheduled_start(now_unix_ms());
+                self.inner.store.save_task_with_transfer_and_admission(
+                    &committed.task,
+                    &committed.transfer,
+                    true,
+                    false,
+                )?;
+                *state = committed;
+            } else if committed.task.completion_attempt() != state.task.completion_attempt() {
                 self.inner.store.save_task_with_transfer_and_admission(
                     &committed.task,
                     &committed.transfer,
@@ -2290,9 +2471,19 @@ impl DownloadEngine {
                     .store
                     .set_queue_task_admission(task_id, true, false)?;
             }
+            if newly_admitted {
+                let revision = self.inner.bump_work_revision();
+                if state.task.status() == DownloadStatus::Failed {
+                    state.accepted_revision = revision;
+                }
+            }
+        }
+        drop(_scheduler);
+        if newly_admitted {
+            self.inner.emit_task(task_id);
         }
         self.refresh_delayed_schedule_wake()?;
-        if let Err(error) = self.schedule_queue("default", correlation_id) {
+        if let Err(error) = self.schedule_task_queue(task_id, correlation_id) {
             warn!(
                 event = "download.queue.resume_deferred",
                 %correlation_id,
@@ -2302,6 +2493,24 @@ impl DownloadEngine {
             );
         }
         Ok(())
+    }
+
+    fn schedule_task_queue(
+        &self,
+        task_id: DownloadTaskId,
+        correlation_id: uuid::Uuid,
+    ) -> Result<(), DownloadEngineError> {
+        for queue in self.inner.store.load_queues()? {
+            if self
+                .inner
+                .store
+                .load_queue_order(&queue.id)?
+                .contains(&task_id)
+            {
+                return self.schedule_queue(&queue.id, correlation_id);
+            }
+        }
+        Err(DownloadStorageError::TaskNotFound(task_id).into())
     }
 
     pub fn cancel(&self, task_id: DownloadTaskId) -> Result<(), DownloadEngineError> {
@@ -2319,11 +2528,14 @@ impl DownloadEngine {
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        self.ensure_task_not_held(task_id)?;
+        self.inner.next_work_revision()?;
         self.inner.store.set_queue_task_eligible(task_id, false)?;
         let mut tasks = self.inner.lock_tasks()?;
         let state = tasks
             .get_mut(&task_id)
             .ok_or(DownloadEngineError::TaskNotFound(task_id))?;
+        state.cancel_paused_url_candidate();
         let changed = match state.task.status() {
             DownloadStatus::Probing | DownloadStatus::Waiting | DownloadStatus::Downloading => {
                 state
@@ -2336,7 +2548,7 @@ impl DownloadEngine {
             DownloadStatus::Finalizing
                 if matches!(
                     state.task.request().media.as_ref(),
-                    Some(DownloadRequestMedia::Dash(_))
+                    Some(DownloadRequestMedia::Dash(_) | DownloadRequestMedia::Hls(_))
                 ) =>
             {
                 state
@@ -2422,6 +2634,7 @@ impl DownloadEngine {
                 });
             }
         };
+        self.inner.bump_work_revision();
         drop(tasks);
         if changed {
             self.inner.emit_task(task_id);
@@ -2511,11 +2724,14 @@ impl DownloadEngine {
         delete_artifact: bool,
         correlation_id: uuid::Uuid,
     ) -> Result<(), DownloadEngineError> {
-        let _scheduler = self
+        let mut _scheduler = self
             .inner
             .scheduler_gate
             .lock()
             .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        self.ensure_task_not_held(task_id)?;
+        self.inner.next_work_revision()?;
+        let queue_id = self.inner.store.queue_id_for_task(task_id)?;
         let started_at = Instant::now();
         let snapshot = {
             let tasks = self.inner.lock_tasks()?;
@@ -2536,6 +2752,7 @@ impl DownloadEngine {
                     status: state.task.status(),
                 });
             }
+            state.cancel_paused_url_candidate();
             snapshot_from_state(state)
         };
 
@@ -2546,6 +2763,8 @@ impl DownloadEngine {
         if !self.inner.store.remove_task(task_id)? {
             return Err(DownloadEngineError::TaskNotFound(task_id));
         }
+        let revision = self.inner.bump_work_revision();
+        _scheduler.insert(queue_id, revision);
         self.inner.lock_tasks()?.remove(&task_id);
         self.inner.emit(DownloadEvent::TaskRemoved { task_id });
         Ok(())
@@ -2579,6 +2798,55 @@ impl DownloadEngine {
 }
 
 impl DownloadEngineInner {
+    fn connection_ceiling(
+        &self,
+        http: &HttpDownloadClient,
+        final_url: &str,
+    ) -> connection_ceiling::Ceiling {
+        self.connection_ceilings
+            .lock()
+            .expect("connection observations")
+            .for_resource(http.connection_scope(), final_url)
+    }
+
+    fn spawn_owned_worker(
+        self: &Arc<Self>,
+        work: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> Result<(), DownloadEngineError> {
+        let runtime = download_runtime()?;
+        let mut workers = self
+            .workers
+            .lock()
+            .map_err(|_| DownloadEngineError::LockPoisoned)?;
+        self.check_admission()?;
+        while let Some(result) = workers.try_join_next() {
+            if result.is_err() {
+                self.worker_failure.store(true, Ordering::SeqCst);
+            }
+        }
+        workers.spawn_on(work, runtime.handle());
+        Ok(())
+    }
+
+    fn check_admission(&self) -> Result<(), DownloadEngineError> {
+        if self.draining.load(Ordering::SeqCst) {
+            Err(DownloadEngineError::Draining)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn next_work_revision(&self) -> Result<u64, DownloadEngineError> {
+        self.work_revision
+            .load(Ordering::SeqCst)
+            .checked_add(1)
+            .ok_or(DownloadEngineError::CompletionOverflow)
+    }
+
+    fn bump_work_revision(&self) -> u64 {
+        self.work_revision.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
     fn http_for_operation(
         &self,
         certificate_policy: crate::DownloadCertificatePolicy,
@@ -2618,7 +2886,8 @@ impl DownloadEngineInner {
         }
         let client = self
             .http_template
-            .for_network_snapshot(&snapshot, certificate_policy)?;
+            .for_network_snapshot(&snapshot, certificate_policy)?
+            .with_policy_generation(generation);
         if let Ok(mut cache) = self.http_clients.lock() {
             cache.retain(|(cached_generation, _, _), (_, built_at)| {
                 *cached_generation == generation && built_at.elapsed() < HTTP_CLIENT_REUSE_TTL
@@ -2904,13 +3173,7 @@ async fn preflight_storage_capacity(
     Ok(())
 }
 
-type SegmentTransferResult = (
-    DownloadSegment,
-    Result<DownloadSegmentTransferOutcome, HttpDownloadError>,
-);
-
 const MIN_INITIAL_SEGMENT_BYTES: u64 = 64 * 1024;
-const MIN_DYNAMIC_SEGMENT_BYTES: u64 = 32 * 1024;
 const MAX_TRANSFER_ATTEMPTS: u32 = 3;
 const TRANSFER_RETRY_BASE_DELAY: Duration = Duration::from_millis(100);
 
@@ -2941,7 +3204,7 @@ fn publish_transfer_progress(
     total_bytes: Option<u64>,
     active_connections: u16,
     progress_by_segment: Option<&Mutex<HashMap<u32, u64>>>,
-    segment_lengths: Option<&Mutex<HashMap<u32, u64>>>,
+    segment_lengths: Option<&Mutex<HashMap<u32, (u64, u64)>>>,
 ) {
     if let Ok(mut tasks) = inner.tasks.lock()
         && let Some(state) = tasks.get_mut(&task_id)
@@ -2983,23 +3246,61 @@ fn publish_transfer_progress(
                     bytes_per_second,
                     active_connections,
                     segments,
+                    finishing: None,
                 },
             });
+        }
+    }
+}
+fn publish_finishing_progress(
+    inner: &DownloadEngineInner,
+    task_id: DownloadTaskId,
+    finishing: DownloadFinishingProgress,
+    force: bool,
+) {
+    if let Ok(mut tasks) = inner.tasks.lock()
+        && let Some(state) = tasks.get_mut(&task_id)
+    {
+        let now = Instant::now();
+        if force
+            || state
+                .last_progress_event
+                .is_none_or(|last| now.duration_since(last) >= PROGRESS_EVENT_MIN_INTERVAL)
+        {
+            state.last_progress_event = Some(now);
+            let progress = DownloadProgress {
+                task_id,
+                downloaded_bytes: state.transfer.downloaded_bytes,
+                total_bytes: state
+                    .transfer
+                    .probe
+                    .as_ref()
+                    .and_then(|probe| probe.total_bytes),
+                bytes_per_second: 0,
+                active_connections: 0,
+                segments: Vec::new(),
+                finishing: Some(finishing),
+            };
+            drop(tasks);
+            inner.emit(DownloadEvent::TaskProgress { progress });
         }
     }
 }
 
 fn download_segment_progress_snapshot(
     values: &HashMap<u32, u64>,
-    lengths: Option<&HashMap<u32, u64>>,
+    lengths: Option<&HashMap<u32, (u64, u64)>>,
 ) -> Vec<DownloadSegmentProgress> {
     let mut segments = values
         .iter()
         .map(
             |(segment_index, downloaded_bytes)| DownloadSegmentProgress {
                 segment_index: *segment_index,
+                start_byte: lengths
+                    .and_then(|lengths| lengths.get(segment_index).map(|range| range.0)),
                 downloaded_bytes: *downloaded_bytes,
-                total_bytes: lengths.and_then(|lengths| lengths.get(segment_index).copied()),
+                total_bytes: lengths
+                    .and_then(|lengths| lengths.get(segment_index).map(|range| range.1)),
             },
         )
         .collect::<Vec<_>>();
@@ -3318,6 +3619,10 @@ pub enum DownloadEngineError {
     },
     #[error("download queue concurrency must be at least one")]
     InvalidQueueConcurrency,
+    #[error("download engine is draining")]
+    Draining,
+    #[error("download completion authority counter overflow")]
+    CompletionOverflow,
     #[error("browser batch must contain between 1 and {maximum} items, got {count}")]
     InvalidBrowserBatchSize { count: usize, maximum: usize },
     #[error("browser batch contains a duplicate handoff ID")]
@@ -3326,6 +3631,16 @@ pub enum DownloadEngineError {
     IdempotencyConflict(uuid::Uuid),
     #[error("browser handoff {0} conflicts with a previously accepted request")]
     BrowserHandoffConflict(uuid::Uuid),
+    #[error("browser handoff {handoff_id} expects task {expected:?}, not {actual:?}")]
+    BrowserHandoffTaskMismatch {
+        handoff_id: uuid::Uuid,
+        expected: DownloadTaskId,
+        actual: DownloadTaskId,
+    },
+    #[error("browser handoff {0} has no durable task identity")]
+    BrowserHandoffMissingTask(uuid::Uuid),
+    #[error("download task remains held for browser ownership transfer: {0:?}")]
+    BrowserHandoffHeld(DownloadTaskId),
     #[error("download task is not eligible for queue reordering: {0:?}")]
     InvalidQueueMove(DownloadTaskId),
     #[error("download engine task lock is poisoned")]
@@ -3392,6 +3707,11 @@ impl DownloadEngineError {
             | Self::RetryNotAllowed(_)
             | Self::InvalidQueueConcurrency
             | Self::InvalidQueueMove(_)
+            | Self::BrowserHandoffTaskMismatch { .. }
+            | Self::BrowserHandoffMissingTask(_)
+            | Self::BrowserHandoffHeld(_)
+            | Self::Draining
+            | Self::CompletionOverflow
             | Self::InvalidAction { .. } => (DownloadFaultCode::InvalidState, false),
             Self::RedownloadCleanupFailed { .. } => (DownloadFaultCode::Storage, true),
             Self::RedownloadRollbackFailed { .. } => (DownloadFaultCode::Internal, false),
@@ -3412,6 +3732,9 @@ impl DownloadEngineError {
             }
             Self::Http(HttpDownloadError::DestinationExists(_)) => {
                 (DownloadFaultCode::DestinationExists, false)
+            }
+            Self::Http(HttpDownloadError::UnexpectedWebPage) => {
+                (DownloadFaultCode::UnexpectedWebPage, false)
             }
             Self::Http(error) if error.is_retryable_transfer() => {
                 (DownloadFaultCode::Network, true)
@@ -3492,7 +3815,7 @@ mod tests {
     fn configured_ffmpeg_is_applied_to_the_live_engine_without_restart() {
         let directory = tempfile::tempdir().expect("create configured FFmpeg directory");
         let executable = directory.path().join("ffmpeg-configured.exe");
-        std::fs::write(&executable, b"fixture").expect("write configured FFmpeg executable");
+        std::fs::write(&executable, b"fixture").expect("write FFmpeg fixture");
         let engine = DownloadEngine::open_in_memory().expect("open download engine");
 
         engine
@@ -3520,7 +3843,15 @@ mod tests {
         let worker_fragment = fragment.clone();
         let worker_output = output.clone();
         let worker = tokio::spawn(async move {
-            concatenate_dash_fragments(&[worker_fragment], &worker_output, &worker_control).await
+            concatenate_dash_fragments(
+                &[worker_fragment],
+                &worker_output,
+                &worker_control,
+                0,
+                64 * 1024 * 1024,
+                |_, _| {},
+            )
+            .await
         });
         let deadline = Instant::now() + Duration::from_secs(2);
         while !std::fs::metadata(&output).is_ok_and(|metadata| metadata.len() > 0) {
@@ -3634,83 +3965,6 @@ mod tests {
     }
 
     #[test]
-    fn adaptive_segments_grow_only_after_stable_speed_samples() {
-        let mut controller = AdaptiveSegmentController::new(8, true);
-
-        for speed in [10_000, 10_400, 9_800, 10_200] {
-            assert_eq!(
-                controller.observe(speed, 4, 4, false),
-                AdaptiveConnectionDecision::Hold
-            );
-        }
-        assert_eq!(
-            controller.observe(10_100, 4, 4, false),
-            AdaptiveConnectionDecision::Grow
-        );
-        controller.confirm_growth_target(8);
-    }
-
-    #[test]
-    fn adaptive_segments_use_only_post_growth_samples_for_the_benefit_window() {
-        let mut controller = AdaptiveSegmentController::new(8, true);
-        for speed in [10_000, 10_100, 9_900, 10_000, 10_050] {
-            let _ = controller.observe(speed, 4, 4, false);
-        }
-        controller.confirm_growth_target(8);
-
-        for speed in [10_100, 10_200, 10_000, 10_150, 10_100] {
-            assert_eq!(
-                controller.observe(speed, 5, 4, false),
-                AdaptiveConnectionDecision::Hold
-            );
-        }
-        // This window is low-benefit, but not a severe slowdown: shrink has
-        // priority below 60% of the proportional baseline (about 12,000).
-        for speed in [14_100, 14_200, 14_000, 14_150] {
-            assert_eq!(
-                controller.observe(speed, 8, 4, false),
-                AdaptiveConnectionDecision::Hold
-            );
-        }
-        assert_eq!(
-            controller.observe(14_100, 8, 4, false),
-            AdaptiveConnectionDecision::DisabledForLowBenefit
-        );
-        assert_eq!(
-            controller.observe(40_000, 8, 4, false),
-            AdaptiveConnectionDecision::Hold
-        );
-    }
-
-    #[test]
-    fn adaptive_segments_stop_after_a_segment_network_retry() {
-        let mut controller = AdaptiveSegmentController::new(8, true);
-
-        assert_eq!(
-            controller.observe(10_000, 4, 4, true),
-            AdaptiveConnectionDecision::DisabledAfterRetry
-        );
-        for _ in 0..5 {
-            assert_eq!(
-                controller.observe(20_000, 4, 4, false),
-                AdaptiveConnectionDecision::Hold
-            );
-        }
-    }
-
-    #[test]
-    fn adaptive_segments_respect_the_user_disable_switch() {
-        let mut controller = AdaptiveSegmentController::new(32, false);
-
-        for _ in 0..10 {
-            assert_eq!(
-                controller.observe(20_000, 8, 8, false),
-                AdaptiveConnectionDecision::Hold
-            );
-        }
-    }
-
-    #[test]
     fn browser_reported_size_is_visible_before_the_http_probe() {
         let engine = DownloadEngine::open_in_memory().expect("open engine");
         let task_id = engine
@@ -3723,6 +3977,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -3837,6 +4092,7 @@ mod tests {
                         }],
                         cookie: None,
                         referrer: None,
+                        source_page: None,
                         certificate_policy: Default::default(),
                         connection_limit: Some(1),
                         speed_limit_bytes_per_second: None,
@@ -3929,6 +4185,7 @@ mod tests {
                     }],
                     cookie: Some("private-cookie".into()),
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
@@ -4002,6 +4259,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
@@ -4058,6 +4316,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(2),
                     speed_limit_bytes_per_second: None,
@@ -4074,7 +4333,7 @@ mod tests {
             .expect("enqueue task");
         while events.try_recv().is_ok() {}
         let segment_progress = Mutex::new(HashMap::from([(0, 5), (1, 7)]));
-        let segment_lengths = Mutex::new(HashMap::from([(0, 10), (1, 10)]));
+        let segment_lengths = Mutex::new(HashMap::from([(0, (0, 10)), (1, (10, 10))]));
 
         publish_transfer_progress(
             &engine.inner,
@@ -4133,6 +4392,7 @@ mod tests {
                 },
             }),
             is_running: false,
+            completion_intention: Default::default(),
         };
 
         let next = next_daily_schedule_trigger(&[queue], now).expect("next trigger");
@@ -4240,6 +4500,7 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -4289,6 +4550,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -4331,6 +4593,7 @@ mod tests {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -4390,6 +4653,9 @@ mod tests {
                 control: Some(control),
                 last_progress_event: None,
                 transfer_rate: None,
+                paused_url_replacement: None,
+                accepted_revision: 0,
+                completion_batch_id: None,
             },
         );
         engine
@@ -4445,6 +4711,7 @@ mod tests {
                     bytes_per_second: 0,
                     active_connections: 1,
                     segments: Vec::new(),
+                    finishing: None,
                 },
             });
         }
@@ -4538,6 +4805,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -5639,6 +5907,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -5680,6 +5949,9 @@ mod tests {
                     control: None,
                     last_progress_event: None,
                     transfer_rate: None,
+                    paused_url_replacement: None,
+                    accepted_revision: 0,
+                    completion_batch_id: None,
                 },
             );
             task_ids.push(task_id);
@@ -5891,4 +6163,37 @@ fn hls_finalization_gate_observes_a_stop_directive_after_the_last_worker() {
         hls_stop_directive(&control),
         Some(TransferDirective::Cancel)
     );
+}
+
+#[cfg(test)]
+mod b5_drain_tests {
+    use super::*;
+
+    #[test]
+    fn b5_shutdown_joins_remaining_workers_and_reports_worker_panic() {
+        let engine = DownloadEngine::open_in_memory().expect("engine");
+        let runtime = download_runtime().expect("original runtime");
+        let (finished, observed) = std::sync::mpsc::sync_channel(1);
+        let mut workers = engine.inner.workers.lock().expect("owned workers");
+        workers.spawn_on(
+            async { panic!("injected owned worker failure") },
+            runtime.handle(),
+        );
+        workers.spawn_on(
+            async move {
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                finished.send(()).expect("worker exit marker");
+            },
+            runtime.handle(),
+        );
+        drop(workers);
+        let result = engine.shutdown_and_wait();
+        observed
+            .try_recv()
+            .expect("all owned workers exit before drain returns");
+        assert!(
+            result.is_err(),
+            "worker panic must not be reported as successful resource drain"
+        );
+    }
 }

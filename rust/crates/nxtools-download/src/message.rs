@@ -9,7 +9,7 @@ use crate::{
     RequestOrigin, ResourceValidator,
 };
 
-pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 9;
+pub const DOWNLOAD_COMMAND_PROTOCOL_VERSION: u16 = 14;
 pub const MAX_BROWSER_BATCH_ITEMS: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,6 +24,17 @@ pub struct BrowserBlob {
 pub struct BrowserDownloadSubmission {
     pub handoff_id: Uuid,
     pub request: DownloadRequest,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BrowserHandoffState {
+    Pending,
+    Held,
+    Committed,
+    Aborted,
+    Expired,
+    Missing,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +52,16 @@ pub struct DownloadCommandEnvelope {
     pub origin: RequestOrigin,
     #[serde(flatten)]
     pub command: DownloadCommand,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadPausedUrlReplacement {
+    pub task_id: DownloadTaskId,
+    pub operation_id: Uuid,
+    pub generation: u64,
+    pub expected_revision: u64,
+    pub expected_source_url: String,
+    pub source_url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -67,6 +88,28 @@ pub enum DownloadCommand {
         #[serde(default)]
         mode: DownloadSubmitMode,
         resolution: crate::DownloadResolutionOptions,
+    },
+    BrowserPrepareHandoff {
+        handoff_id: Uuid,
+        request: DownloadRequest,
+        open_dialog: bool,
+        mode: DownloadSubmitMode,
+    },
+    BrowserAcceptHandoff {
+        handoff_id: Uuid,
+        request: DownloadRequest,
+        mode: DownloadSubmitMode,
+        resolution: crate::DownloadResolutionOptions,
+    },
+    BrowserHandoffStatus {
+        handoff_id: Uuid,
+    },
+    BrowserCommitHandoff {
+        handoff_id: Uuid,
+        task_id: DownloadTaskId,
+    },
+    BrowserAbortHandoff {
+        handoff_id: Uuid,
     },
     Submit {
         request: DownloadRequest,
@@ -106,6 +149,11 @@ pub enum DownloadCommand {
     BrowserDiscardBlob {
         handoff_id: Uuid,
         blob_id: Uuid,
+    },
+    ReplacePausedUrl(DownloadPausedUrlReplacement),
+    CancelPausedUrlReplacement {
+        task_id: DownloadTaskId,
+        operation_id: Uuid,
     },
     Task {
         task_id: DownloadTaskId,
@@ -151,8 +199,15 @@ pub enum DownloadTaskAction {
     Redownload,
     RetryWithAutoRename,
     Cancel,
-    SetSpeedLimit { bytes_per_second: Option<u64> },
-    Remove { delete_artifact: bool },
+    SetSpeedLimit {
+        bytes_per_second: Option<u64>,
+    },
+    SetCompletionIntention {
+        intention: crate::DownloadCompletionIntention,
+    },
+    Remove {
+        delete_artifact: bool,
+    },
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -173,6 +228,16 @@ pub enum DownloadQueueAction {
         queue_id: String,
         task_ids: Vec<DownloadTaskId>,
         placement: DownloadQueuePlacement,
+    },
+    AssignTasks {
+        queue_id: String,
+        task_ids: Vec<DownloadTaskId>,
+    },
+    SetCompletionIntention {
+        queue_id: String,
+        intention: crate::DownloadCompletionIntention,
+        #[serde(default)]
+        baseline: Option<crate::DownloadCompletionIntention>,
     },
     SetMaxConcurrent {
         queue_id: String,
@@ -244,6 +309,11 @@ pub enum DownloadCommandOutcome {
     BrowserDialogAccepted {
         handoff_id: Uuid,
         duplicate: bool,
+    },
+    BrowserHandoff {
+        handoff_id: Uuid,
+        state: BrowserHandoffState,
+        task_id: Option<DownloadTaskId>,
     },
     Batch {
         results: Vec<DownloadBatchItemResult>,
@@ -392,6 +462,8 @@ pub struct DownloadTaskDetail {
     pub task: crate::DownloadEngineTask,
     pub segments: Vec<crate::DownloadSegment>,
     pub timeline: Vec<DownloadTaskTimelineEntry>,
+    #[serde(default)]
+    pub paused_url_revision: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -513,11 +585,30 @@ pub struct DownloadProgress {
     pub active_connections: u16,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub segments: Vec<DownloadSegmentProgress>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finishing: Option<DownloadFinishingProgress>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DownloadFinishingStage {
+    Concatenating,
+    Muxing,
+    Publishing,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DownloadFinishingProgress {
+    pub stage: DownloadFinishingStage,
+    pub completed: u64,
+    pub total: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DownloadSegmentProgress {
     pub segment_index: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_byte: Option<u64>,
     pub downloaded_bytes: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub total_bytes: Option<u64>,
@@ -540,6 +631,7 @@ pub enum DownloadFaultCode {
     DestinationExists,
     Network,
     Protocol,
+    UnexpectedWebPage,
     Permission,
     DiskFull,
     FileInUse,

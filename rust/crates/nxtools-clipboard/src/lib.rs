@@ -13,6 +13,7 @@ use thiserror::Error;
 pub use archive::{
     ClipboardArchiveError, ClipboardArchiveExportReport, ClipboardArchiveImportReport,
 };
+pub use query::ClipboardHistoryFilter;
 pub use storage::{
     ClipboardDatabaseBackupReport, ClipboardDatabaseCompactionReport, ClipboardStorageError,
     ClipboardStorageMigrationReport,

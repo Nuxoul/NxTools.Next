@@ -4,6 +4,7 @@ Evidence: `repo:rust/apps/nxtools-indexer/src/tests.rs`, `repo:rust/apps/nxtools
 
 Synthetic scanner/poller/cache tests prove last-good publication, cursor/version and unique bounds. Admission tests precede shared state. Some suites scan real volumes; never unrestricted under scan/service prohibition. Native release requires authorized packaged LocalSystem idle/restart/base+delta/search/hash, not Ready/source gate. [Verification](../../shared/verification.md); retain admission contract below.
 Idle release evidence now includes process I/O, not only CPU: tests/performance/indexer-idle-cpu.ps1 retains atomic protected tuple checks and explicit RestartService, then reports read/write/other; AssertRegression defaults read+write<64KiB/s in controlled idle. Process counters include file/IPC, not physical-disk attribution. Source regression must measure real temporary writer bytes after small updates to a multi-MBoverlay and prove mapped base+latestcomplete delta replay; see [durable delta contract](database-guidelines.md). Never run or certify a new-source service gate against the unchanged old installed binary.
+Release probes use the approved live Desktop and its child PlatformHost through `tests/performance/indexer-desktop-probe.ps1` and the existing QuickLaunchComparisonDriver. They must not impersonate Desktop with a PowerShell service-pipe Hello. Keep tuple/path/hash checks, preserve nonempty operator input, require expected paths and stable service PID. Restart acceptance compares unchanged versioned bases and requires persisted deltas; a newly created delta-only witness must be found before/after restart to prove replay. Source gate: `tests/architecture/indexer-release-probe.tests.py`; actual acceptance: `docs/audits/2026-11-20-indexer-release-acceptance.md`.
 
 
 ## Scenario: Authenticated bounded session and truthful Ready
@@ -67,7 +68,7 @@ Approved W2–W5 search extensions; WinShun source reference is recorded in docs
 ### 2. Signatures
 IndexSearchContext default-off retain_kinds_apart/allow_homophone_fallback/recent_modified; search_snapshots_while/run_snapshot_search; recent::search_recent_modified returns typed classifier-budget failure. Evidence: `repo:rust/apps/nxtools-indexer/src/lib.rs`, `repo:rust/apps/nxtools-indexer/src/recent.rs`, `repo:rust/apps/nxtools-indexer/src/mft/time_metadata.rs`.
 ### 3. Contracts
-Ordinary results precede <=8 bounded homophone variants; caller permission is required. Separate kinds retain <=2limit candidates without a new final rank. Recent mode requires explicit opt-in AND prefix at snapshot/runtime entries; default/file-dialog queries retain ordinary semantics. Effective base+delta true last-write only; view-only noise/diversity, <=200 results, folder2/project3, classifier roots4096/string1MiB/path32768/depth128/extra overflow work1M. Budget failure is correlated terminal SearchFailed, not empty success or maintenance fault. MFT uses full-ID FileBasicInfo true last-write; USN reads<=256uniqueIDs/poll, retains deferred cursor, permits backwards times and unknown failure. Old unchanged caches need a legitimate rebuild; no query-time IO/reconnect backfill.
+Ordinary results precede <=8 bounded homophone variants; caller permission is required. Separate kinds retain <=2limit candidates without a new final rank. Recent mode requires explicit opt-in AND prefix at snapshot/runtime entries; default/file-dialog queries retain ordinary semantics. Effective base+delta true last-write only; view-only noise/diversity, <=200 results, folder2/project3, classifier roots4096/string1MiB/path32768/depth128/extra overflow work1M. Budget failure is correlated terminal SearchFailed, not empty success or maintenance fault. Initial MFT uses full-ID bulk STANDARD_INFORMATION hydration with USN freshness exceptions; incremental USN uses FileBasicInfo<=256uniqueIDs/poll, retains deferred cursor, permits backwards times and unknown failure. Old unchanged caches need a legitimate rebuild; no query-time IO/reconnect backfill.
 ### 4. Validation & Error Matrix
 Normal hit or no permission -> no approximate phase; default recent prefix -> ordinary terminal batch; stale/cancel -> discard; classifier budget -> fixed current-generation failure; timestamp denied -> unknown; native-read cap -> deferred cursor retained.
 ### 5. Good/Base/Bad Cases
@@ -81,7 +82,7 @@ Wrong: empty indexed rows authorize approximation or raw prefix selects every ca
 ### 1. Scope / Trigger
 USN deletion/replay, base publication/retirement, authenticated reconnect, per-volume maintenance and overlay-copy costs. Reference: Listary managed session/status boundary only and SwiftList journal/enumeration/delta/maintenance source in `docs/reference-code/quick-launch-research.md`; Listary native engine source is unavailable.
 ### 2. Signatures
-`enumerate_initial_snapshot(mount,journal_id,start_usn,enumerate)` calls `enumerate(i64::MAX)` and keeps the saved pre-scan cursor. `apply_journal_batch` returns `JournalApplyError::RebuildRequired(JournalRebuild { reason: IndexRebuildReason, native_error_code: Option<u32> })`. `SharedIndexerRuntime` runs the original `run_coordinator` once per service lifetime. `IndexerService::{queue_snapshot_maintenance,start_snapshot_maintenance,finish_snapshot_maintenance,project_maintenance}` own per-volume operations and projection.
+`enumerate_initial_snapshot(mount,journal_id,start_usn,enumerate,construct)` calls `enumerate(i64::MAX)` and keeps the saved pre-scan cursor. `apply_journal_batch` returns `JournalApplyError::RebuildRequired(JournalRebuild { reason: IndexRebuildReason, native_error_code: Option<u32> })`. `SharedIndexerRuntime` runs the original `run_coordinator` once per service lifetime. `IndexerService::{queue_snapshot_maintenance,start_snapshot_maintenance,finish_snapshot_maintenance,project_maintenance}` own per-volume operations and projection.
 ### 3. Contracts
 - Direct leaf/invisible deletes consume no recursive expansion units; directory candidates exclude tombstones and moved-away/invisible rows before unique accounting. A truly large visible subtree still exceeds the4096bound transactionally.
 - Unfiltered upper-USN enumeration includes preexisting files and directories modified during scanning. Replay starts at the pre-scan journal identity/cursor; repeated create/upsert is idempotent. Unknown metadata never broadly inserts/resurrects rows or adds native metadata reads.
@@ -98,36 +99,42 @@ Good:5000direct leaf deletes remain incremental; modified directory retains unch
 ### 7. Wrong vs Correct
 Wrong: session mutex owns scan lifetime; new desktop waits for old writer; successful scan implies durable publication. Correct: one service coordinator owns work, bounded lease-scoped endpoint I/O owns delivery, durable base success precedes memory replacement, and maintenance is an additive status projection. Synthetic/TestApp/temporary pipes do not certify packaged LocalSystem release or physical/user visual acceptance.
 
-## Scenario: Launcher first-provider publication before the second kind
+## Scenario: Launcher shared-kind matching and bounded publication
 ### 1. Scope / Trigger
-Ordinary launcher search with retain_kinds_apart, both file/directory kinds and no directory scope.
+User-approved2026-11-17 computation optimization for retain_kinds_apart queries. Ordinary Desktop
+publication remains completion-owned; file/directory matching no longer needs independent scans.
 ### 2. Signatures
-`search_launcher_snapshots_while` reuses production `search_snapshots_query_while` and emits through
-original `RuntimeEvent::SearchCompleted`/framed `IndexSearchBatch`; `run_snapshot_search` owns routing.
+`search_snapshots_query_while` shares the name/full-path walk and retains each kind separately;
+`search_launcher_snapshots_while` sends existing bounded `RuntimeEvent::SearchCompleted`/framed
+`IndexSearchBatch`. `run_snapshot_search` retains original routing, correlation and task ownership.
 ### 3. Contracts
-Send completed file-kind candidates before starting directory-kind work; append directory candidates
-and exactly one terminal. Preserve original per-kind limits/scores and Finder's final merge/rank.
-Only no normal results plus explicit permission enters bounded homophone fallback. Single-kind,
-scoped and recent searches retain their original route. Every send checks original current task;
-coordinator lease checks and bounded output backpressure still own actual endpoint delivery.
-First nonempty/terminal diagnostics carry correlation/generation/elapsed/count only, never query/path.
+Keep independent per-kind limits, original score/path ties, exclusions, enabled volumes, delta
+suppression and preferred-directory score. Match hot names once, then materialize candidates.
+Cold-underfill recovery searches only missing kinds and preserves the other kind's selected rows.
+Single-kind/scoped semantics and explicit recent mode remain. Only no normal results plus explicit
+permission enters bounded homophone fallback. No cache/format/protocol/dependency change.
+Every send checks the current task; coordinator lease checks and bounded backpressure retain
+endpoint ownership. Exactly one terminal follows successful work; cancellation is not empty success.
+Existing start/first/terminal diagnostics carry correlation/generation/elapsed/count, never payloads.
 ### 4. Validation & Error Matrix
-Superseded/cancelled after first batch -> no later candidates/terminal for that task. Empty results ->
-one truthful empty terminal. Stale lease -> no endpoint delivery. Full sink -> original bounded wait.
+Dominant kind/excluded hot window -> retain both quotas through unchanged cold recovery. Delta
+replacement/delete -> no stale base row. Cancel during computation -> no batches; cancel during
+send -> no later batch/terminal. Old lease -> no delivery. Zero limit -> one empty terminal.
 ### 5. Good/Base/Bad Cases
-Good: files cross original framed transport while directory query remains outstanding. Base: final
-candidate set/scores match the complete provider. Bad: partition only after all query work, or treat
-an injected ready Desktop batch as measurement of production query speed.
+Good: one shared matching walk, independent single-kind result equivalence and bounded frames.
+Base: original single-kind query. Bad: one global cap starves directories, remove cold recovery,
+alter ties, or infer installed latency from injected ready batches or reduced work alone.
 ### 6. Tests Required
-`repo:rust/apps/nxtools-indexer/src/tests.rs` launcher_* uses actual snapshot query and normal worker,
-framed correlation, final candidate comparison, cancellation and empty/homophone fallback. Desktop
-arrival/paint/selection tests are a distinct consumer seam. Installed input-to-paint and packaged
-LocalSystem acceptance remain separate; never run real scans/service changes merely for this fixture.
+`repo:rust/apps/nxtools-indexer/src/launcher_single_walk_tests.rs` covers work at the existing current
+query boundary, per-kind equivalence with cold recovery/delta/exclusions/scopes and cancellation.
+Retain tests.rs launcher_ framed correlation/terminal, r8_, w1_/w3_ and search_retirement_ regressions.
+Synthetic work counters are not installed speed evidence. Packaged LocalSystem restart/base+delta/
+idle CPU+I/O/search/hash acceptance requires separate authorization; never run it on an old binary.
 ### 7. Wrong vs Correct
-Wrong: faster batch projection proves the provider no longer waits. Correct: real production worker
-emits a frame before provider completion; compare complete results and separately measure installed UI.
-Reference: `repo:docs/reference-code/quick-launch-listary-results.md` preserves managed-only Listary
-evidence; measured boundary and limits: `repo:docs/quick-launch-result-latency.md`.
+Wrong: file scan plus directory scan is needed for normal completion-owned publication. Correct:
+shared matching -> per-kind bounded candidates -> original framed delivery -> Desktop complete merge.
+Reference: `repo:docs/reference-code/quick-launch-research.md`; latency evidence and limits:
+`repo:docs/quick-launch-result-latency.md`. Listary native search-engine source remains unavailable.
 
 ## Scenario: Desktop-owned demand service lifetime
 ### 1. Scope / Trigger
@@ -276,3 +283,79 @@ or packaged LocalSystem acceptance. Real service/volume/stress/package operation
 ### 7. Wrong vs Correct
 Wrong: for every oversized volume -> spawn a full compaction. Correct: retain names -> admit one ->
 real worker terminal -> original result/error and retirement -> revalidate and admit the next volume.
+
+## Scenario: Initial-build bulk metadata and persistence-only construction
+
+### 1. Scope / Trigger
+Initial scan metadata work and temporary construction before durable publication.
+
+Reference: `docs/reference-code/listary-initial-indexing.md`. Listary6.3.5.94 managed startup reaches
+an opaque native engine; only its retained historical managed scanner supplies raw-MFT structural
+reference. No current Listary native scan algorithm or parallelism is established.
+
+### 2. Signatures
+`bulk_times::BulkTimes::last_write(full_reference, enumerated_usn) -> Result<Option<i64>>`;
+`scan_volume_and_persist_with(mount, scan(mount, constructor), persist)` owns constructor selection.
+
+### 3. Contracts
+`mft::bulk_times` hydrates the original FSCTL_ENUM_USN_DATA record set using sector-aligned,
+bounded raw-MFT blocks. Full sequence identity, FILE/in-use/base checks, USA fixup and resident
+STANDARD_INFORMATION are mandatory. Sparse/missing/reused/malformed metadata is unknown. Native
+setup/read failure propagates with its native code and retains last-good; no USN-event/FILE_NAME
+timestamp substitution. Preserve the pre-scan journal cursor and unrestricted enumeration.
+
+Raw standard-information USN must match the enumerated USN before accepting its LastWriteTime.
+Different/missing USN uses the existing full-ID current-attribute reader only for that exception:
+a cached change before the saved cursor cannot rely on later replay to repair stale disk bytes.
+Record only aggregate bulk reads, freshness exceptions, unknown count and elapsed time in the
+existing correlated build span. Incremental USN metadata budgets and owners remain unchanged.
+
+`scan_volume_and_persist_with` selects `snapshot_for_persistence_from_records` before construction.
+The unpublished owned representation omits runtime maps/masks/groups; the unchanged writer derives
+persisted order/children/masks, commits durably and reopens that exact file before publication.
+Only the final mapping gets runtime search data. No cache/protocol/volume-concurrency change.
+The raw reader batches at most256clusters and remains capped at1MiB plus sector-alignment storage.
+Path construction reuses traversal scratch, builds each cached path once with exact string capacity
+and moves names/paths into entries. Preserve last-full-FRN duplicate selection, root sequence bits,
+orphan/cycle omission and self-parent mount behavior. Direct searchable owned snapshots retain
+original path sorting. Persistence-only snapshots skip that sort; the writer owns full-FRN row
+and child order, so final mapped row identities and search candidates remain unchanged.
+
+### 4. Validation & Error Matrix
+Same full identity/USN -> bulk true time; different/missing USN -> current full-ID attributes;
+invalid/reused record or failed attribute read -> unknown; native raw IO -> failed build/last-good;
+persist/exact reopen failure -> no publication. No unchanged-timestamp monotonicity assumption.
+
+### 5. Good/Base/Bad Cases
+Good: current raw bytes avoid handle churn. Base: a cached pre-cursor change reads current metadata.
+Bad: trusting an older structurally valid record or publishing an unsearchable persistence snapshot.
+
+### 6. Tests Required
+Regression: `bulk_times::tests` covers cache work, fragmented/cross-block/USA bytes, full identity,
+attribute bounds, sparse/unknown, bounded growth, I/O failure and pre-cursor dirty metadata. The
+allocation regression follows the production constructor selection through records→persist→exact
+reopen, compares cumulative current-thread requested bytes and verifies final rows/children/time/
+cursor/search candidates. Do not label allocator requests as retained heap or peak private commit.
+Sequential1025-record metadata fixture must use two bounded reads with unchanged true times and
+zero freshness fallbacks. The4160-row path fixture checks exact entries plus <=2allocations/row
+with fixed scratch allowance; setup/oracle allocations stay outside observation.
+The persistence-constructor resource regression must omit the temporary path-sort allocation;
+the actual records→writer→exact reopen fixture must still match every final row and child list.
+
+`cache::initial_profile_tests::initial_build_release_phase_profile` is default-ignored and C:-only.
+Require an optimized compiler artifact, explicit elevation/scan permission and a fresh scratch index.
+Measure production scan→durable persist→exact mmap→isolated publication→real query; report full
+build and first successful search separately. Phase clocks are inclusive where documented. Require
+all six phase events, matching run ID, true-time witnesses and attribute reads equal to freshness
+exceptions. New product cache state does not imply controlled Windows/device cache state.
+
+The ignored C:-only native fixture requires separate explicit read-only scan/elevation permission;
+attribute reads must equal freshness exceptions, with independent stable full-ID/time witnesses.
+Never elevate the unrestricted library suite: older non-ignored fixtures scan the executable drive.
+Sequential native timings are not a cache-controlled cold-build ratio. Matching packaged LocalSystem
+restart/base+delta/idle CPU+IO/search/hash acceptance remains required before release.
+
+### 7. Wrong vs Correct
+Wrong: every row opens a handle, or raw bytes always win; temporary owned search data is then rebuilt.
+Correct: bulk current records, full-ID freshness exceptions, then writer-only construction→durable
+commit→exact mapping→runtime auxiliaries→existing publication.

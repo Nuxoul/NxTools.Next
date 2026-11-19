@@ -623,7 +623,7 @@ fn theme_draft_cancel_save_and_reopen_preserve_one_palette_owner(cx: &mut TestAp
             .expect("config after Cancel")
             .system
             .theme,
-        nxtools_core::ThemePreference::Dark
+        nxtools_core::ThemePreference::System
     );
     cx.update(|cx| application.update(cx, |app, cx| app.open_window(cx)));
     cx.run_until_parked();
@@ -638,7 +638,7 @@ fn theme_draft_cancel_save_and_reopen_preserve_one_palette_owner(cx: &mut TestAp
     surface.refresh().expect("reopened settings");
     assert_eq!(
         view.read_with(&surface, |view, _| view.theme_preference),
-        nxtools_core::ThemePreference::Dark
+        nxtools_core::ThemePreference::System
     );
     choose_light_theme(&mut surface);
     let save = surface.debug_bounds("network-settings-save").expect("Save");

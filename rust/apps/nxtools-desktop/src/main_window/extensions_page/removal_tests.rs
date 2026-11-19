@@ -190,6 +190,10 @@ impl Fixture {
     }
 }
 fn click(window: &mut VisualTestContext, selector: &'static str) {
+    if selector == "extension-storage-open" {
+        super::super::click_management(window, "保留的扩展数据", false);
+        return;
+    }
     window.update(|window, cx| window.draw(cx).clear(cx));
     let bounds = window
         .debug_bounds(selector)

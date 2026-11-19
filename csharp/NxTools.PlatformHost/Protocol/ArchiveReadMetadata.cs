@@ -30,7 +30,7 @@ internal sealed class ArchiveReadMetadata(ArchiveReadLimits limits, uint selecte
         var name = frame.GetProperty("format").GetString()!;
         var raw = frame.GetProperty("entries");
         if (id == Guid.Empty || sequence != Batches || snapshot is { } prior && prior != id ||
-            format is { } previous && previous != name || name is not ("Zip" or "SevenZ" or "Rar4" or "Rar5" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd" or "Cab" or "Iso" or "Udf" or "Wim" or "Ar" or "Cpio" or "Lzma" or "Lz4" or "Lz4Block" or "Brotli") ||
+            format is { } previous && previous != name || name is not ("Zip" or "SevenZ" or "Rar4" or "Rar5" or "Alz" or "Egg" or "Tar" or "TarGz" or "TarBz2" or "TarXz" or "TarZstd" or "Gzip" or "Bzip2" or "Xz" or "Zstd" or "Cab" or "Iso" or "Udf" or "Wim" or "Ar" or "Cpio" or "Lzma" or "Lz4" or "Lz4Block" or "Brotli") ||
             raw.ValueKind != JsonValueKind.Array || raw.GetArrayLength() < 1 || raw.GetArrayLength() > (version == 2 ? 256 : 2)) throw new InvalidDataException();
         var entries = new ArchiveReadEntry[raw.GetArrayLength()];
         for (var index = 0; index < entries.Length; index++) {
@@ -43,7 +43,7 @@ internal sealed class ArchiveReadMetadata(ArchiveReadLimits limits, uint selecte
                 entry.WarningCodes is null || entry.WarningCodes.Length > 32 || entry.WarningCodes.Any(w => w is null || w.Length > 128) ||
                 entry.Provenance is not ("Utf8Flag" or "UnicodeExtra" or "FormatUnicode" or "Explicit" or "UncertainCp437" or "Heuristic") ||
                 (entry.Provenance == "Heuristic"
-                    ? selectedCodepage != 0 || entry.Codepage is not (65001 or 936 or 932)
+                    ? selectedCodepage != 0 || entry.Codepage is not (65001 or 936 or 932 or 949)
                     : entry.Codepage != (entry.Provenance == "Explicit" ? selectedCodepage : entry.Provenance == "UncertainCp437" ? 437u : 65001u)) ||
                 entry.Provenance == "Explicit" && selectedCodepage == 0) throw new InvalidDataException();
             entries[index] = entry;

@@ -117,6 +117,7 @@ impl ArchiveApplication {
             open_with: desired.open_with,
             extensions: desired.extensions,
             double_click_action: desired.double_click_action.wire_name().into(),
+            set_default: desired.set_default,
             menu_layout: desired.menu_layout.wire_name().into(),
             menu_commands: desired
                 .menu_commands
@@ -248,6 +249,7 @@ mod tests {
             extensions: vec![".zip".into(), ".7z".into()],
             desired_revision: 7,
             double_click_action: nxtools_core::archive::ArchiveDoubleClickAction::Smart,
+            set_default: true,
             menu_layout: nxtools_core::archive::ArchiveMenuLayout::Flat,
             menu_commands: vec![
                 nxtools_core::archive::ArchiveMenuCommand::Test,
@@ -275,6 +277,7 @@ mod tests {
         assert_eq!(wire.desired_revision, 7);
         assert_eq!(wire.extensions, vec![".zip".to_owned(), ".7z".to_owned()]);
         assert_eq!(wire.double_click_action, "smart");
+        assert!(wire.set_default, "the saved default claim reaches the native owner");
         assert_eq!(wire.menu_layout, "flat");
         assert_eq!(wire.menu_commands, vec!["test", "create"]);
         assert!(endpoint.try_receive_command_for_contract_test().is_err());

@@ -1,5 +1,6 @@
 use super::*;
 use crate::ui::metrics::ordinary_rem;
+use gpui_kit::component::form::{Field, Form};
 use gpui_kit::component::label::Label;
 
 /// Presentation-only draft; applied rates remain in the original download engine.
@@ -290,11 +291,17 @@ impl DownloadTaskWindowView {
         let Some(input) = self.speed_limit_kib.as_ref() else {
             return div().into_any_element();
         };
+        let pending = self.speed_limit_edit.pending.is_some();
+        let global_limit = self
+            .effective_global_speed_limit
+            .map(|limit| format!("全局上限：{}/s", format_download_size(limit)))
+            .unwrap_or_else(|| "全局上限：不限速".into());
         div()
             .w_full()
             .flex_none()
             .flex()
             .flex_col()
+            .gap_2()
             .on_action(
                 cx.listener(|this, _: &gpui_kit::component::input::Escape, window, cx| {
                     cx.stop_propagation();
@@ -302,30 +309,30 @@ impl DownloadTaskWindowView {
                 }),
             )
             .child(
-                div()
-                    .h(ordinary_rem(32.0))
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .child(Label::new("限速 KiB/s").text_size(ordinary_rem(TEXT_LABEL)))
-                    .child(
-                        div().w(ordinary_rem(96.0)).child(field_shell(
-                            self.theme,
-                            "download-task-speed-limit-input",
-                            Input::new(input)
-                                .aria_label("任务限速 KiB/s")
-                                .disabled(self.speed_limit_edit.pending.is_some()),
-                        )),
-                    )
-                    .child(
-                        Label::new(if self.speed_limit_edit.pending.is_some() {
-                            "保存中"
+                Form::vertical().small().child(
+                    Field::new()
+                        .label("此任务的下载上限")
+                        .description(if pending {
+                            "正在保存…"
                         } else {
-                            "0 不限速"
+                            "0 表示不限速，按 Enter 或离开输入框应用。"
                         })
-                        .text_size(ordinary_rem(TEXT_LABEL)),
-                    ),
+                        .child(
+                            div()
+                                .debug_selector(|| "download-task-speed-limit-input".into())
+                                .w(ordinary_rem(192.0))
+                                .min_w_0()
+                                .child(
+                                    Input::new(input)
+                                        .with_size(gpui_kit::component::Size::Medium)
+                                        .aria_label("任务限速 KiB/s")
+                                        .suffix(Label::new("KiB/s").text_sm())
+                                        .disabled(pending),
+                                ),
+                        ),
+                ),
             )
+            .child(Label::new(global_limit).text_size(ordinary_rem(TEXT_LABEL)))
             .when_some(self.speed_limit_edit.error.clone(), |row, error| {
                 row.child(
                     div()

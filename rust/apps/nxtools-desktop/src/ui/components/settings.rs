@@ -1,7 +1,6 @@
 use super::titlebar::{CaptionCapabilities, controlled_titlebar};
 use crate::theme::Theme;
 use crate::ui::metrics::SETTINGS_FOOTER_HEIGHT;
-use crate::ui::typography::UI_FONT_FAMILY;
 use gpui_kit::component::Sizable;
 use gpui_kit::component::switch::Switch;
 use gpui_kit::{
@@ -76,7 +75,6 @@ pub(crate) fn settings_shell(
         .debug_selector(move || ids.root.into())
         .size_full()
         .bg(theme.canvas)
-        .font_family(UI_FONT_FAMILY)
         .text_color(theme.text)
         .flex()
         .flex_col()
@@ -142,7 +140,6 @@ pub(crate) fn feature_settings_window(
         .debug_selector(move || ids.root.into())
         .size_full()
         .bg(theme.canvas)
-        .font_family(UI_FONT_FAMILY)
         .text_color(theme.text)
         .flex()
         .flex_col()

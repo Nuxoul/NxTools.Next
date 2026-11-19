@@ -1,8 +1,8 @@
 # Reference-driven improvement taskbook
 
-Status: B1, B2 and B3 accepted at their recorded boundaries; B4–B7 paused by user.
+Status: B1–B7 have accepted outcomes at their recorded boundaries. B7 acceptance is limited to its declared ALZ/EGG matrix and Windows x64 clear Store/Deflate ZIP-SFX profile. Archive parent Phase E stays open; physical/installed/Release and separately owned UIA/native-memory work are not closed by these batch outcomes.
 
-This taskbook covers the20approved improvements selected from Mister Download Manager, Ghost Downloader and Bandizip. It is the cross-feature work map; each independently deliverable item retains its own requirements, design, execution plan and recorded acceptance level. Later batches remain pending.
+This taskbook covers the20approved improvements selected from Mister Download Manager, Ghost Downloader and Bandizip. Each independently deliverable item retains its requirements, design, implementation and explicit outcome/evidence level. Batch acceptance does not replace archive-parent, whole-workspace or Release acceptance.
 
 ## 1. Outcomes
 
@@ -291,3 +291,47 @@ REF12 is adopted as evidence-based resource-list denoising:91observations remain
 ## 12. B3 execution record (2026-11-10)
 
 **B3 — Split-file usability** (REF-17/REF-18) is **accepted at source, production TestPlatform and owned-native fixture boundaries**. [Coordinator acceptance](../.trellis/tasks/11-10-reference-b3-split-file-usability/coordinator-acceptance.md) closes B3-01/B3-02 and E1/E2: real validation reasons, first keyboard Confirm, actual preset/+/- controls and Submit-to-immutable-Job/wire. Independent repair verification passed REF17 8/REF18 11/forms48/draft12/Job129/quick3/tools11, Core REF17 2/Protocol REF18 1/IPC62, scoped format and four source gates. Prior coordinator native split3/raw4 evidence remains applicable; those native selections were not rerun in the repair round. Strict Desktop lint retains only two unrelated download baselines; physical/Release/full-workspace acceptance remains separate. B1/B2 and canonical **Phase E — Format expansion and ZIP editing / in_progress** remain unchanged. B4–B7 are paused; no further implementation is dispatched.
+
+## 13. B4 execution (2026-11-10)
+
+**B4 — Task operation and visibility** (REF-08/09/10) plus shared default User-Agent and editable Header Reset is **accepted at source, production TestPlatform and owned HTTP/SQLite/writer/pipe boundaries** after [coordinator reacceptance](../.trellis/tasks/11-10-reference-b4-task-operation-visibility/coordinator-acceptance.md). B4-01/B4-02/B4-E1/B4-E2 are closed. Independent30selected groups pass, including production UI30, replacement11, messages16, Download-IPC8, Download127/HTTP-client26/Core98 and Header/template/coverage/rate/Server/window/caller preservation. Affected compile/format/Core-Download-DownloadIPC lint and four source gates pass; Desktop retains two attributed baseline findings. B1/B2/B3 and canonical **Phase E — Format expansion and ZIP editing / in_progress** remain unchanged. Next batch is B5 — Completion intentions; only its prompt is requested, not automatic implementation.
+
+### B4 scoped repair handoff (2026-11-11)
+
+**B4-01/B4-02/B4-E1/B4-E2** are **accepted at the coordinator's stated boundaries**. [Repair results](../.trellis/tasks/11-10-reference-b4-task-operation-visibility/acceptance-repair.md) retain real HTTP/writer/SQLite validator RED→GREEN, exact retired A→B→A refusal before HTTP with fresh C, actual held-candidate cancellation through the original draining pipe and production TestPlatform native-close callback. Shared effective validator selection preserves valid Last-Modified and legal quoted-empty strong ETag; bounded task-owned revision travels through original TaskDetail/command11/Hello4/callers. No replacement manager, UUID history or schema is introduced.
+
+Independent reacceptance passed all30matching LIST/RUN selections, scoped format, eight-package all-target check, Core/Download/Download-IPC strict lint and four source gates. Desktop retains only its two baseline findings. E2 proves a new window exists before the queued old result runs; actual fixtures prove candidate/socket/lease/listener/client-worker drain. Verification processes are0. Physical/visual/installed/Release acceptance remains separate. B5 prompt preparation does not start implementation; no package/install/system/commit/push work is included.
+
+## 14. B5 execution (2026-11-11)
+
+**B5 — Completion intentions**, REF-07/REF-11, is **accepted at source, production TestPlatform and owned HTTP/SQLite/writer/pipe boundaries** after [coordinator reacceptance](../.trellis/tasks/11-11-reference-b5-completion-intentions/coordinator-acceptance.md). B5-01/B5-02/B5-03 are closed by real held-observation/pump regressions. Independent33Rust selections pass, including B5 UI26, completion9, engine105, B4 UI30 and original Archive129with retained actual exports. Scoped format, eight-package check, six package strict lint and five source gates pass; Protocol/Desktop retain three historical diagnostics.
+
+Queue membership cutoff/accepted revisions survive coalescing, terminal intention commands reject before writes, and stopped retry acceptance notifies with Waiting completion facts while later legitimate success remains usable. Previous safe C#2evidence applies to unchanged adapters and was not rerun in repair acceptance. Physical power/current-user Desktop Exit/native/visual/installed/Release layers remain separate. No product source repair or next-batch dispatch occurred. B1–B5 and canonical **Phase E — Format expansion and ZIP editing / in_progress** retain their boundaries.
+
+## 15. Independent PlatformHost memory repair ownership
+
+PlatformHost/OneCommander UIA native-memory lifecycle repair is separately owned. [Detailed scope and acceptance](reference-code/platformhost-uia-memory-repair.md) retain the reported memory evidence, verified ordinary/helper startup chain and limits of allocation attribution. Formal packaging and physical memory testing belong to other tasks; they are not prerequisites for B6 connection experiments.
+
+Native COM IUIAutomation/CUIAutomation8, target-demand lifetime, actual event/COM/thread retirement and original OneCommander pane/anchor/navigation/focus remain the repair contract. Startup WarmUp removal alone, periodic restart, forced GC or working-set trimming does not certify memory effectiveness. Physical GUI/UAC/installed replacement remain separately controlled.
+
+B6 evaluates REF-13/14/15/16 independently with equivalent serial baseline/candidate trials and explicit adopt/retain-current decisions. Shared build contention and measurement resource pressure constrain the execution window. B7 remains unstarted; no automatic implementation dispatch follows acceptance.
+
+## 16. PlatformHost UIA source acceptance
+
+[A coordinator report](../.trellis/tasks/11-11-platformhost-uia-memory/coordinator-acceptance.md) records a matching Debug build with0warnings/errors,9/9reviewed synthetic Fixture tests, spec gate and scoped whitespace PASS. These old tracker/fake-adapter seams do not execute the new native COM client. No confirmed remaining leak or fixed-memory result is claimed.
+
+Actual native ABI/lifetime, ordinary/helper no-target module behavior, active/split/WPF provider behavior and activity-dependent memory evidence remain unverified by this coordinator. A is not_accepted at those boundaries; no memory-fixed formal package is certified here. Product/helper/global UIA/UAC/memory stress and package/install were not run in A or B6 acceptance. This does not block independent B6 evaluation.
+
+## 17. B6 independent acceptance (2026-11-12)
+
+**B6 — Connection experiments**, REF-13/14/15/16, is **accepted at source, owned local HTTP/TLS/SQLite/writer/pipe and production TestPlatform boundaries**. [Coordinator report](../.trellis/tasks/11-11-reference-b6-connection-experiments/coordinator-acceptance.md) closes B6-01: every failed segment attempt is observed once before retry eligibility. The original-worker `503 → refusal → terminal refusal` regression has identical-test/fixture RED→GREEN and independent GREEN, with learned width1, original10061terminal, three attempts, exact4MiBpeer range and actual joins.
+
+Independent37LIST/RUN groups/842successful executions, nine-package all-target check, three affected-owner strict lints, eleven-file format and five source/lifecycle gates pass. All10Desktop selections pass. Original138formal observations/92warmups and audited statistics remain frozen. REF-13 adopts fewer-refusal learning within its5%time allowance; REF-14/15/16 retain-current decisions are accepted. Three historical Protocol/Desktop lints remain separately attributed. UIA/native memory and physical/installed/Release layers remain separate. No product source repair, next-batch dispatch, package/install/system mutation or commit/push followed this acceptance. B7 remains unstarted; no archive parent phase is advanced.
+
+## 18. B7 independent acceptance (2026-11-13)
+
+**B7 — Format expansion** is accepted for REF-19's declared ALZ/EGG reader rows and REF-20's declared Windows x64 clear Store/Deflate ZIP-SFX profile. [Coordinator acceptance](../.trellis/tasks/11-12-reference-b7-format-expansion/coordinator-acceptance.md) records independent29LIST/RUN groups/376successful executions, zero failures/skips/not_run, actual source/Read/Job/output lifecycle, compiled Create interactions and qualified output bytes. One bounded SFX source review finds no confirmed in-scope defect.
+
+Independent actual creation yields4profiles/8physical files/20entries/3,623,188exact decoded bytes. Ten-package check, relevant strict lint,48-file format and five source/lifecycle gates pass. The own static PE,27runtime/notice inputs and14embedded notices match;30controlled recipient outcomes and4loader observations are audited, not reexecuted. All original B1–B6record bytes remain preserved; no frozen performance rerun is performed.
+
+Unqualified capability combinations, three historical strict-lint diagnostics, physical HWND/IME/DPI/user visual, native-memory, installed/Release and large decoded-payload execution remain separate. Parent **Phase E — Format expansion and ZIP editing** stays open; these outcomes do not certify the complete workspace/release. No product source repair, package/install/system mutation, commit/push or further implementation dispatch follows this acceptance.

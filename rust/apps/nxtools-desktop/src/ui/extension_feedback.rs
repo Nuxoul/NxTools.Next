@@ -456,6 +456,7 @@ impl ClipboardPanel {
         let generation = self.query_dispatch_generation;
         self.active_category_id = BUILTIN_ALL_CATEGORY_ID.into();
         self.search_scope = ClipboardSearchScope::Content;
+        self.history_filters = super::history_filters::HistoryFilters::default();
         self.search_input
             .update(cx, |input, cx| input.set_value("", window, cx));
         self.search_pending = true;

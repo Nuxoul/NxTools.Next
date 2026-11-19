@@ -295,7 +295,7 @@ Production localhost begin_probe/window identity/footer; failure/disconnect/time
 Wrong: metadata success→resize old HWND→viewport deadline→erase probe. Correct: retain probe→new fixed HWND→one correlated native apply→identity-guarded handoff; failed presentation retains data.
 
 ## Completion geometry and global rule ownership follow-up
-- Ordinary collapsed task progress/completed share440x184. Same keyed HWND/generation changes content only; compare previous phase/details budget before issuing any native centered resize. Expanded280/failed196 remain genuine different-size transitions. Initial minimum is184, not a taller initial phase budget. Gate actual production command queue plus footer bounds; native owned-HWND center evidence is separate from installed-pointer/DPI acceptance.
+- Ordinary collapsed task progress/completed share440x184. Same keyed HWND/generation changes content only; compare previous phase/details budget before issuing any native centered resize. The2026-11-13 progress layout uses expanded440x400 with separate connection/speed/completion TabBar pages; failed196 remains unchanged. Initial minimum is184, not a taller initial phase budget. Preserve official Medium32DIP speed Input, original draft/Enter/Blur/Escape commands, persisted completion intentions and bounded table viewport above the fixed footer. Same-attempt live range projection survives snapshot gaps; split plans replace it, task/attempt/source/status changes retire it. Gate actual production command queue plus footer/input/table bounds; native owned-HWND center evidence is separate from installed-pointer/DPI acceptance.
 - Global owns independent Clipboard/Quick rule drafts and one atomic save; present-empty overrides legacy. Consumers apply next-turn, never save. Keep cancel/failure/retry, case/path/.EXE, busy/close and desired!=Windowsapplied. Queue09 uses Settings publicslots/Form/Checkbox requestedbool/SmallButtons, no row/childdispatcher;606tests/sourcegates are not native acceptance. [Queue09](../../../tasks/10-10-gpui-kit-component-visual-migration/ui-queue-outcomes.md).
 - Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/polish_tests.rs`, `repo:rust/apps/nxtools-desktop/src/network_settings.rs`, `repo:rust/crates/nxtools-core/src/lib.rs`; [dated follow-up](../../../../docs/audits/2026-10-09-completion-and-global-blacklist.md).
 - Global layout requires aligned names/scope columns,32px original Inputs,Kit Small24px actions,center lines,default128px official Settings rail and bounded long/many/empty/busy states. Use released typography/tiers; retain720x480/input>=200/right<=700/table<=202/footer gates. Source/bounds tests are not aesthetic/native acceptance; exact adoption and scoped exceptions follow Queue09.
@@ -380,6 +380,8 @@ Evidence: repo:rust/apps/nxtools-desktop/src/ui/history_kit_migration_tests.rs;
 Loading copy is not percentage; Empty/Alert/Spinner keep distinct states and motion policy.
 Current user-approved official notification integration supersedes the earlier private-completion/custom-shell exception: one released NotificationList owns card/stack/fixed5seconds/group remaining pause/close/transition; max3business metadata and3reusable official IDs keep admission bounded. No center expiry clock or GroupBox/Alert substitute. Use public content for at most2Small24actions, current-generation once-only deferred original-source callbacks. Verify actual official roles/paint/containment, pointer AND keyboard native grow/collapse, focused retirement/empty-reopen, stale close and near-expiry position change preserving lifetime. Native motion/error/disconnect must also reach GPUI reduce-motion. [Exact current evidence/limits](../../../tasks/10-16-menu-notification-refinement/official-notification-integration-outcomes.md); historical [Queue10](../../../tasks/10-10-gpui-kit-component-visual-migration/ui-queue-outcomes.md) is not current notification authority.
 
+Grouped download completion uses only runtime `BrowserBatchSubmit` correlation on newly accepted tasks and the nonserialized completion snapshot. The original coordinator freezes `(task,attempt)` membership before terminals, waits for surviving members to terminate or be removed/cancelled, keeps independent batch summaries and standalone400ms feedback separate, and never grants power authority from summaries. First dispatch (attempt0→1) retains admission membership; later retries emit standalone feedback. Already-open keyed task windows transform normally; only new passive grouped terminal fallbacks are suppressed. NotificationCenter remains the sole official presentation owner. Both grouped and standalone completion notices display result text without task-location or temporary-mute actions. Explicit folder actions, configured completion sound and saved download preferences remain unchanged. Evidence: `repo:rust/apps/nxtools-desktop/src/completion_actions.rs#register_completion_members`, `repo:rust/apps/nxtools-desktop/src/downloads/completion_shutdown_impl.rs#publish_terminal_notifications`, `repo:rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs#apply_task_window_directive`, `repo:rust/crates/nxtools-download/src/engine/browser.rs#submit_browser_batch_correlated`; compiled fixtures do not certify native/visual acceptance.
+
 ## Scenario: Installed-feedback theme, monitor and explicit native actions
 
 ### 1. Scope / Trigger
@@ -390,7 +392,7 @@ System theme, foreground download limiting, link action separation, monitor/conf
 
 ### 3. Contracts
 Persist SystemSettings.theme through atomic owned section; old config defaults Dark. Draft/Cancel never apply; Save defers shared palette update; System uses native snapshot/change/reconnect, error/unknown defaults dark. Weak keyed observers notify on next turn; preserve input/window/appearance identities. Background policy uses existing ForegroundChanged process ID, no polling; unknown/disconnect disables temporary cap. Effective global/task caps use minimum without overwriting persisted manual/task values. Monitor samples recent timestamped byte counters once per second, terminal/pause/rewind resets immediately; never smooth already-smoothed engine rate. Filename max two lines plus full Tooltip/name; segment unknown size is not completion. Ordinary246px confirmation retains fixed hidden-target handoff;200px schedule popup leaves trigger operable with124px scrollable calendar. Kit Root fills opaque even behind transparent content: refine only taskbar Root background after constructor lease.
-Pending Shell command ID is installed before dispatch, caller correlation spans C#. Only matching success closes current originating HWND/generation. OpenWith cancellation is `success=false,error=null,data=cancelled`, clears pending without toast/close; user-choice deadline10minutes, ordinary Shell15seconds. Reveal final→noncompleted temporary→existing save directory; click does not create directories. Link capture never opens/copies; explicit row-open and secondary Copy are distinct, Copy stops propagation. Protected indexer matching tuple reuses; healthy older tuple requires correlated UAC atomic upgrade; malformed/unapproved tuple fails closed. Rust handles both installed/upgraded through existing protected restart identity checks; no admission bypass.
+Pending Shell command ID is installed before dispatch, caller correlation spans C#. Only matching success closes current originating HWND/generation. OpenWith cancellation is `success=false,error=null,data=cancelled`, clears pending without toast/close; human selection has no inactivity deadline, ordinary Shell retains its15second UI deadline. Reveal final→noncompleted temporary→existing save directory; click does not create directories. Link capture never opens/copies; explicit row-open and secondary Copy are distinct, Copy stops propagation. Protected indexer matching tuple reuses; healthy older tuple requires correlated UAC atomic upgrade; malformed/unapproved tuple fails closed. Rust handles both installed/upgraded through existing protected restart identity checks; no admission bypass.
 
 ### 4. Validation & Error Matrix
 Theme native error/disconnect→System dark, explicit Light/Dark unaffected. Background zero/overflow enabled input→local validation; disabled retains saved rate. OpenWith directory/missing file→reject; cancel→quiet retained window; failure/timeout/disconnect→retryable retained window; late generation→no close. Damaged protected tuple→repair_required, cancelled UAC→authorization_cancelled, never Ready from service Running alone. Opaque Root scene→regression failure; scene alpha does not certify DWM.
@@ -400,6 +402,7 @@ Good: Save Light repaints existing windows; other-app cap returns latest manual 
 
 ### 6. Tests Required
 Theme draft/Cancel/Save/reopen and component/custom palette plus auxiliary paint/entity/generation checks; Core legacy/section merge; foreground/manual/disable/disconnect engine state; runtime_speed_cap_contract persistence/concurrency/diagnostic8tests; production completed window cancel/failure/timeout/late success; category bounds and schedule trigger non-overlap; taskbar production Root quads preserve progress paint. C# exact installed native/integration fixtures and native Quick/Clipboard message/UIA. Full Desktop650 tests, strict production/tests lint and workspace/fmt are source checkpoint, not physical/installed/visual acceptance.
+Open With wait regression advances the actual DownloadApplication/TestApp clock beyond601seconds before returning cancellation, checks the same pending ID and originating window survive, and rejects a late success after cancellation. Retain ordinary Reveal timeout/disconnect/stale-generation controls. IPC human-operation exemptions follow [the original router contract](../../nxtools-ipc/backend/quality-guidelines.md#scenario-human-driven-shell-authorization-and-native-drag); native Shell execution waits for its terminal/cancel while menu enumeration remains bounded.
 
 ### 7. Wrong vs Correct
 Wrong: `.bg(transparent)` content under opaque Kit Root; send Shell then register; average engine rate again; upgrade result treated as initial-only success.
@@ -579,6 +582,45 @@ The search_retirement_ TestApp cases cover clear/hide wire frames, full-queue de
 reopen isolation; service retirement and protocol contracts are owned by Indexer/Protocol below.
 No installed-service or physical-input acceptance follows from these isolated tests.
 
+## Indexer event-driven command dispatch
+
+Evidence: `repo:rust/apps/nxtools-desktop/src/runtime.rs#run_indexer_service_at`,
+`repo:rust/apps/nxtools-desktop/src/runtime/indexer_dispatch_tests.rs`,
+`repo:docs/reference-code/quick-launch-research.md#fixed-export-normal-query-dispatch-and-completion-2026-11-17`,
+`repo:docs/audits/2026-11-17-indexer-dispatch-wakeup.md`.
+The existing supervisor thread owns one current-thread Tokio runtime. Await the original bounded
+command receiver alongside stop and reader completion; never gate command delivery behind a periodic
+stop-channel timeout or replace it with short-interval polling. Stop and reader completion precede
+commands when simultaneously ready. Reader sender closure signals completion on return/unwind.
+Preserve FIFO envelopes, exact cancellation correlation/generation, disconnected admission and stale
+queue draining. Idle EOF wakes reconnect; the existing one-second backoff remains stop-interruptible.
+Stopping detaches the process-lifetime synchronous reader; reconnect joins its completed predecessor.
+Transport scheduling is independent of the normal launcher's completion-owned publication;
+follow [current result availability](ui-experience-contracts.md#scenario-current-quick-launch-result-availability). Reuse existing correlated search/cancel lifecycle diagnostics; do not
+log query payloads or add per-poll/per-frame transport telemetry. Runtime/reader-start failures log
+fixed transport events and native error codes at their owning boundary.
+Required real random-named-pipe regressions: search/cancel dispatch under50ms without a following
+command, FIFO request identity, partial/terminal receive while idle, EOF/reconnect without a query,
+explicit stop, stop-sender closure and stop during retry. Retain bounded admission, persistent-reader
+shutdown and Quick Launch generation/publication regressions. Compiled fixture latency is not
+installed UI performance; package/protected-tuple deployment and A/B need separate authorization.
+
+## Quick Launch foreground activation terminal state
+
+Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch/actions.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch.rs#handle_window_activation_result`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/tests.rs`.
+
+The bounded sequence remains PreTopmost -> Activate -> ConfirmTopmost. ConfirmTopmost is reachable
+only after a successful Activate result; exhausting Activate retries is a real terminal failure,
+not permission to treat a later topmost success as activation. Search focus is granted only by a
+successful current-session Activate result. The existing Panel notification path reports a retryable
+activation failure and keeps the popup searchable by click; no new controller, window or native API.
+Pending-map regressions must deliver real command results through QuickLaunchApplication, assert no
+post-failure ConfirmTopmost command or false success/focus, retain the successful chain, and prove an
+old result cannot consume the replacement activation. TestApp evidence does not certify the physical
+double-Control gesture, elevated foreground policy or installed Windows acceptance.
+
 ## Extension executor exit ownership
 Evidence: `repo:rust/apps/nxtools-desktop/src/extensions/service.rs`, `repo:rust/apps/nxtools-desktop/src/extensions/service_storage_tests.rs`, `repo:rust/apps/nxtools-desktop/src/main.rs`, `repo:rust/apps/nxtools-desktop/src/runtime.rs`.
 ExecutionLease retains the original executor JoinHandle and one shared terminal result. ExtensionService::shutdown_and_wait aborts event subscriptions, signals once and joins even when resolver/service clones remain. The original executor drives ExtensionRuntime::shutdown_and_wait while Tokio still runs, so cancelled feature futures and actual Blob IO can release their backing before physical cleanup joins. Final Drop only signals: it may run inside an executor task and must not self-join. The existing native grace/executor timeout never substitutes for Blob deletion completion.
@@ -591,3 +633,15 @@ Source wiring gate: `repo:tests/architecture/extension-blob-lifecycle.py` reject
 `actions.rs::PendingAction` captures session AND generation. Cancellation, native completion and deadline release only that still-current identity; old action completion never rebuilds ReleaseDrop from a new session. Deferred/copy cancellation and normalized-image ownership remain unchanged. C# owns physical image staging, retains its sole process-wide16MiB Drop slot through deletion failure/Stop, and retries on the original STA. Logical release success is a transfer of cleanup responsibility, not physical completion.
 
 Required production regressions in `repo:rust/apps/nxtools-desktop/src/tools/floating_assistant/application/tests.rs`: real bounded queue full -> exact release after recovery, cancellation, retry/destructor without controller, replacement pipe before UI sees EOF, stale action generation and60second late Retire result -> next-generation Prepare. IPC and self-owned C# locked-file fixtures protect the receiving/deletion boundaries. Preserve hidden-frame/passive focus/routing/component composition; no real Shell or Desktop product launch is implied by TestApp evidence.
+
+## Environment-rooted link detection
+
+`repo:rust/apps/nxtools-desktop/src/tools/link_detector.rs#looks_like_local_path` is the
+shared drive/UNC/environment-root predicate for whole-line, wrapped, prose and typed
+classification boundaries. Percent-delimited environment roots must resolve to an
+absolute existing path before local file/directory classification. Keep original display
+text and resolved Copy/Open targets; do not expand HTTP(S) percent escapes. Undefined
+variables or missing whole paths must not produce a match or an existing-prefix fallback.
+Regression tests exercise the production detector with the LOCALAPPDATA logs example,
+actual TEMP files/directories, spaces/quotes/Markdown, case-insensitive variable names,
+undefined variables and URL preservation. See [reference](../../../../docs/reference-code/link-detector.md).

@@ -8,6 +8,10 @@ license.workspace = true
 name = "nxtools-archive-worker"
 path = "src/worker_main.rs"
 
+[[bin]]
+name = "nxtools-zip-sfx"
+path = "src/sfx_main.rs"
+
 [features]
 isolated-codecs = ["dep:sevenz-rust2", "dep:unrar_sys", "dep:caddy-archive-core", "dep:libmkiso", "dep:ar", "dep:kpea", "dep:lz4_flex", "dep:brotli"]
 

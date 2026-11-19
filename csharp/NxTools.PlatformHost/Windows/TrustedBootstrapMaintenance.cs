@@ -15,6 +15,9 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
         void Stop();
         IDisposable EnterDeploymentGate();
         void SetBootstrapHash(string hash);
+        void SetTrustIdentity(string expectedBootstrapHash, string expectedPublicKeyHash,
+            string newBootstrapHash, string newPublicKeyHash);
+        void SetTrustKeyHash(string hash);
         void Start();
         void ConfirmReady();
     }
@@ -22,15 +25,17 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
     private sealed record Version(long Sequence, Guid ReleaseId, string ManifestSha256, string BootstrapSha256, int ProtocolVersion = 1);
     private sealed record Journal(string OldHash, string NewHash, string KeyHash, string EnrollmentBase64,
         string ReleaseStateSha256, Version Next);
+    private sealed record RotationJournal(string OldBootstrapHash, string NewBootstrapHash, string OldKeyHash,
+        string NewKeyHash, string EnrollmentBase64, string ReleaseStateSha256, Version Next);
     private string Root => Path.GetFullPath(updaterRoot);
     private string Bootstrap => Path.Combine(Root, "Bootstrap", "NxTools.PlatformHost.exe");
     private string Backup => Path.Combine(Root, "Bootstrap", "NxTools.PlatformHost.maintenance-old");
     private string Candidate => Path.Combine(Root, "Bootstrap", "NxTools.PlatformHost.maintenance-new");
     private string JournalPath => Path.Combine(Root, "bootstrap-maintenance.json");
-    private string VersionPath => Path.Combine(Root, "bootstrap-maintenance-state.json");
+    private string RotationJournalPath => Path.Combine(Root, "bootstrap-trust-rotation.json");
     private string EnrollmentPath => Path.Combine(Root, "enrollment.json");
     private string StatePath => Path.Combine(Root, "Releases", "state.json");
-
+    private string VersionPath => Path.Combine(Root, "bootstrap-maintenance-state.json");
     internal static void RecordRepairedEnrollment(string root, VerifiedRelease release)
     {
         if (!new TrustedUpdateEnrollment(root).IsComplete())
@@ -43,6 +48,137 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
         JsonSerializer.Serialize(output, new Version(release.Manifest.ReleaseSequence,
             release.Manifest.ReleaseId, release.ManifestSha256, bootstrap.Sha256));
         output.Flush(true);
+    }
+
+    internal void Rotate(string package, Guid correlationId)
+    {
+        var clock = Stopwatch.StartNew();
+        Event("rotation_accepted", correlationId, clock);
+        try
+        {
+            using var operation = new FileStream(Path.Combine(Root, "bootstrap-maintenance.lock"),
+                FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            var newKeyHash = Hash(publicKey);
+            var enrollmentBytes = ReadBytes(EnrollmentPath);
+            var enrollment = JsonSerializer.Deserialize<Enrollment>(enrollmentBytes)
+                ?? throw new InvalidDataException("Missing enrollment.");
+            if (!enrollment.Completed)
+                throw new InvalidDataException("Completed enrollment required before trust rotation.");
+            var oldKeyHash = enrollment.Identity.PublicKeySha256;
+            var oldBootstrapHash = enrollment.Identity.BootstrapSha256;
+            if (File.Exists(RotationJournalPath))
+            {
+                var prior = Read<RotationJournal>(RotationJournalPath);
+                if (!Same(prior.OldKeyHash, oldKeyHash) || !Same(prior.OldBootstrapHash, oldBootstrapHash) ||
+                    File.Exists(Backup) || !Same(FileHash(Bootstrap), oldBootstrapHash) || !File.Exists(Candidate))
+                    throw new InvalidDataException("Unfinished trust rotation requires rollback inspection.");
+                RequireHash(Candidate, prior.NewBootstrapHash);
+                File.Delete(Candidate);
+                File.Delete(RotationJournalPath);
+                Event("rotation_recovered_precommit", correlationId, clock);
+            }
+            if (Same(oldKeyHash, newKeyHash))
+            {
+                Apply(package, correlationId);
+                return;
+            }
+            service.Validate(oldBootstrapHash, oldKeyHash);
+            var state = Read<TrustedUpdateTransaction.State>(StatePath);
+            if (state.Sequence <= 0 || state.ReleaseId == Guid.Empty || !IsHash(state.ManifestSha256))
+                throw new InvalidDataException("Invalid current release state.");
+            if (File.Exists(Path.Combine(Root, "Releases", "transaction.json")))
+                throw new InvalidOperationException("An unfinished product update must recover before trust rotation.");
+            if (File.Exists(RotationJournalPath) || File.Exists(Backup) || File.Exists(Candidate))
+                throw new InvalidDataException("Unowned trust rotation files require inspection.");
+            using var release = TrustedReleaseManifest.VerifyPackage(package, publicKey, state.Sequence);
+            var bootstrap = release.Files.Single(file => file.Path == "NxTools.PlatformHost.exe");
+            var next = new Version(release.Manifest.ReleaseSequence, release.Manifest.ReleaseId,
+                release.ManifestSha256, bootstrap.Sha256);
+            if (next.Sequence <= state.Sequence)
+                throw new InvalidDataException("Trust rotation downgrade/replay rejected.");
+            var journal = new RotationJournal(oldBootstrapHash, bootstrap.Sha256, oldKeyHash,
+                newKeyHash, Convert.ToBase64String(enrollmentBytes), FileHash(StatePath), next);
+            var candidateOwned = false;
+            try
+            {
+                using var source = IndexerServiceInstaller.TrustedBinary.Open(Path.Combine(package, bootstrap.Path), bootstrap.Sha256);
+                using (var output = new FileStream(Candidate, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                {
+                    candidateOwned = true;
+                    source.CopyTo(output);
+                    output.Flush(true);
+                }
+                Write(RotationJournalPath, journal);
+            }
+            catch
+            {
+                if (!File.Exists(RotationJournalPath) && candidateOwned) File.Delete(Candidate);
+                throw;
+            }
+            Event("rotation_prepared", correlationId, clock);
+            var committed = false;
+            try
+            {
+                service.Stop();
+                using var gate = service.EnterDeploymentGate();
+                service.Validate(oldBootstrapHash, oldKeyHash);
+                if (!Same(FileHash(StatePath), journal.ReleaseStateSha256)) throw new InvalidDataException("Release state changed during trust rotation.");
+                RequireHash(Bootstrap, oldBootstrapHash);
+                RequireHash(Candidate, bootstrap.Sha256);
+                File.Move(Bootstrap, Backup);
+                File.Move(Candidate, Bootstrap);
+                service.SetTrustIdentity(oldBootstrapHash, oldKeyHash, bootstrap.Sha256, newKeyHash);
+                var updated = enrollment with
+                {
+                    Identity = enrollment.Identity with
+                    {
+                        PublicKeySha256 = newKeyHash,
+                        BootstrapSha256 = bootstrap.Sha256,
+                        Sequence = next.Sequence,
+                        ReleaseId = next.ReleaseId
+                    }
+                };
+                WriteBytes(EnrollmentPath, JsonSerializer.SerializeToUtf8Bytes(updated));
+                service.Start();
+                service.ConfirmReady();
+                RequireHash(Bootstrap, bootstrap.Sha256);
+                if (!Same(FileHash(StatePath), journal.ReleaseStateSha256)) throw new InvalidDataException("Release state changed during trust rotation.");
+                Write(VersionPath, next);
+                committed = true;
+                if (File.Exists(Backup)) { RequireHash(Backup, oldBootstrapHash); File.Delete(Backup); }
+                if (File.Exists(RotationJournalPath)) File.Delete(RotationJournalPath);
+                Event("rotation_committed", correlationId, clock);
+            }
+            catch
+            {
+                if (committed) throw;
+                try
+                {
+                    service.Stop();
+                    using var rollbackGate = service.EnterDeploymentGate();
+                    if (File.Exists(Bootstrap)) { RequireHash(Bootstrap, bootstrap.Sha256); File.Delete(Bootstrap); }
+                    if (File.Exists(Backup)) { RequireHash(Backup, oldBootstrapHash); File.Move(Backup, Bootstrap); }
+                    if (File.Exists(Candidate)) { RequireHash(Candidate, bootstrap.Sha256); File.Delete(Candidate); }
+                    service.SetTrustIdentity(bootstrap.Sha256, newKeyHash, oldBootstrapHash, oldKeyHash);
+                    WriteBytes(EnrollmentPath, enrollmentBytes);
+                    service.Start();
+                    service.ConfirmReady();
+                    if (File.Exists(RotationJournalPath)) File.Delete(RotationJournalPath);
+                    Event("rotation_rolled_back", correlationId, clock);
+                }
+                catch (Exception rollbackFailure)
+                {
+                    throw new AggregateException("Trust rotation failed and rollback was incomplete.", rollbackFailure);
+                }
+                throw;
+            }
+            Event("rotation_completed", correlationId, clock);
+        }
+        catch (Exception failure)
+        {
+            Event("rotation_failed", correlationId, clock, failure.HResult);
+            throw;
+        }
     }
 
     internal void Apply(string package, Guid correlationId)
@@ -80,8 +216,8 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
             }
             if (next.Sequence <= Math.Max(state.Sequence, previous?.Sequence ?? 0))
                 throw new InvalidDataException("Bootstrap maintenance downgrade/replay rejected.");
-            using (var snapshot = TrustedReleaseManifest.VerifyRecoverySnapshot(Path.Combine(Root, "Releases", "active"),
-                publicKey, state.Sequence, state.ReleaseId, state.ManifestSha256)) { }
+            using (var snapshot = VerifyRecoverySnapshot(Path.Combine(Root, "Releases", "active"),
+                state.Sequence, state.ReleaseId, state.ManifestSha256)) { }
             if (File.Exists(Backup) || File.Exists(Candidate)) throw new InvalidDataException("Unowned maintenance files require inspection.");
             var journal = new Journal(oldHash, file.Sha256, keyHash, Convert.ToBase64String(enrollmentBytes), Hash(stateBytes), next);
             // Stable source held through copy. Before journal publication this invocation owns the
@@ -198,6 +334,18 @@ internal sealed class TrustedBootstrapMaintenance(string updaterRoot, byte[] pub
     }
     private void RequireStateUnchanged(Journal value)
     { if (!Same(FileHash(StatePath), value.ReleaseStateSha256)) throw new InvalidDataException("Release state changed during maintenance."); }
+    private VerifiedRelease VerifyRecoverySnapshot(string path, long sequence, Guid releaseId, string manifestSha256)
+    {
+        try
+        {
+            return TrustedReleaseManifest.VerifyRecoverySnapshot(path, publicKey, sequence, releaseId, manifestSha256);
+        }
+        catch (Exception) when (!Same(Hash(publicKey), Hash(Convert.FromBase64String(LegacyUpdateTrust.PublicKeySpkiBase64))))
+        {
+            return TrustedReleaseManifest.VerifyRecoverySnapshot(path,
+                Convert.FromBase64String(LegacyUpdateTrust.PublicKeySpkiBase64), sequence, releaseId, manifestSha256);
+        }
+    }
     private static bool Same(string? a, string? b) => string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
     private static bool IsHash(string? value) => value is { Length: 64 } && value.All(char.IsAsciiHexDigit);
     private static string Hash(byte[] bytes) => Convert.ToHexString(SHA256.HashData(bytes));

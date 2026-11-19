@@ -3,7 +3,7 @@ use crate::{ArchiveEntry, ArchiveError, OperationControl, Result};
 use std::io::{self, Read, Seek, SeekFrom};
 use zeroize::Zeroizing;
 
-type Keys = Zeroizing<[u32; 3]>;
+pub(crate) type Keys = Zeroizing<[u32; 3]>;
 fn crc(mut value: u32, byte: u8) -> u32 {
     value ^= u32::from(byte);
     for _ in 0..8 {
@@ -19,7 +19,14 @@ fn update(keys: &mut [u32; 3], byte: u8) {
         .wrapping_add(1);
     keys[2] = crc(keys[2], (keys[1] >> 24) as u8);
 }
-fn decrypt(keys: &mut [u32; 3], bytes: &mut [u8]) {
+pub(crate) fn initial_keys(password: &[u8]) -> Keys {
+    let mut keys = Zeroizing::new([0x1234_5678, 0x2345_6789, 0x3456_7890]);
+    for &byte in password {
+        update(&mut keys, byte);
+    }
+    keys
+}
+pub(crate) fn decrypt(keys: &mut [u32; 3], bytes: &mut [u8]) {
     for byte in bytes {
         let value = (keys[2] & 0xffff) | 2;
         *byte ^= (value.wrapping_mul(value ^ 1) >> 8) as u8;
@@ -31,13 +38,68 @@ pub(super) enum Reader<R> {
     Traditional(Classic<R>),
     Aes(Box<super::zip_aes::Aes<R>>),
 }
-pub(super) struct Classic<R> {
+pub(crate) struct Classic<R> {
     input: super::zip_range::Range<R>,
     keys: Keys,
     initial: Keys,
     length: u64,
     position: u64,
     control: OperationControl,
+}
+impl<R: Read + Seek> Classic<R> {
+    #[cfg(feature = "isolated-codecs")]
+    pub(crate) fn traditional(
+        input: R,
+        offset: u64,
+        packed: u64,
+        password: &[u8],
+        check: u8,
+        control: &OperationControl,
+    ) -> Result<Self> {
+        Self::from_range(
+            super::zip_range::Range::new(input, offset, packed)?,
+            packed,
+            password,
+            check,
+            control,
+        )
+    }
+    fn from_range(
+        mut input: super::zip_range::Range<R>,
+        packed: u64,
+        password: &[u8],
+        check: u8,
+        control: &OperationControl,
+    ) -> Result<Self> {
+        let length = packed.checked_sub(12).ok_or(ArchiveError::CorruptArchive)?;
+        let mut keys = initial_keys(password);
+        let mut header = Zeroizing::new([0; 12]);
+        input
+            .read_exact(&mut *header)
+            .map_err(super::zip::payload_error)?;
+        decrypt(&mut keys, &mut *header);
+        if header[11] != check {
+            return Err(ArchiveError::AuthenticationOrDataError);
+        }
+        let initial = Zeroizing::new(*keys);
+        Ok(Self {
+            input,
+            keys,
+            initial,
+            length,
+            position: 0,
+            control: control.clone(),
+        })
+    }
+}
+impl<R: Read + Seek> Read for Classic<R> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.control.checkpoint().map_err(io::Error::other)?;
+        let count = self.input.read(bytes)?;
+        decrypt(&mut self.keys, &mut bytes[..count]);
+        self.position += count as u64;
+        Ok(count)
+    }
 }
 impl<R: Read + Seek> Reader<R> {
     pub(super) fn new(
@@ -48,7 +110,7 @@ impl<R: Read + Seek> Reader<R> {
         password: Option<&str>,
         control: &OperationControl,
     ) -> Result<Self> {
-        let mut input = super::zip_range::Range::new(input, offset, packed)?;
+        let input = super::zip_range::Range::new(input, offset, packed)?;
         if !entry.encrypted {
             return Ok(Self::Plain(input, packed));
         }
@@ -66,33 +128,18 @@ impl<R: Read + Seek> Reader<R> {
                 input, packed, descriptor, password, control,
             )?)));
         }
-        let length = packed.checked_sub(12).ok_or(ArchiveError::CorruptArchive)?;
-        let mut keys = Zeroizing::new([0x1234_5678, 0x2345_6789, 0x3456_7890]);
-        for byte in password.bytes() {
-            update(&mut keys, byte);
-        }
-        let mut header = Zeroizing::new([0; 12]);
-        input
-            .read_exact(&mut *header)
-            .map_err(super::zip::payload_error)?;
-        decrypt(&mut keys, &mut *header);
         let check = if flags & 8 != 0 {
             (entry.dos_modified.ok_or(ArchiveError::CorruptArchive)?.1 >> 8) as u8
         } else {
             (entry.crc32.ok_or(ArchiveError::CorruptArchive)? >> 24) as u8
         };
-        if header[11] != check {
-            return Err(ArchiveError::AuthenticationOrDataError);
-        }
-        let initial = Zeroizing::new(*keys);
-        Ok(Self::Traditional(Classic {
+        Ok(Self::Traditional(Classic::from_range(
             input,
-            keys,
-            initial,
-            length,
-            position: 0,
-            control: control.clone(),
-        }))
+            packed,
+            password.as_bytes(),
+            check,
+            control,
+        )?))
     }
     pub(super) fn length(&self) -> u64 {
         match self {
@@ -107,13 +154,7 @@ impl<R: Read + Seek> Read for Reader<R> {
         match self {
             Self::Plain(input, _) => input.read(bytes),
             Self::Aes(input) => input.read(bytes),
-            Self::Traditional(input) => {
-                input.control.checkpoint().map_err(io::Error::other)?;
-                let count = input.input.read(bytes)?;
-                decrypt(&mut input.keys, &mut bytes[..count]);
-                input.position += count as u64;
-                Ok(count)
-            }
+            Self::Traditional(input) => input.read(bytes),
         }
     }
 }

@@ -310,21 +310,41 @@ pub(crate) fn match_ranges_for_pattern(text: &str, pattern: &str) -> Vec<std::op
     ranges
 }
 
-/// Publish current local results without waiting for the indexed provider.
-pub(crate) fn should_publish_immediate_results(
-    _indexer_connected: bool,
-    _search_queued: bool,
-) -> bool {
-    true
+/// Keep previously admitted identities in place when a later indexed merge changes rank.
+pub(crate) fn stable_indexed_results(
+    previous: &[SearchResult],
+    ranked: Vec<SearchResult>,
+) -> Vec<SearchResult> {
+    let limit = RESULT_LIMIT.max(previous.len());
+    let mut rows = Vec::with_capacity(limit.min(previous.len() + ranked.len()));
+    for row in previous {
+        if rows.len() == limit {
+            break;
+        }
+        if let Some(updated) = ranked
+            .iter()
+            .find(|candidate| candidate.entry.id == row.entry.id)
+        {
+            rows.push(updated.clone());
+        } else if !row.entry.id.starts_with("extension:")
+            && !row.entry.id.starts_with("extension-script:")
+        {
+            rows.push(row.clone());
+        }
+    }
+    for row in ranked {
+        if rows.len() == limit {
+            break;
+        }
+        if !rows
+            .iter()
+            .any(|existing| existing.entry.id == row.entry.id)
+        {
+            rows.push(row);
+        }
+    }
+    rows
 }
-
-/// Only retained rows from an older query stay blocked while a search is queued.
-/// Current-query rows are usable before the provider's terminal batch; provider
-/// completion remains owned by IndexSearchSession::complete.
-pub(crate) fn search_update_pending(search_queued: bool, has_current_results: bool) -> bool {
-    search_queued && !has_current_results
-}
-
 pub(crate) fn elapsed_microseconds(started: Instant) -> u64 {
     started.elapsed().as_micros().min(u128::from(u64::MAX)) as u64
 }
@@ -444,7 +464,7 @@ impl ImeEnterGate {
 
 pub(crate) struct QuickLaunchSearchUpdate {
     pub(crate) results: Vec<SearchResult>,
-    /// Waiting for current-query rows, not for every provider to complete.
+    /// Waiting for the current query's selected providers to finish.
     pub(crate) pending: bool,
 }
 
@@ -453,7 +473,7 @@ pub(crate) fn apply_search_update<T>(
     update_results: Vec<T>,
     pending: bool,
 ) -> bool {
-    if pending && update_results.is_empty() {
+    if pending {
         return false;
     }
     *committed_results = update_results;
@@ -491,7 +511,11 @@ pub(crate) struct IndexSearchSession {
     pub(crate) query: String,
     pub(crate) items: Vec<IndexSearchItem>,
     pub(crate) complete: bool,
+    pub(crate) failed: bool,
     pub(crate) last_completed_elapsed_us: Option<u64>,
+    pub(crate) deadline_elapsed: bool,
+    pub(crate) first_published: bool,
+    pub(crate) terminal_published: bool,
 }
 
 #[derive(Default)]
@@ -552,7 +576,11 @@ impl IndexSearchSession {
         self.generation = self.generation.wrapping_add(1).max(1);
         self.query.clear();
         self.items.clear();
+        self.deadline_elapsed = false;
+        self.first_published = false;
+        self.terminal_published = false;
         self.complete = false;
+        self.failed = false;
     }
 
     pub(crate) fn apply(&mut self, batch: IndexSearchBatch) -> bool {

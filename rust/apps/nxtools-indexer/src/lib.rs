@@ -1109,6 +1109,8 @@ impl IndexerService {
             | Message::IndexerEvent(_)
             | Message::DesktopArchiveIntent(_)
             | Message::DesktopArchiveReceipt(_)
+            | Message::DesktopMarkdownIntent(_)
+            | Message::DesktopMarkdownReceipt(_)
             | Message::Error(_) => vec![Envelope::reply_to(
                 &request,
                 Message::Error(ProtocolFault {
@@ -1172,7 +1174,7 @@ fn search_snapshots_while(
         .ok()
         .flatten();
     }
-    let normal = search_snapshots_retained_while(
+    let normal = search_snapshots_query_while(
         snapshots,
         settings,
         request,
@@ -1187,7 +1189,7 @@ fn search_snapshots_while(
         if !is_current() {
             return None;
         }
-        matches.extend(search_snapshots_retained_while(
+        matches.extend(search_snapshots_query_while(
             snapshots,
             settings,
             request,
@@ -1208,10 +1210,8 @@ fn search_snapshots_while(
     is_current().then_some(matches)
 }
 
-// The launcher requests independent file/directory headroom. Publish the first
-// completed kind while the other is still being searched; the desktop owns the
-// cross-kind merge and rank. Ordinary single-kind and scoped searches retain
-// their original globally ordered response path.
+// Match once while retaining independent file/directory headroom. The desktop owns
+// cross-kind ranking and completion-owned publication; framed batches remain bounded.
 fn search_launcher_snapshots_while(
     snapshots: &[MftSnapshot],
     settings: &IndexSettings,
@@ -1220,17 +1220,13 @@ fn search_launcher_snapshots_while(
     mut publish: impl FnMut(Vec<IndexSearchItem>, bool) -> bool,
 ) -> bool {
     let query = FileQuery::parse(&request.query);
-    let mut files = request.clone();
-    files.context.retain_kinds_apart = false;
-    files.context.include_directories = false;
-    let mut directories = files.clone();
-    directories.context.include_files = false;
-    directories.context.include_directories = true;
-    let Some(file_items) =
-        search_snapshots_query_while(snapshots, settings, &files, &query, is_current)
+    let Some(items) =
+        search_snapshots_query_while(snapshots, settings, request, &query, is_current)
     else {
         return false;
     };
+    let (file_items, directory_items): (Vec<_>, Vec<_>) =
+        items.into_iter().partition(|item| !item.is_directory);
     let files_found = !file_items.is_empty();
     if files_found {
         for batch in file_items.chunks(SEARCH_BATCH_SIZE) {
@@ -1239,11 +1235,6 @@ fn search_launcher_snapshots_while(
             }
         }
     }
-    let Some(directory_items) =
-        search_snapshots_query_while(snapshots, settings, &directories, &query, is_current)
-    else {
-        return false;
-    };
     if !is_current() {
         return false;
     }
@@ -1254,7 +1245,7 @@ fn search_launcher_snapshots_while(
                 return false;
             }
             let Some(found) =
-                search_snapshots_retained_while(snapshots, settings, request, &variant, is_current)
+                search_snapshots_query_while(snapshots, settings, request, &variant, is_current)
             else {
                 return false;
             };
@@ -1287,43 +1278,6 @@ fn search_launcher_snapshots_while(
                 index + 1 == count,
             )
     })
-}
-
-fn search_snapshots_retained_while(
-    snapshots: &[MftSnapshot],
-    settings: &IndexSettings,
-    request: &IndexSearchRequest,
-    query: &FileQuery,
-    is_current: &(impl Fn() -> bool + Sync),
-) -> Option<Vec<IndexSearchItem>> {
-    if !request.context.retain_kinds_apart
-        || !request.context.include_files
-        || !request.context.include_directories
-    {
-        return search_snapshots_query_while(snapshots, settings, request, query, is_current);
-    }
-    let mut files = request.clone();
-    files.context.retain_kinds_apart = false;
-    files.context.include_directories = false;
-    let mut directories = files.clone();
-    directories.context.include_files = false;
-    directories.context.include_directories = true;
-    let mut candidates =
-        search_snapshots_query_while(snapshots, settings, &files, query, is_current)?;
-    candidates.extend(search_snapshots_query_while(
-        snapshots,
-        settings,
-        &directories,
-        query,
-        is_current,
-    )?);
-    candidates.sort_by(|left, right| {
-        right
-            .score
-            .cmp(&left.score)
-            .then_with(|| left.path.cmp(&right.path))
-    });
-    is_current().then_some(candidates)
 }
 
 fn search_snapshots_query_while(
@@ -1375,6 +1329,9 @@ fn search_full_path_snapshots_while(
     result_limit: usize,
     is_current: &(impl Fn() -> bool + Sync),
 ) -> Option<Vec<IndexSearchItem>> {
+    let retain_kinds_apart = request.context.retain_kinds_apart
+        && request.context.include_files
+        && request.context.include_directories;
     let cancelled = AtomicBool::new(false);
     let mut matches = snapshots
         .par_iter()
@@ -1383,7 +1340,13 @@ fn search_full_path_snapshots_while(
                 .into_par_iter()
                 .with_min_len(8_192)
                 .fold(
-                    || Vec::with_capacity(result_limit.saturating_mul(2)),
+                    || {
+                        Vec::with_capacity(result_limit.saturating_mul(if retain_kinds_apart {
+                            4
+                        } else {
+                            2
+                        }))
+                    },
                     |mut local, index| {
                         if cancelled.load(Ordering::Acquire) {
                             return local;
@@ -1408,7 +1371,7 @@ fn search_full_path_snapshots_while(
                             match_search_candidate(entry, settings, request, query, directory)
                         {
                             local.push(item);
-                            prune_search_candidates(&mut local, result_limit);
+                            prune_search_candidates(&mut local, result_limit, retain_kinds_apart);
                         }
                         local
                     },
@@ -1416,7 +1379,7 @@ fn search_full_path_snapshots_while(
         })
         .reduce(Vec::new, |mut left, right| {
             left.extend(right);
-            prune_search_candidates(&mut left, result_limit);
+            prune_search_candidates(&mut left, result_limit, retain_kinds_apart);
             left
         });
     for snapshot in snapshots {
@@ -1429,7 +1392,7 @@ fn search_full_path_snapshots_while(
                 match_search_candidate(entry.as_ref().as_ref(), settings, request, query, directory)
             {
                 matches.push(item);
-                prune_search_candidates(&mut matches, result_limit);
+                prune_search_candidates(&mut matches, result_limit, retain_kinds_apart);
             }
         }
     }
@@ -1437,7 +1400,7 @@ fn search_full_path_snapshots_while(
         return None;
     }
     sort_search_candidates(&mut matches);
-    matches.truncate(result_limit);
+    truncate_search_candidates(&mut matches, result_limit, retain_kinds_apart);
     Some(
         matches
             .into_iter()
@@ -1547,6 +1510,9 @@ fn search_name_only_with_data(
     is_current: &(impl Fn() -> bool + Sync),
     use_auxiliary: bool,
 ) -> Option<Vec<IndexSearchItem>> {
+    let retain_kinds_apart = request.context.retain_kinds_apart
+        && request.context.include_files
+        && request.context.include_directories;
     let cancelled = AtomicBool::new(false);
     let candidate_limit = result_limit
         .saturating_mul(NAME_SEARCH_MATERIALIZATION_HEADROOM)
@@ -1711,14 +1677,14 @@ fn search_name_only_with_data(
                 match_search_candidate(entry.as_ref().as_ref(), settings, request, query, None)
             {
                 matches.push(item);
-                prune_search_candidates(&mut matches, result_limit);
+                prune_search_candidates(&mut matches, result_limit, retain_kinds_apart);
             }
         }
     }
     if cancelled.load(Ordering::Acquire) || !is_current() {
         return None;
     }
-    if name_candidates_truncated && matches.len() < result_limit {
+    if name_candidates_truncated && !retain_kinds_apart && matches.len() < result_limit {
         // Filtering requires cold path/type metadata. If the fast hot-name window was
         // exhausted before it produced a full page, fall back to the complete scan so
         // exclusions, requested kinds, and overlay tombstones cannot silently underfill.
@@ -1733,13 +1699,45 @@ fn search_name_only_with_data(
         );
     }
     sort_search_candidates(&mut matches);
-    matches.truncate(result_limit);
-    Some(
-        matches
-            .into_iter()
-            .map(SearchCandidate::into_item)
-            .collect(),
-    )
+    truncate_search_candidates(&mut matches, result_limit, retain_kinds_apart);
+    let mut items = matches
+        .into_iter()
+        .map(SearchCandidate::into_item)
+        .collect::<Vec<_>>();
+    if name_candidates_truncated && retain_kinds_apart {
+        let missing_files = items.iter().filter(|item| !item.is_directory).count() < result_limit;
+        let missing_directories =
+            items.iter().filter(|item| item.is_directory).count() < result_limit;
+        if missing_files || missing_directories {
+            let mut recovery = request.clone();
+            recovery.context.include_files = missing_files;
+            recovery.context.include_directories = missing_directories;
+            let recovered = search_full_path_snapshots_while(
+                snapshots,
+                settings,
+                &recovery,
+                query,
+                None,
+                result_limit,
+                is_current,
+            )?;
+            items.retain(|item| {
+                if item.is_directory {
+                    !missing_directories
+                } else {
+                    !missing_files
+                }
+            });
+            items.extend(recovered);
+            items.sort_by(|left, right| {
+                right
+                    .score
+                    .cmp(&left.score)
+                    .then_with(|| left.path.cmp(&right.path))
+            });
+        }
+    }
+    Some(items)
 }
 
 #[derive(Clone, Copy)]
@@ -1901,11 +1899,32 @@ fn normalized_path_separators(path: &str) -> Cow<'_, str> {
     }
 }
 
-fn prune_search_candidates(matches: &mut Vec<SearchCandidate<'_>>, result_limit: usize) {
-    if matches.len() >= result_limit.saturating_mul(2) {
+fn prune_search_candidates(
+    matches: &mut Vec<SearchCandidate<'_>>,
+    result_limit: usize,
+    retain_kinds_apart: bool,
+) {
+    if matches.len() >= result_limit.saturating_mul(if retain_kinds_apart { 4 } else { 2 }) {
         sort_search_candidates(matches);
-        matches.truncate(result_limit);
+        truncate_search_candidates(matches, result_limit, retain_kinds_apart);
     }
+}
+
+fn truncate_search_candidates(
+    matches: &mut Vec<SearchCandidate<'_>>,
+    result_limit: usize,
+    retain_kinds_apart: bool,
+) {
+    if !retain_kinds_apart {
+        matches.truncate(result_limit);
+        return;
+    }
+    let mut retained = [0; 2];
+    matches.retain(|candidate| {
+        let count = &mut retained[usize::from(candidate.entry.is_directory)];
+        *count += 1;
+        *count <= result_limit
+    });
 }
 
 fn case_insensitive_starts_with(value: &str, lower_query: &str) -> bool {

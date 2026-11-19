@@ -4,6 +4,11 @@ This directory is the durable index for behavior already investigated in NxTools
 reference repositories. It prevents each change from rediscovering the same implementation through
 keyword search.
 
+## Persistent Listary reference
+
+The canonical local archive for Listary 6.3.5.94 is `D:\Code\Listary.Decompiled\6.3.5.94`.
+Its `README.md` indexes `managed\Listary` (C#/XAML), `expanded\Listary` (explicit compiler-generated state machines), the original binary snapshot, inventory and repeatable export script. The archive is independent of this repository, Trellis tasks and session scratch. Resource-enabled window code uses `.xaml.cs` filenames. Native engine binaries are retained as inputs, not represented as recovered C# source.
+
 ## Required workflow
 
 1. Read the matching feature note here before searching source code.
@@ -26,6 +31,7 @@ keyword search.
 | Floating assistant | [assistant.md](assistant.md) | Legacy constructors/show/close/native styles, image/GIF, pointer/drop/edge/download source inspected; new slice planning, no runtime acceptance |
 | GPUI/Zed rendering patterns | [gpui.md](gpui.md) | Indexed for P0 visual components |
 | Unified Markdown display/edit | [markdown-editor.md](markdown-editor.md) | Fixed Apache0.1.0 editor, passive/interactive four-surface integration; original payload/native ownership retained |
+| Markdown reader, editing, export and versions | [markdown-reader.md](markdown-reader.md) | mdview Pro 2.0.21 resources/official behavior, locked Kit example and APIs; native reader behavior not yet verified |
 | Graphite default themes | [graphite-theme.md](graphite-theme.md) | Approved project Light/Dark via public Kit theme APIs; optional official themes retained, actual96DPI captures separate from user acceptance |
 | GPUI Kit current0.8.0 release/API migration | [gpui-kit-080.md](gpui-kit-080.md) | Current Kit0.8.0/defaultpre0.3.9, two narrow carried patches, API/behavior delta and evidence limits; read before historical tables |
 | GPUI Kit component table and AI rules | [gpui-kit-component-table.md](gpui-kit-component-table.md), [offline searchable viewer](gpui-kit-components.html), [short mandatory rules](../../.trellis/spec/shared/ui-component-selection.md) | Current 0.8.0 authority precedes preserved 2026-10-15 website 0.7.3/79-page and source 0.7.1/78-entry audit; historical Diff limitation is superseded; variants/Toolbar/tile rules remain |

@@ -1,0 +1,8 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Original Rust intention/coordination, GPUI presentation and C# native ownership"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Persistence-before-publication, correlation/privacy and bounded lifecycle"}
+{"file":".trellis/spec/nxtools-download/backend/database-guidelines.md","reason":"Original SQLite task/queue transactions"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Production window, deferred cross-entity and focus/lifecycle contracts"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official released compound/slot selection"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Locked current release/API and vendor limits"}
+{"file":".trellis/tasks/11-11-reference-b5-completion-intentions/reference-review.md","reason":"Verified ABDM/legacy/Mister behavior and rejected semantics"}
+{"file":".trellis/tasks/11-11-reference-b5-completion-intentions/design.md","reason":"B5 original owners, rounds, priority, cancellation, native and Exit boundaries"}

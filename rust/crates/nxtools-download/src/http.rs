@@ -30,6 +30,9 @@ use crate::{
 use crate::{NetworkOperationSnapshot, NetworkPolicy, NetworkPolicyError};
 use nxtools_core::{NetworkProxyMode, NetworkSettings};
 
+pub(crate) mod segmented;
+mod web_page;
+
 const PROBE_RANGE: &str = "bytes=0-0";
 const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
 /// Deadline for a single probe request (headers only). The 30 s transfer
@@ -89,6 +92,14 @@ pub(crate) fn move_final_no_replace(
     Ok(())
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub(crate) struct HttpConnectionScope {
+    pub generation: u64,
+    pub route: String,
+    pub certificate_invalid: bool,
+    pub system_client: Option<uuid::Uuid>,
+}
+
 #[derive(Clone)]
 pub struct HttpDownloadClient {
     client: Client,
@@ -96,8 +107,15 @@ pub struct HttpDownloadClient {
     network_proxy_mode: NetworkProxyMode,
     network_proxy_source: &'static str,
     certificate_policy: DownloadCertificatePolicy,
+    connection_scope: HttpConnectionScope,
     #[cfg(test)]
     injected_artifact_fault: Option<InjectedArtifactFault>,
+    #[cfg(test)]
+    fixture_resolver: Option<std::sync::Arc<dyn reqwest::dns::Resolve>>,
+    #[cfg(test)]
+    fixture_errors: std::sync::Arc<[std::sync::atomic::AtomicU64; 2]>,
+    #[cfg(test)]
+    fixture_address_observer: Option<std::sync::Arc<connection_experiments::ref16::Observation>>,
 }
 
 impl HttpDownloadClient {
@@ -131,20 +149,33 @@ impl HttpDownloadClient {
         network: &NetworkOperationSnapshot,
         certificate_policy: DownloadCertificatePolicy,
     ) -> Result<Self, HttpDownloadError> {
+        Self::build_for_snapshot(
+            stall_timeout,
+            network,
+            certificate_policy,
+            #[cfg(test)]
+            None,
+        )
+    }
+
+    fn build_for_snapshot(
+        stall_timeout: Duration,
+        network: &NetworkOperationSnapshot,
+        certificate_policy: DownloadCertificatePolicy,
+        #[cfg(test)] fixture_resolver: Option<std::sync::Arc<dyn reqwest::dns::Resolve>>,
+    ) -> Result<Self, HttpDownloadError> {
         if stall_timeout.is_zero() {
             return Err(HttpDownloadError::InvalidStallTimeout);
         }
-        // Servers routinely reject non-browser clients (anti-hotlink CDNs,
-        // UA-filtering servers), so present the reference implementation's
-        // Chrome UA by default; task-level headers can still override the agent.
+        // Keep the ordinary client fallback consistent with accepted request defaults.
         // Autoref (`.referer(true)`) must stay off: it rewrites the task's
         // explicit Referer on every redirect and would silently replace the
         // request context the task was accepted with. Redirect bounds are
         // enforced by the custom policy below, mirroring `Policy::limited(10)`.
         let builder = Client::builder()
-            .user_agent(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            )
+            .user_agent(nxtools_core::DEFAULT_DOWNLOAD_USER_AGENT)
+            // Use conventional HTTP/1.1 field names for origin/CDN compatibility.
+            .http1_title_case_headers()
             .redirect(reqwest::redirect::Policy::custom(|attempt| {
                 if attempt.previous().len() > 10 {
                     return attempt.error(HttpDownloadError::RedirectLimitExceeded);
@@ -157,6 +188,11 @@ impl HttpDownloadClient {
             .danger_accept_invalid_certs(
                 certificate_policy == DownloadCertificatePolicy::AcceptInvalid,
             );
+        #[cfg(test)]
+        let builder = match &fixture_resolver {
+            Some(resolver) => builder.dns_resolver(std::sync::Arc::clone(resolver)),
+            None => builder,
+        };
         let client = network.build_client(builder)?;
         Ok(Self {
             client,
@@ -164,8 +200,24 @@ impl HttpDownloadClient {
             network_proxy_mode: network.mode(),
             network_proxy_source: network.source(),
             certificate_policy,
+            connection_scope: HttpConnectionScope {
+                generation: 0,
+                route: network.route_key(),
+                certificate_invalid: certificate_policy == DownloadCertificatePolicy::AcceptInvalid,
+                system_client: (network.mode() == NetworkProxyMode::System)
+                    .then(uuid::Uuid::new_v4),
+            },
             #[cfg(test)]
             injected_artifact_fault: None,
+            #[cfg(test)]
+            fixture_resolver,
+            #[cfg(test)]
+            fixture_errors: std::sync::Arc::new([
+                std::sync::atomic::AtomicU64::new(0),
+                std::sync::atomic::AtomicU64::new(0),
+            ]),
+            #[cfg(test)]
+            fixture_address_observer: None,
         })
     }
 
@@ -187,17 +239,47 @@ impl HttpDownloadClient {
         certificate_policy: DownloadCertificatePolicy,
     ) -> Result<Self, HttpDownloadError> {
         #[allow(unused_mut)]
-        let mut rebuilt = Self::with_stall_timeout_and_network_and_certificate(
+        let mut rebuilt = Self::build_for_snapshot(
             self.stall_timeout,
             network,
             certificate_policy,
+            #[cfg(test)]
+            self.fixture_resolver.clone(),
         )?;
         #[cfg(test)]
         {
             rebuilt.injected_artifact_fault = self.injected_artifact_fault;
+            rebuilt.fixture_errors = std::sync::Arc::clone(&self.fixture_errors);
         }
         Ok(rebuilt)
     }
+    pub(crate) fn connection_scope(&self) -> HttpConnectionScope {
+        self.connection_scope.clone()
+    }
+
+    pub(crate) fn with_policy_generation(mut self, generation: u64) -> Self {
+        self.connection_scope.generation = generation;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_fixture_resolver(
+        mut self,
+        resolver: std::sync::Arc<dyn reqwest::dns::Resolve>,
+    ) -> Self {
+        self.fixture_resolver = Some(resolver);
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture_error_counts(&self) -> (u64, u64) {
+        use std::sync::atomic::Ordering;
+        (
+            self.fixture_errors[0].load(Ordering::Acquire),
+            self.fixture_errors[1].load(Ordering::Acquire),
+        )
+    }
+
     fn observe_response(&self, response: &Response, response_ms: u64) -> DownloadServerObservation {
         DownloadServerObservation {
             host: response
@@ -809,247 +891,44 @@ impl HttpDownloadClient {
     pub async fn download_segment<F>(
         &self,
         transfer: DownloadSegmentTransferRequest<'_>,
-        mut on_progress: F,
+        on_progress: F,
     ) -> Result<DownloadSegmentTransferOutcome, HttpDownloadError>
     where
         F: FnMut(DownloadSegmentTransferProgress),
     {
-        let DownloadSegmentTransferRequest {
-            context,
-            request,
-            probe,
-            segment,
-            artifact,
-            control,
-            use_if_range,
-        } = transfer;
-        let started = Instant::now();
-        info!(
-            event = "download.segment_transfer.started",
-            correlation_id = %context.correlation_id,
-            task_id = ?context.task_id,
-            segment_index = segment.index(),
-            resumed_bytes = segment.downloaded_bytes(),
-            conditional_resume = use_if_range,
-            "segment transfer started"
-        );
-        let result = async {
-            request.validate()?;
-            let total_bytes = probe
-                .total_bytes
-                .ok_or(HttpDownloadError::SegmentedTransferNeedsKnownLength)?;
-            let requested_start = segment
-                .start_byte()
-                .checked_add(segment.downloaded_bytes())
-                .ok_or(HttpDownloadError::LengthOverflow)?;
-            if requested_start > segment.end_byte() {
-                return Ok(DownloadSegmentTransferOutcome::Completed {
-                    downloaded_bytes: segment.downloaded_bytes(),
-                });
+        use crate::engine::segment_planner::SegmentPlanner;
+        use segmented::{SegmentReceiveOutcome, SegmentReceiveState};
+        transfer.request.validate()?;
+        transfer
+            .probe
+            .total_bytes
+            .ok_or(HttpDownloadError::SegmentedTransferNeedsKnownLength)?;
+        let segment = transfer.segment;
+        let mut planner = SegmentPlanner::new(std::slice::from_ref(segment), Duration::ZERO);
+        let Some(assignment) = planner.assign(0, None) else {
+            return Ok(DownloadSegmentTransferOutcome::Completed {
+                downloaded_bytes: segment.downloaded_bytes(),
+            });
+        };
+        let state = SegmentReceiveState::new(planner);
+        let outcome = self
+            .download_planned_segment(transfer, assignment, &state, 0, on_progress)
+            .await?;
+        let downloaded_bytes = state.lock()?.segments()[0].cursor - segment.start_byte();
+        Ok(match outcome {
+            SegmentReceiveOutcome::Completed { .. } => {
+                DownloadSegmentTransferOutcome::Completed { downloaded_bytes }
             }
-
-            let mut directives = control.subscribe_task();
-            let mut rebalances = control.subscribe_rebalance();
-            match *directives.borrow() {
-                TransferDirective::Running => {}
-                TransferDirective::Pause => {
-                    return Ok(DownloadSegmentTransferOutcome::Paused {
-                        downloaded_bytes: segment.downloaded_bytes(),
-                    });
-                }
-                TransferDirective::Cancel => {
-                    return Ok(DownloadSegmentTransferOutcome::Cancelled {
-                        downloaded_bytes: segment.downloaded_bytes(),
-                    });
-                }
+            SegmentReceiveOutcome::Paused => {
+                DownloadSegmentTransferOutcome::Paused { downloaded_bytes }
             }
-            if *rebalances.borrow() {
-                return Ok(DownloadSegmentTransferOutcome::Rebalanced {
-                    downloaded_bytes: segment.downloaded_bytes(),
-                });
+            SegmentReceiveOutcome::Cancelled | SegmentReceiveOutcome::Stopped => {
+                DownloadSegmentTransferOutcome::Cancelled { downloaded_bytes }
             }
-            let _active_transfer = control.task.statistics.worker();
-            let response_request = self.send_range(
-                request,
-                &probe.final_url,
-                requested_start,
-                segment.end_byte(),
-                &probe.validator,
-                use_if_range,
-            );
-            tokio::pin!(response_request);
-            let mut response = tokio::select! {
-                biased;
-                changed = directives.changed() => {
-                    let _ = changed;
-                    let directive = *directives.borrow();
-                    match directive {
-                        TransferDirective::Running => response_request.await?,
-                        TransferDirective::Pause => {
-                            return Ok(DownloadSegmentTransferOutcome::Paused {
-                                downloaded_bytes: segment.downloaded_bytes(),
-                            });
-                        }
-                        TransferDirective::Cancel => {
-                            return Ok(DownloadSegmentTransferOutcome::Cancelled {
-                                downloaded_bytes: segment.downloaded_bytes(),
-                            });
-                        }
-                    }
-                }
-                changed = rebalances.changed() => {
-                    let _ = changed;
-                    return Ok(DownloadSegmentTransferOutcome::Rebalanced {
-                        downloaded_bytes: segment.downloaded_bytes(),
-                    });
-                }
-                result = &mut response_request => result?,
-                _ = tokio::time::sleep(self.stall_timeout) => {
-                    return Err(HttpDownloadError::Stalled {
-                        timeout_ms: duration_millis(self.stall_timeout),
-                    });
-                }
-            };
-            validate_segment_response(
-                &response,
-                requested_start,
-                segment.end_byte(),
-                total_bytes,
-                &probe.validator,
-                use_if_range,
-            )?;
-            info!(
-                event = "download.segment_response.accepted",
-                correlation_id = %context.correlation_id,
-                task_id = ?context.task_id,
-                segment_index = segment.index(),
-                response_status = response.status().as_u16(),
-                requested_start,
-                requested_end = segment.end_byte(),
-                validator_policy = if use_if_range { "resume_strict" } else { "fresh_range_only" },
-                "segment response passed range validation"
-            );
-
-            let mut writer = artifact.open_segment(segment).await?;
-            let mut downloaded_bytes = segment.downloaded_bytes();
-            loop {
-                let directive = *directives.borrow();
-                match directive {
-                    TransferDirective::Running => {}
-                    TransferDirective::Pause => {
-                        writer.sync().await?;
-                        return Ok(DownloadSegmentTransferOutcome::Paused { downloaded_bytes });
-                    }
-                    TransferDirective::Cancel => {
-                        writer.sync().await?;
-                        return Ok(DownloadSegmentTransferOutcome::Cancelled { downloaded_bytes });
-                    }
-                }
-                tokio::select! {
-                    biased;
-                    changed = directives.changed() => {
-                        if changed.is_err() {
-                            continue;
-                        }
-                    }
-                    changed = rebalances.changed() => {
-                        let _ = changed;
-                        writer.sync().await?;
-                        return Ok(DownloadSegmentTransferOutcome::Rebalanced {
-                            downloaded_bytes,
-                        });
-                    }
-                    _ = tokio::time::sleep(self.stall_timeout) => {
-                        return Err(HttpDownloadError::Stalled {
-                            timeout_ms: duration_millis(self.stall_timeout),
-                        });
-                    }
-                    chunk = response.chunk() => {
-                        let Some(chunk) = chunk.map_err(|error| self.client_error(error))? else {
-                            break;
-                        };
-                        let bandwidth = control.acquire_bandwidth(chunk.len() as u64);
-                        tokio::pin!(bandwidth);
-                        tokio::select! {
-                            biased;
-                            changed = directives.changed() => {
-                                let _ = changed;
-                                let directive = *directives.borrow();
-                                match directive {
-                                    TransferDirective::Running => bandwidth.await,
-                                    TransferDirective::Pause => {
-                                        writer.sync().await?;
-                                        return Ok(DownloadSegmentTransferOutcome::Paused {
-                                            downloaded_bytes,
-                                        });
-                                    }
-                                    TransferDirective::Cancel => {
-                                        writer.sync().await?;
-                                        return Ok(DownloadSegmentTransferOutcome::Cancelled {
-                                            downloaded_bytes,
-                                        });
-                                    }
-                                }
-                            }
-                            changed = rebalances.changed() => {
-                                let _ = changed;
-                                writer.sync().await?;
-                                return Ok(DownloadSegmentTransferOutcome::Rebalanced {
-                                    downloaded_bytes,
-                                });
-                            }
-                            () = &mut bandwidth => {}
-                        }
-                        writer.write_all(&chunk).await?;
-                        control.task.statistics.add_bytes(chunk.len() as u64);
-                        downloaded_bytes = downloaded_bytes
-                            .checked_add(chunk.len() as u64)
-                            .ok_or(HttpDownloadError::LengthOverflow)?;
-                        on_progress(DownloadSegmentTransferProgress {
-                            segment_index: segment.index(),
-                            downloaded_bytes,
-                            segment_bytes: segment.len(),
-                        });
-                    }
-                }
+            SegmentReceiveOutcome::Lost | SegmentReceiveOutcome::Rebalanced => {
+                DownloadSegmentTransferOutcome::Rebalanced { downloaded_bytes }
             }
-            if downloaded_bytes != segment.len() {
-                return Err(HttpDownloadError::LengthMismatch {
-                    expected_bytes: segment.len(),
-                    downloaded_bytes,
-                });
-            }
-            writer.sync().await?;
-            Ok(DownloadSegmentTransferOutcome::Completed { downloaded_bytes })
-        }
-        .await;
-
-        match &result {
-            Ok(outcome) => info!(
-                event = "download.segment_transfer.completed",
-                correlation_id = %context.correlation_id,
-                task_id = ?context.task_id,
-                segment_index = segment.index(),
-                outcome = outcome.name(),
-                downloaded_bytes = outcome.downloaded_bytes(),
-                elapsed_ms = started.elapsed().as_millis(),
-                "segment transfer completed"
-            ),
-            Err(error) => warn!(
-                event = "download.segment_transfer.failed",
-                correlation_id = %context.correlation_id,
-                task_id = ?context.task_id,
-                segment_index = segment.index(),
-                error_kind = error.kind(),
-                error = %error,
-                requested_start = segment.start_byte().saturating_add(segment.downloaded_bytes()),
-                requested_end = segment.end_byte(),
-                conditional_resume = use_if_range,
-                elapsed_ms = started.elapsed().as_millis(),
-                "segment transfer failed"
-            ),
-        }
-        result
+        })
     }
 
     pub(crate) async fn prepare_download<F>(
@@ -1156,7 +1035,9 @@ impl HttpDownloadClient {
         if !response.status().is_success() {
             return Err(HttpDownloadError::Status(response.status().as_u16()));
         }
-        let expected_bytes = probe.total_bytes.or(response.content_length());
+        // This GET starts at zero; its representation may differ from the earlier probe.
+        let expected_bytes = response.content_length();
+        let mut content_guard = web_page::ContentGuard::new(request, probe, &response, true)?;
         let mut downloaded_bytes = 0_u64;
         loop {
             let directive = *directives.borrow();
@@ -1189,9 +1070,12 @@ impl HttpDownloadClient {
                     });
                 }
                 chunk = response.chunk() => {
-                    let Some(chunk) = chunk.map_err(|error| self.client_error(error))? else {
-                        break;
-                    };
+                    let chunk = chunk.map_err(|error| self.client_error(error))?;
+                    let ended = chunk.is_none();
+                    let bytes = chunk.as_deref().unwrap_or_default();
+                    let (prefix, consumed) = content_guard.accept(bytes, ended)?;
+                    for chunk in [prefix.as_slice(), &bytes[consumed..]] {
+                    if chunk.is_empty() { continue; }
                     let bandwidth = control.acquire_bandwidth(chunk.len() as u64);
                     tokio::pin!(bandwidth);
                     tokio::select! {
@@ -1219,7 +1103,7 @@ impl HttpDownloadClient {
                         }
                         () = &mut bandwidth => {}
                     }
-                    output.write_all(&chunk).await?;
+                    output.write_all(chunk).await?;
                     control.statistics.add_bytes(chunk.len() as u64);
                     downloaded_bytes = downloaded_bytes
                         .checked_add(chunk.len() as u64)
@@ -1228,6 +1112,8 @@ impl HttpDownloadClient {
                         downloaded_bytes,
                         total_bytes: expected_bytes,
                     });
+                    }
+                    if ended { break; }
                 }
             }
         }
@@ -1314,6 +1200,8 @@ impl HttpDownloadClient {
         request: &DownloadRequest,
         range_probe: bool,
     ) -> Result<Response, HttpDownloadError> {
+        #[cfg(test)]
+        let fixture_started = Instant::now();
         let mut builder = self.client.request(method, &request.source_url);
         for header in &request.headers {
             let name = HeaderName::from_bytes(header.name.as_bytes())
@@ -1331,10 +1219,15 @@ impl HttpDownloadClient {
         if range_probe {
             builder = builder.header(RANGE, PROBE_RANGE);
         }
-        builder
+        let response = builder
             .send()
             .await
-            .map_err(|error| self.client_error(error))
+            .map_err(|error| self.client_error(error))?;
+        #[cfg(test)]
+        if let Some(observer) = &self.fixture_address_observer {
+            observer.record(&response, fixture_started.elapsed());
+        }
+        Ok(response)
     }
 
     async fn send_range(
@@ -1363,10 +1256,7 @@ impl HttpDownloadClient {
         builder = builder
             .header(ACCEPT_ENCODING, "identity")
             .header(RANGE, format!("bytes={start_byte}-{end_byte}"));
-        if use_if_range
-            && let Some(if_range) =
-                strong_etag(validator.etag.as_deref()).or(validator.last_modified.as_deref())
-        {
+        if use_if_range && let Some((_, if_range)) = validator.if_range() {
             builder = builder.header(IF_RANGE, if_range);
         }
         builder
@@ -1376,16 +1266,22 @@ impl HttpDownloadClient {
     }
 
     fn client_error(&self, error: reqwest::Error) -> HttpDownloadError {
-        if error.is_timeout() {
+        let failure = if error.is_timeout() {
             HttpDownloadError::Stalled {
                 timeout_ms: duration_millis(self.stall_timeout),
             }
         } else {
-            // reqwest formats its errors with the request URL, which can carry
-            // tokens in the path or query. Drop it before the error is logged
-            // or shown; the failure kind and source chain are kept.
             HttpDownloadError::Client(error.without_url())
+        };
+        #[cfg(test)]
+        {
+            use std::sync::atomic::Ordering;
+            self.fixture_errors[0].fetch_add(1, Ordering::AcqRel);
+            if failure.is_refused_connection() {
+                self.fixture_errors[1].fetch_add(1, Ordering::AcqRel);
+            }
         }
+        failure
     }
 }
 
@@ -1708,15 +1604,6 @@ impl DownloadSegmentTransferOutcome {
             | Self::Paused { downloaded_bytes }
             | Self::Cancelled { downloaded_bytes }
             | Self::Rebalanced { downloaded_bytes } => downloaded_bytes,
-        }
-    }
-
-    const fn name(self) -> &'static str {
-        match self {
-            Self::Completed { .. } => "completed",
-            Self::Paused { .. } => "paused",
-            Self::Cancelled { .. } => "cancelled",
-            Self::Rebalanced { .. } => "rebalanced",
         }
     }
 }
@@ -2265,6 +2152,20 @@ fn validate_segment_response(
     expected_validator: &ResourceValidator,
     require_validator_match: bool,
 ) -> Result<(), HttpDownloadError> {
+    let status = response.status();
+    if matches!(status.as_u16(), 429 | 503) {
+        return Err(HttpDownloadError::Throttled {
+            status: status.as_u16(),
+            retry_after: response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(parse_retry_after),
+        });
+    }
+    if !status.is_success() {
+        return Err(HttpDownloadError::Status(status.as_u16()));
+    }
     if response.status() != StatusCode::PARTIAL_CONTENT {
         return Err(HttpDownloadError::RangeNotHonored {
             status: response.status().as_u16(),
@@ -2302,34 +2203,45 @@ fn validate_segment_response(
     Ok(())
 }
 
+fn parse_retry_after(value: &str) -> Option<Duration> {
+    let value = value.trim();
+    if let Ok(seconds) = value.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    let date = chrono::DateTime::parse_from_rfc2822(value).ok()?;
+    let now = chrono::Utc::now();
+    Some(date.signed_duration_since(now).to_std().unwrap_or_default())
+}
+
 fn validate_response_validator(
     response: &Response,
     expected: &ResourceValidator,
 ) -> Result<(), HttpDownloadError> {
-    if let Some(expected_etag) = expected.etag.as_deref() {
-        let actual = header_string(response.headers().get(ETAG));
-        if actual.as_deref() != Some(expected_etag) {
+    let selected = expected
+        .if_range()
+        .or_else(|| expected.etag.as_deref().map(|value| ("etag", value)))
+        .or_else(|| {
+            expected
+                .last_modified
+                .as_deref()
+                .map(|value| ("last_modified", value))
+        });
+    if let Some((validator, value)) = selected {
+        let name = if validator == "etag" {
+            ETAG
+        } else {
+            LAST_MODIFIED
+        };
+        let actual = header_string(response.headers().get(name));
+        if actual.as_deref().map(str::trim) != Some(value.trim()) {
             return Err(HttpDownloadError::ResourceValidatorMismatch {
-                validator: "etag",
-                expected: expected_etag.to_owned(),
-                actual,
-            });
-        }
-    } else if let Some(expected_last_modified) = expected.last_modified.as_deref() {
-        let actual = header_string(response.headers().get(LAST_MODIFIED));
-        if actual.as_deref() != Some(expected_last_modified) {
-            return Err(HttpDownloadError::ResourceValidatorMismatch {
-                validator: "last_modified",
-                expected: expected_last_modified.to_owned(),
+                validator,
+                expected: value.to_owned(),
                 actual,
             });
         }
     }
     Ok(())
-}
-
-fn strong_etag(value: Option<&str>) -> Option<&str> {
-    value.filter(|value| !value.trim_start().starts_with("W/"))
 }
 
 fn duration_millis(duration: Duration) -> u64 {
@@ -2504,6 +2416,19 @@ pub enum HttpDownloadError {
     RedirectLimitExceeded,
     #[error("HTTP probe returned status {0}")]
     Status(u16),
+    #[error("服务器繁忙（HTTP {status}）")]
+    Throttled {
+        status: u16,
+        retry_after: Option<Duration>,
+    },
+    #[error("connection closed before the segment was complete")]
+    ShortBody,
+    #[error("the downloaded file changed; resume overlap does not match")]
+    FileChanged,
+    #[error("slow connection is being replaced")]
+    SlowConnection,
+    #[error("网站返回了网页而不是文件，请在浏览器中完成登录、验证或等待后重新下载。")]
+    UnexpectedWebPage,
     #[error("download request does not contain a safe file name")]
     MissingFileName,
     #[error("download destination already exists: {0}")]
@@ -2607,6 +2532,46 @@ pub enum HttpDownloadError {
 }
 
 impl HttpDownloadError {
+    pub(crate) fn is_refused_connection(&self) -> bool {
+        matches!(self, Self::Throttled { .. } | Self::Status(403))
+            || matches!(self, Self::Client(error) if error.is_connect())
+    }
+
+    pub(crate) fn is_dead_link(&self) -> bool {
+        matches!(self, Self::Status(401 | 403 | 404 | 410 | 416))
+    }
+
+    pub(crate) fn is_fatal_segment(&self) -> bool {
+        !matches!(
+            self,
+            Self::Client(_)
+                | Self::Status(_)
+                | Self::Throttled { .. }
+                | Self::ShortBody
+                | Self::Stalled { .. }
+                | Self::SlowConnection
+        )
+    }
+
+    pub(crate) fn native_connection_refusal(&self) -> Option<&std::io::Error> {
+        let Self::Client(error) = self else {
+            return None;
+        };
+        if !error.is_connect() {
+            return None;
+        }
+        let mut source = std::error::Error::source(error);
+        while let Some(cause) = source {
+            if let Some(native) = cause.downcast_ref::<std::io::Error>()
+                && native.kind() == std::io::ErrorKind::ConnectionRefused
+            {
+                return Some(native);
+            }
+            source = cause.source();
+        }
+        None
+    }
+
     pub(crate) fn allows_fresh_segmented_restart_after_resume(&self) -> bool {
         matches!(self, Self::RangeNotHonored { status: 200 })
     }
@@ -2634,6 +2599,8 @@ impl HttpDownloadError {
                     || error.is_request()
                     || error.is_decode()
             }
+            Self::Throttled { .. } | Self::ShortBody => true,
+            Self::FileChanged | Self::SlowConnection | Self::UnexpectedWebPage => false,
             Self::NetworkPolicy(_) => false,
             Self::Status(status) | Self::RangeNotHonored { status } => {
                 matches!(*status, 408 | 425 | 429 | 500..=599)
@@ -2684,6 +2651,11 @@ impl HttpDownloadError {
             Self::NetworkPolicy(_) => "network_policy",
             Self::RedirectLimitExceeded => "redirect_limit",
             Self::Status(_) => "status",
+            Self::Throttled { .. } => "throttled",
+            Self::ShortBody => "short_body",
+            Self::FileChanged => "file_changed",
+            Self::SlowConnection => "slow_connection",
+            Self::UnexpectedWebPage => "unexpected_web_page",
             Self::MissingFileName => "missing_file_name",
             Self::DestinationExists(_) => "destination_exists",
             Self::InsufficientDiskSpace { .. } => "disk_full",
@@ -2766,3 +2738,6 @@ pub(crate) fn is_file_in_use_error(error: &std::io::Error) -> bool {
         false
     }
 }
+
+#[cfg(test)]
+mod connection_experiments;

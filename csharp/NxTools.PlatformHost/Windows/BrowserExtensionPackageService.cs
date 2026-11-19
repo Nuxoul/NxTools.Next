@@ -259,6 +259,10 @@ public static class BrowserExtensionPackageService
         if (manifest["permissions"] is JsonArray permissions)
         {
             RemoveArrayValue(permissions, "declarativeNetRequest");
+            if (!permissions.Any(permission => permission?.GetValue<string>() == "webRequestBlocking"))
+            {
+                permissions.Add("webRequestBlocking");
+            }
         }
 
         // Firefox event pages have no importScripts, so the XPI must keep the

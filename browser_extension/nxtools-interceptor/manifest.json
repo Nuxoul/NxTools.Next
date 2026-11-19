@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "NxTools Download Interceptor",
   "description": "Intercept browser downloads and send them to NxTools.",
-  "version": "0.7.0",
+  "version": "0.7.2",
   "minimum_chrome_version": "121",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArh9uoEGy5esC9y2AGR814h0iNb6783TgMeyJM3uQ7MxJPZfAPHYU/enNwMpko9xKi1g/F8i96Ix5+skDJgRY0d36H20P3W3qlCXSIXxLQycnKvJ3731748ZLrWvGKRewA7FMN/ha+CUFNDzFWmNTv/kTEonV/v2KQu2TCiCJKCo3BoHRSL8La03ZAhG4TiHA4881W3Gwas+WJn3BevHdN0hVcdh8IgFQsCdEBLpds3rO0IWa7k8pcZVgqSkMh+roJ1JudswvClAv3IyArZwCVEgm49WDjgCSiqAcZkqIqO/xmlvRCQfLYmOL+SrIoniE5YVA3s/2YqJHZGkN6PhxbQIDAQAB",
   "icons": {
@@ -47,6 +47,7 @@
       "bg/tab-bridge.js",
       "bg/capture.js",
       "bg/handoff.js",
+      "bg/browser-handoff.js",
       "bg/resource-choices.js",
       "bg/link-collection.js",
       "bg/popup-state.js",

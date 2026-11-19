@@ -86,3 +86,40 @@ custom-command/environment/calculator/package suites and strict test-target lint
 ### 7. Wrong vs Correct
 Wrong: score+=6500 whenever target ends in exe. Correct: explicit source/match/history categories,
 ordinary score inside a category and final bounded merged results.
+
+## Scenario: Ordinary local hit admission probe
+### 1. Scope / Trigger
+Desktop needs ordinary local existence before deciding indexed homophone permission, not a
+discarded complete ranking. Final result publication remains the original merged search.
+### 2. Signatures
+`FinderCatalog::has_local_normal_hit(query,manual,packages,limit) -> Result<bool>` shares
+`visit_search_candidates` and `visit_package_candidates` with complete ordinary searches.
+Evidence: `repo:rust/crates/nxtools-finder/src/lib.rs`,
+`repo:rust/crates/nxtools-finder/src/extensions.rs`,
+`repo:rust/crates/nxtools-finder/tests/normal_hit.rs`.
+### 3. Contracts
+At the same limit, the probe equals nonempty search_with_packages_normal with no external rows.
+Visit the first legal catalog/instant/custom-command/declarative-package candidate, then stop;
+never sort, collect the entire match set, add approximation or cache cross-query state. Preserve
+command preparation and its pre-validation limit, complete environment expansion/empty targets,
+package enablement/aliases/items/action validation and ordinary literal/pinyin admission.
+Zero limit is false. Script provider results do not participate in this local admission decision.
+Complete search still gathers all admitted candidates before its existing final merge/rank.
+### 4. Validation & Error Matrix
+Local ordinary hit -> indexed approximation disabled. No hit -> original permission remains;
+recent mode -> no approximation. Invalid prepared action -> no candidate. Disabled/retired package
+keyword -> no package contribution, without hiding unrelated local hits. Errors retain caller policy.
+### 5. Good/Base/Bad Cases
+Good: first ordinary hit stops candidate generation; final ranked results remain identical.
+Base: no hit still searches applicable sources. Bad: bool wrapper around full ranking, separate
+duplicated matcher, a first-invalid command hiding a later permitted hit, or a global result cache.
+### 6. Tests Required
+Public probe/full-search parity covers catalog/pinyin/miss/calculator/custom-command/package
+states/aliases/items/limits and isolated child-process environment values. Real allocation requests
+are measured only around public calls, excluding fixture setup; no timing pass/fail threshold.
+Desktop w2_ verifies the actual typed request flag and final ordinary results; retain full Finder,
+ordinary Desktop completion, trust/identity/cancellation and attached-mode regressions.
+### 7. Wrong vs Correct
+Wrong: compute/rank local results, keep only is_empty, then compute/rank again for publication.
+Correct: shared candidate visitor stops on the first valid ordinary hit; one original complete rank
+still owns visible results. Allocation/work reduction is not installed input-to-visible latency.

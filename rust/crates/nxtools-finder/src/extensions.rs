@@ -107,6 +107,31 @@ pub fn prepare_package_action(
 }
 
 impl FinderCatalog {
+    /// Whether the ordinary local providers can contribute a result at this limit.
+    pub fn has_local_normal_hit(
+        &self,
+        query: &str,
+        manual: &[CustomCommandSettings],
+        packages: &PackageRegistry,
+        limit: usize,
+    ) -> anyhow::Result<bool> {
+        if limit == 0 {
+            return Ok(false);
+        }
+        let mut found = false;
+        self.visit_search_candidates(query, &[], manual, limit, |_| {
+            found = true;
+            false
+        })?;
+        if !found && packages.packages.iter().any(|package| package.enabled) {
+            self.visit_package_candidates(query, &normalize(query), packages, |_| {
+                found = true;
+                false
+            });
+        }
+        Ok(found)
+    }
+
     pub fn search_with_packages_normal(
         &self,
         query: &str,
@@ -120,6 +145,20 @@ impl FinderCatalog {
         }
         let mut results = self.search_candidates(query, external, manual, limit)?;
         let normalized = normalize(query);
+        self.visit_package_candidates(query, &normalized, packages, |result| {
+            results.push(result);
+            true
+        });
+        Ok(self.rank_results(results, &normalized, limit))
+    }
+
+    fn visit_package_candidates(
+        &self,
+        query: &str,
+        normalized: &str,
+        packages: &PackageRegistry,
+        mut visit: impl FnMut(SearchResult) -> bool,
+    ) {
         for package in packages.packages.iter().filter(|package| package.enabled) {
             for handler in package
                 .manifest
@@ -142,9 +181,10 @@ impl FinderCatalog {
                                 handler,
                                 (&item.id, &item.title, &item.action),
                                 "",
-                                &normalized,
-                            ) {
-                                results.push(result);
+                                normalized,
+                            ) && !visit(result)
+                            {
+                                return;
                             }
                         }
                     }
@@ -154,15 +194,15 @@ impl FinderCatalog {
                             handler,
                             ("action", &handler.title, action),
                             input,
-                            &normalized,
-                        ) {
-                            results.push(result);
+                            normalized,
+                        ) && !visit(result)
+                        {
+                            return;
                         }
                     }
                 }
             }
         }
-        Ok(self.rank_results(results, &normalized, limit))
     }
 
     pub fn search_with_packages(

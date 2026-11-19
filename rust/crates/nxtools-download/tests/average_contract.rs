@@ -13,7 +13,7 @@ use nxtools_download::{
     DownloadTaskId, HlsDownloadRequest, RequestOrigin, SqliteDownloadStore,
 };
 use serde_json::{Value, json};
-use support::DeterministicHttpServer;
+use support::{DeterministicHttpServer, concurrent_fixture_bytes};
 
 fn request(source_url: String, destination: PathBuf) -> DownloadRequest {
     DownloadRequest {
@@ -24,6 +24,7 @@ fn request(source_url: String, destination: PathBuf) -> DownloadRequest {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -258,20 +259,23 @@ async fn average_http_completion_has_durable_statistics_before_publication() {
     );
 }
 
-async fn wait_for_partial(engine: &DownloadEngine, task_id: DownloadTaskId) {
+async fn wait_for_partial(engine: &DownloadEngine, task_id: DownloadTaskId, total: u64) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let task = engine
             .task(task_id)
             .expect("read active fixture")
             .expect("active task");
-        if task.downloaded_bytes > 0 {
+        if task.task.status() == DownloadStatus::Downloading
+            && task.downloaded_bytes > 0
+            && task.downloaded_bytes < total
+        {
             return;
         }
         assert!(
             !matches!(
                 task.task.status(),
-                DownloadStatus::Failed | DownloadStatus::Completed
+                DownloadStatus::Failed | DownloadStatus::Completed | DownloadStatus::Finalizing
             ),
             "fixture terminated before partial bytes: {:?}",
             task.error
@@ -287,23 +291,26 @@ async fn average_http_pause_resume_restart_does_not_count_restored_prefix_twice(
     let directory = tempfile::tempdir().expect("isolated resume statistics fixture");
     let database = directory.path().join("downloads.sqlite3");
     let engine = DownloadEngine::open(&database).expect("open resumable engine");
+    let expected = concurrent_fixture_bytes();
+    let mut download = request(
+        format!(
+            "http://{}/range-resume-required?checkpoint=1",
+            server.address()
+        ),
+        directory.path().join("output"),
+    );
+    download.speed_limit_bytes_per_second = Some(64 * 1024);
     let task_id = engine
-        .submit(
-            request(
-                format!("http://{}/range-resume-required", server.address()),
-                directory.path().join("output"),
-            ),
-            RequestOrigin::Internal,
-        )
+        .submit(download, RequestOrigin::Internal)
         .expect("submit resumable localhost fixture");
-    wait_for_partial(&engine, task_id).await;
+    wait_for_partial(&engine, task_id, expected.len() as u64).await;
     engine.pause(task_id).expect("pause real transfer");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(5))
         .await
         .expect("join paused writers");
     assert_eq!(paused.task.status(), DownloadStatus::Paused);
-    assert!(paused.downloaded_bytes > 0 && paused.downloaded_bytes < 16);
+    assert!(paused.downloaded_bytes > 0 && paused.downloaded_bytes < expected.len() as u64);
     let paused_stats = task_statistics(&paused.task);
     drop(engine);
     let reopened = DownloadEngine::open(&database).expect("reopen paused transfer");
@@ -318,6 +325,9 @@ async fn average_http_pause_resume_restart_does_not_count_restored_prefix_twice(
         paused_stats
     );
     reopened
+        .set_task_speed_limit(task_id, None)
+        .expect("remove checkpoint rate limit before resume");
+    reopened
         .resume(task_id)
         .expect("resume saved Range checkpoint");
     let completed = reopened
@@ -327,9 +337,9 @@ async fn average_http_pause_resume_restart_does_not_count_restored_prefix_twice(
     assert_eq!(
         std::fs::read(completed.final_path.as_ref().expect("resumed path"))
             .expect("resumed output"),
-        b"0123456789abcdef"
+        expected
     );
-    let stats = completed_statistics(&completed, 16);
+    let stats = completed_statistics(&completed, expected.len() as u64);
     assert!(stats["active_download_ms"].as_u64() >= paused_stats["active_download_ms"].as_u64());
 }
 
@@ -465,23 +475,26 @@ async fn average_legacy_resumed_prefix_keeps_unknown_duration_instead_of_oversta
     let directory = tempfile::tempdir().expect("isolated legacy resume fixture");
     let database = directory.path().join("downloads.sqlite3");
     let engine = DownloadEngine::open(&database).expect("open legacy resume engine");
+    let expected = concurrent_fixture_bytes();
+    let mut download = request(
+        format!(
+            "http://{}/range-resume-required?checkpoint=1",
+            server.address()
+        ),
+        directory.path().join("output"),
+    );
+    download.speed_limit_bytes_per_second = Some(64 * 1024);
     let task_id = engine
-        .submit(
-            request(
-                format!("http://{}/range-resume-required", server.address()),
-                directory.path().join("output"),
-            ),
-            RequestOrigin::Internal,
-        )
+        .submit(download, RequestOrigin::Internal)
         .expect("submit legacy resume fixture");
-    wait_for_partial(&engine, task_id).await;
+    wait_for_partial(&engine, task_id, expected.len() as u64).await;
     engine.pause(task_id).expect("pause legacy fixture");
     let paused = engine
         .wait_for_terminal(task_id, Duration::from_secs(5))
         .await
         .expect("join paused legacy writers");
     assert_eq!(paused.task.status(), DownloadStatus::Paused);
-    assert!(paused.downloaded_bytes > 0 && paused.downloaded_bytes < 16);
+    assert!(paused.downloaded_bytes > 0 && paused.downloaded_bytes < expected.len() as u64);
     let mut legacy = serde_json::to_value(&paused.task).expect("serialize old task shape");
     legacy
         .as_object_mut()
@@ -497,6 +510,9 @@ async fn average_legacy_resumed_prefix_keeps_unknown_duration_instead_of_oversta
     }
     let reopened = DownloadEngine::open(&database).expect("reopen legacy partial");
     reopened
+        .set_task_speed_limit(task_id, None)
+        .expect("remove checkpoint rate limit before legacy resume");
+    reopened
         .resume(task_id)
         .expect("resume genuine legacy prefix");
     let completed = reopened
@@ -509,7 +525,12 @@ async fn average_legacy_resumed_prefix_keeps_unknown_duration_instead_of_oversta
         "{:?}",
         completed.error
     );
-    assert_eq!(completed.downloaded_bytes, 16);
+    assert_eq!(completed.downloaded_bytes, expected.len() as u64);
+    assert_eq!(
+        std::fs::read(completed.final_path.as_ref().expect("legacy output path"))
+            .expect("legacy resumed output"),
+        expected
+    );
     assert!(
         task_statistics(&completed.task).is_null(),
         "unknown prefix duration cannot be paired with only the resumed suffix time"

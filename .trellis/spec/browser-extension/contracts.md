@@ -4,6 +4,7 @@ Evidence: `repo:browser_extension/nxtools-interceptor/background.js`, `repo:brow
 
 ## Context and dependencies
 Manifest MV3 background service_worker, document_start/all_frames content scripts and web-accessible page-hook. Permissions/CSP are product/security surface; no widening for convenience. Policy modules expose browser global/CommonJS seams; background owns browser APIs, pending Native Messaging and privileged request context; popup gets sanitized projection; page hook is untrusted page-side input. No SQL/ORM or general engine-state database: chrome storage owns approved local prefs/projection, engine owns task persistence.
+Automatic browser items use the [controlled lifecycle](controlled-handoff.md), including durable Held, explicit Commit/Abort and session recovery. Its contract supersedes one-shot automatic acceptance/rollback descriptions below; ordinary manual/Blob/batch wrappers remain unchanged.
 
 ## Scenario: Identity-bound download handoff
 ### 1. Scope / Trigger
@@ -12,6 +13,7 @@ Interception/context menu/batch/Blob intake and response/error handling.
 `acceptedHandoffResponse(response, expectedHandoffId)`; `completeAcceptedHandoff({response,expectedHandoffId,cancelBrowserDownload,eraseBrowserDownload,rollbackDesktopTask})`; host protocolVersion2/requestId and accepted handoffId; batch maximum32.
 ### 3. Contracts
 Bound Native Messaging256KiB; pending request ID separate from log correlation, timeout/disconnect rejects once. Browser item remains authoritative until ok+accepted+matching handoffId and successful cancel; cancel failure never erase item and may rollback accepted desktop task. Batch checks each expected identity, partial result stays per item. Blob chunk/capability/meta bounded and source/token/listener lifetime checked; no privileged header/cookie/referrer context in popup/storage projection. Explicit unsafe preempted paths must keep their limitation visible rather than assert universal safe interception.
+Source-page provenance uses only captured in-memory `resource.pageUrl/pageTitle`. Automatic downloads can consult the original-URL captured resource for page facts after a redirect, without changing final-URL filename, Header or Cookie selection. Popup single and independent batch sends carry the same optional `sourcePageUrl/sourcePageTitle`, including when request headers and Cookies are disabled. `contextUrl`, download-item Referrer and Referer are not provenance fallbacks; missing or worker-lost page facts remain unknown. `projectResourceForStorage` continues to omit page facts and privileged context. BrowserHost bounds URL to16KiB and title to4096 UTF-8 bytes, matching the capture limit of1024 characters without rejecting ordinary multibyte titles. No page-value diagnostics or page fetches.
 ### 4. Validation & Error Matrix
 Wrong identity/rejection/timeout/disconnect -> browser fallback, no erase. Cancel failure -> keep browser ownership, bounded rollback, no second desktop task via same idempotency. Invalid capability/source/size -> reject; stale page reply -> discarded/listener cleaned. Do not swallow error into accepted=true.
 ### 5. Good/Base/Bad Cases

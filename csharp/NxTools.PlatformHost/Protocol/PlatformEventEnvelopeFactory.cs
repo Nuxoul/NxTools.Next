@@ -82,7 +82,7 @@ internal static class PlatformEventEnvelopeFactory
                     panel.RequestedAtUnixMs,
                     panel.EventSequence
                 }
-            }),
+            }, panel.CorrelationId),
             QuickLaunchPanelRequestedEvent panel => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "quick_launch_panel_requested",

@@ -129,19 +129,6 @@ internal sealed class AutoQuickSwitchTracker
         }
     }
 
-    public void ObserveOther()
-    {
-        lock (_gate)
-        {
-            if (!_autoSwitchEnabled || !_sourceDirty)
-            {
-                return;
-            }
-            _sourceDirty = false;
-            AdvanceGeneration();
-        }
-    }
-
     public void DiscardPendingSource()
     {
         lock (_gate)
@@ -152,6 +139,30 @@ internal sealed class AutoQuickSwitchTracker
             }
             _sourceDirty = false;
             AdvanceGeneration();
+        }
+    }
+
+    /// <summary>
+    /// The latest source window was activated again but its current folder is not yet readable
+    /// (for example a Directory Opus lister whose focus is outside a file pane). The tracked
+    /// source controller stays authoritative; the dialog return re-reads its folder.
+    /// </summary>
+    public bool MarkSourcePending(long windowHandle)
+    {
+        if (windowHandle == 0)
+        {
+            return false;
+        }
+        lock (_gate)
+        {
+            if (!_trackSources ||
+                _latestSource?.Context.WindowHandle != windowHandle)
+            {
+                return false;
+            }
+            _sourceDirty = _autoSwitchEnabled;
+            AdvanceGeneration();
+            return true;
         }
     }
 

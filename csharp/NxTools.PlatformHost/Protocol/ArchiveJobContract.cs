@@ -52,11 +52,13 @@ internal sealed record ArchiveJobExtract {
     [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)]
     public ArchiveReclamationOptions? Reclamation {get;init;}
     internal bool Valid => Strategy is "here" or "name" or "smart" && Conflict is "ask" or "overwrite" or "skip" or "auto_rename" &&
-        (Selection is null || Selection.Browser.Valid && Selection.Ordinals.Length is >0 and <=4096 && Selection.Ordinals.Distinct().Count()==Selection.Ordinals.Length) &&
+        (Selection is null || Selection.Browser.Valid && Selection.Ordinals.Length>0 && Selection.Ordinals.Distinct().Count()==Selection.Ordinals.Length &&
+            (Selection.StripPrefix is null || Strategy=="here" && ArchiveJobWire.SelectedPrefixValid(Selection.StripPrefix))) &&
         (Reclamation is null || Reclamation.Valid && Strategy == "here" && Conflict == "ask" && Selection is null);
 }
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
-internal sealed record ArchiveJobSelection(ArchiveBrowserContext Browser, ulong[] Ordinals);
+internal sealed record ArchiveJobSelection(ArchiveBrowserContext Browser, ulong[] Ordinals,
+    [property:JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingNull)] string? StripPrefix=null);
 [JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 internal sealed record ArchiveJobCreate {
     public required string Format {get;init;}
@@ -71,6 +73,8 @@ internal sealed record ArchiveJobCreate {
     public required bool TestAfterCreate {get;init;}
     public required string Name {get;init;}
     public ulong? VolumeBytes {get;init;}
+    [JsonIgnore(Condition=JsonIgnoreCondition.WhenWritingDefault)]
+    public bool SelfExtracting {get;init;}
     public override string ToString()=>"ArchiveJobCreate([PRIVATE])";
 }
 // Immutable browser revision is checked again by the owning runner, never trusted as a path grant.
@@ -179,6 +183,13 @@ internal static class ArchiveJobWire {
         var path=directory ? value[..^1] : value;
         return path.Length>0 && path.Split('/').All(NameValid);
     }
+    internal static bool SelectedPrefixValid(string value) {
+        if(!value.EndsWith('/') || Encoding.UTF8.GetByteCount(value)>32767 || value.Any(char.IsControl))return false;
+        try {
+            foreach(var part in value[..^1].Split('/'))Windows.Archive.ArchiveOutputSession.Validate(part);
+            return true;
+        }catch(Windows.Archive.ArchiveOutputException){return false;}
+    }
     internal static bool ValidModify(ArchiveJobModify? edit,int paths) {
         if(paths is <1 or >32 || edit?.Browser.Valid!=true || edit.Browser.Format is not ("Zip" or "SevenZ" or "Tar" or "TarGz" or "TarXz") || edit.Ordinals is null || edit.Ordinals.Length>4096 || edit.Ordinals.Distinct().Count()!=edit.Ordinals.Length)return false;
         if(edit.SourcePrefix is {} prefix && (edit.Browser.Format is not ("SevenZ" or "Tar" or "TarGz" or "TarXz") || edit.Action!="rename" || edit.Ordinals.Length!=1 || edit.Value?.EndsWith('/')!=true || !ModifyTargetValid(prefix,true)))return false;
@@ -232,6 +243,7 @@ internal static class ArchiveJobWire {
         var zip=c.Format=="zip";var seven=c.Format=="seven_z";
         if(c.VolumeBytes is {} volume && (!zip && !seven || volume<65536 || volume>r.Limits.MaxOutputBytes))return false;
         if(c.Format is not ("zip" or "seven_z" or "tar" or "tgz" or "txz" or "gz" or "xz") || !NameValid(c.Name) || c.ExcludePatterns.Length>32 || c.ExcludePatterns.Any(p=>p.Contains('\0')) || c.ExcludePatterns.Sum(p=>Encoding.UTF8.GetByteCount(p))>8192 || !PasswordValid(c.Password))return false;
+        if(c.SelfExtracting && (!zip || c.Password is not null || c.Name.Length<=4 || !c.Name.EndsWith(".exe",StringComparison.OrdinalIgnoreCase) || c.VolumeBytes>4294967295UL))return false;
         if(!seven && (c.Solid.HasValue || c.EncryptHeader.HasValue) || !zip && c.Method is not null || !zip && !seven && c.Password is not null || c.EncryptHeader==true && c.Password is null)return false;
         if(c.Format=="tar" ? c.Level is not null : c.Level is not ("fast" or "normal" or "maximum") && !(zip && c.Level=="store"))return false;
         if(zip && (c.Method is not ("store" or "deflate") || (c.Method=="store")!=(c.Level=="store")))return false;

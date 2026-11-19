@@ -1,9 +1,11 @@
 ; Explicit updater bootstrap maintenance. Never entered by the normal installer.
-#define MyAppVersion "0.7.0"
+#define MyAppVersion "0.7.2"
 #define PackageDir "..\artifacts\win-x64"
 [Setup]
 AppName=NxTools 更新服务维护
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}.0
+VersionInfoProductVersion={#MyAppVersion}
 AppPublisher=NxTools
 DefaultDirName={tmp}\NxTools-maintenance
 CreateAppDir=no

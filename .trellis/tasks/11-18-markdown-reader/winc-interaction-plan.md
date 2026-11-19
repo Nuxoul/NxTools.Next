@@ -1,0 +1,20 @@
+# Winc-style reader modes and outline
+
+## Goal
+
+Match the reviewed Winc Markdown reading interactions while retaining the NxTools reader, file lifecycle and existing export/history owners. The visual adaptation is evaluated with the same long technical document, not assumed to be pixel-identical across different renderers.
+
+## Requirements and boundaries
+
+- **Mode selector.** The preview header has exactly three mutually exclusive view choices: `代码`, `分栏`, `预览`. Code shows the editable Markdown source alone; Split shows the same source at left and a live rendered preview at right; Preview hides the source pane. Keep explicit `就地编辑` within Preview as an editing action, not a fourth displayed view choice. Opening from Explorer starts in Preview, and a mode click never writes a file. No F2/F3 mode shortcuts. Preserve draft, undo, current section and tab ownership through switching.
+- **Outline.** Adopt Winc’s left indicator rail, active section following the actual preview viewport, delayed hover reveal and pin/unpin. Provide an explicit click and keyboard route to the same outline. Use the current section after a normal scroll, the last visible section at document end and the clicked target until independent scrolling resumes. In narrow and split viewports that cannot fit the pinned column, keep the rail and open the existing outline in an anchored overlay. Keep hierarchy, long-label elision and jump from duplicate headings by source identity.
+- **Rendering and highlighting.** Keep the reader-local Winc-derived typographic hierarchy and the original GPUI renderer. Code mode must visibly highlight Markdown source. Preview and Split must visibly color keywords, strings and comments within recognized fenced languages on both themes. Unknown or unlabelled fences still render and copy correctly. Do not equate language captions to syntax coloring. Math, Mermaid and full parser/pixel parity are outside this interaction slice.
+- Preserve Windows association, independent document-window lifecycle, current save/failure and history semantics, local resources, and the existing HTML/PDF path.
+
+## Design and delivery
+
+1. Reuse the locked Kit `ToggleGroup`/`Toggle` public composition, with one requested intent and a visible selected state. Keep one source-editor entity per editing session across Code/Split and the existing BlockEditor as an explicit Preview action. Defer cross-entity transitions out of leased callbacks. Keep the current `TextViewState` for unchanged content when switching surface layout.
+2. Keep one heading model and one viewport scroll owner. Establish the public TextView list/block geometry and committed source mapping on supported documents before applying scroll tracking. Use source locations for active headings, jumps and split synchronization; do not mirror scrollbar pixels or reverse-sync a stale parse. Use the existing Kit Tree/Popover for outline interaction and a compact visual rail for section positions. Preserve focus, overlay cancellation and preview position across resize/pin transitions.
+3. Start with red-capable reader tests for three actual header controls, editable Code/Split, explicit Preview edit and lossless switch/save. Verify narrow/large viewport layout, hover/open/pin, long and duplicate headings, pointer/keyboard jumps, end-of-document highlighting, and no ping-pong in two-way split scrolling. Verify actual rendered or resolved highlight spans for a common supported fence in Dark/Light, unknown-fence fallback, and original-code copy. Compare the same long Chinese technical sample in Winc and NxTools across all three modes; distinguish screenshots, physical input and user acceptance from compiled fixtures.
+
+[Source reference](../../../docs/reference-code/markdown-reader.md#winc-mode-outline-and-code-color-behavior).

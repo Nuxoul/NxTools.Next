@@ -7,11 +7,15 @@
     <RootNamespace>NxTools.PlatformHost</RootNamespace>
     <UseWindowsForms>true</UseWindowsForms>
     <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- The RID-selected x64 loader is a NuGet runtime asset; avoid the SDK's additional loose copies. -->
+    <WebView2NeverCopyLoaderDllToOutputDirectory>true</WebView2NeverCopyLoaderDllToOutputDirectory>
     <SelfContained>false</SelfContained>
   </PropertyGroup>
   <ItemGroup>
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WPF" />
     <PackageReference Include="System.ServiceProcess.ServiceController" Version="8.0.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
     <Compile Remove="Generated\ReleaseBinaryManifest.g.cs" Condition="'$(ReleaseBinaryManifestPath)' != ''" />
     <Compile Include="$(ReleaseBinaryManifestPath)" Condition="'$(ReleaseBinaryManifestPath)' != ''" />
     <Compile Remove="Generated\ArchiveReleaseManifest.g.cs" Condition="'$(ArchiveReleaseManifestPath)' != ''" />

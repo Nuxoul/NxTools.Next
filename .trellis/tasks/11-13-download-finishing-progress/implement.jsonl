@@ -1,0 +1,5 @@
+{"file":"docs/reference-code/mister-download-manager.md","reason":"Verified reference chains and media finalization invariants"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Original bounded progress, writer and publication contracts"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Existing official component and public-slot selection"}
+{"file":"docs/reference-code/gpui-kit-component-index.md","reason":"Released official Progress and Button APIs"}
+{"file":".trellis/tasks/11-13-download-finishing-progress/design.md","reason":"Stage units, cancellation and presentation boundaries"}

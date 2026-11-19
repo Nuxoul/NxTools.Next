@@ -1,0 +1,26 @@
+﻿{
+    "fail":  0,
+    "run_count":  10,
+    "list_count":  10,
+    "run_exit":  0,
+    "run_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-theme.log",
+    "pass":  10,
+    "list_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-theme-list.log",
+    "selection":  [
+                      "test",
+                      "--locked",
+                      "--offline",
+                      "-p",
+                      "nxtools-desktop",
+                      "--bin",
+                      "nxtools-desktop",
+                      "auxiliary_theme_tests::"
+                  ],
+    "filter":  "auxiliary_theme_tests::",
+    "target":  "bin:nxtools-desktop",
+    "list_exit":  0,
+    "expected_count":  0,
+    "package":  "nxtools-desktop",
+    "skip":  0,
+    "not_run":  0
+}

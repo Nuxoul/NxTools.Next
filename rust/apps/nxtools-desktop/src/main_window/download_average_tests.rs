@@ -123,6 +123,7 @@ impl gpui_kit::Render for AverageRowView {
                 bytes_per_second: self.live_rate,
                 active_connections: 1,
                 segments: Vec::new(),
+                finishing: None,
             }),
             None,
         )

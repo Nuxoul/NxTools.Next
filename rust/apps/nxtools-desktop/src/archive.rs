@@ -2,6 +2,8 @@
 mod application;
 mod batch;
 mod browser;
+#[cfg(test)]
+pub(crate) use browser::ArchiveBrowser;
 mod draft;
 mod forms;
 mod model;

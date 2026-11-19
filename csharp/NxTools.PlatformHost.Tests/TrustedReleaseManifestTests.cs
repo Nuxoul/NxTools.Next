@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using NxTools.PlatformHost.Generated;
 using System.Text.Json.Nodes;
 using NxTools.PlatformHost.Windows;
 
@@ -53,6 +54,41 @@ internal static class TrustedReleaseManifestTests
         File.WriteAllBytes(fixture.SignaturePath, signature);
         Reject<CryptographicException>(() => { using var rejected = fixture.Verify(); });
         return Task.CompletedTask;
+    }
+
+    internal static Task LegacySnapshotIsRecoveryOnly()
+    {
+        var workspace = FindWorkspaceRoot();
+        var package = Path.Combine(workspace, ".diagnostics", "packaging", "20261115-121004-bb6cb18d-published", "previous-package");
+        Require(Directory.Exists(package), "Retained legacy release fixture is required.");
+        var manifestPath = Path.Combine(package, TrustedReleaseManifest.ManifestName);
+        var manifestBytes = File.ReadAllBytes(manifestPath);
+        var manifest = JsonSerializer.Deserialize<ReleaseManifest>(manifestBytes)
+            ?? throw new InvalidDataException("Legacy release manifest is missing.");
+        var manifestSha = Convert.ToHexString(SHA256.HashData(manifestBytes)).ToLowerInvariant();
+        var legacyKey = Convert.FromBase64String(LegacyUpdateTrust.PublicKeySpkiBase64);
+        var currentKey = Convert.FromBase64String(UpdateTrust.PublicKeySpkiBase64);
+        Require(manifest.PublicKeySha256 == Convert.ToHexString(SHA256.HashData(legacyKey)).ToLowerInvariant(), "Legacy fixture is bound to the historical trust anchor.");
+        Require(!legacyKey.SequenceEqual(currentKey), "Historical and current trust anchors must differ.");
+        using (var recovered = TrustedReleaseManifest.VerifyRecoverySnapshot(package, legacyKey,
+            manifest.ReleaseSequence, manifest.ReleaseId, manifestSha))
+            Require(recovered.RecoveryOnly, "Historical snapshot is accepted only through recovery verification.");
+        Reject<CryptographicException>(() => { using var rejected = TrustedReleaseManifest.VerifyPackage(package, currentKey, 0); });
+        return Task.CompletedTask;
+    }
+
+    private static string FindWorkspaceRoot()
+    {
+        foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
+        {
+            var directory = new DirectoryInfo(start);
+            while (directory is not null)
+            {
+                if (Directory.Exists(Path.Combine(directory.FullName, ".diagnostics"))) return directory.FullName;
+                directory = directory.Parent;
+            }
+        }
+        throw new DirectoryNotFoundException("Workspace root not found.");
     }
 
     internal static Task SignedDuplicateTraversalAndSchemaRejected()

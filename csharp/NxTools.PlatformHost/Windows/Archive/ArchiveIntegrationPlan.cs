@@ -39,6 +39,8 @@ internal sealed record ArchiveIntegrationIntent(
     IReadOnlyList<string>? Extensions = null)
 {
     internal string DoubleClickAction { get; init; } = "open";
+    /// <summary>Claims each extension's current-user class default so icons and double-click use the owned ProgID.</summary>
+    internal bool SetDefault { get; init; }
     internal string MenuLayout { get; init; } = "cascade";
     internal IReadOnlyList<string> MenuCommands { get; init; } = RecommendedMenuCommands;
     internal static string[] RecommendedMenuCommands => [.. DefaultMenuCommands, "create_zip", "create_7z", "create"];
@@ -73,9 +75,14 @@ internal sealed record ArchiveAppliedValueFact(
     ArchiveRegistryValue AppliedValue,
     ArchiveRegistryValueSnapshot Prior);
 
+/// <param name="PriorUserChoices">
+/// Explorer default program (UserChoice ProgId, or null when none) of each extension captured
+/// before an explicit default claim; null when the revision made no claim.
+/// </param>
 internal sealed record ArchiveIntegrationAppliedFacts(
     long DesiredRevision,
-    IReadOnlyList<ArchiveAppliedValueFact> Values);
+    IReadOnlyList<ArchiveAppliedValueFact> Values,
+    IReadOnlyDictionary<string, string?>? PriorUserChoices = null);
 
 internal sealed record ArchiveIntegrationUninstallResult(
     int RemovedInstalledValues,
@@ -89,6 +96,17 @@ internal interface IArchiveIntegrationStore
     void Restore(ArchiveRegistryValueTarget target, ArchiveRegistryValueSnapshot snapshot);
 }
 
+/// <summary>Explorer per-user default program (FileExts UserChoice) for one extension.</summary>
+internal interface IArchiveDefaultClaim
+{
+    /// <summary>Current remembered ProgId, or null when Explorer has none.</summary>
+    string? Current(string extension);
+    /// <summary>Writes a valid remembered choice for <paramref name="progId"/>, or removes it when null.</summary>
+    void Set(string extension, string? progId);
+    /// <summary>Whether Explorer's live association resolves the extension to <paramref name="progId"/>.</summary>
+    bool Resolves(string extension, string progId);
+}
+
 internal sealed record ArchiveIntegrationPlan(
     ArchiveIntegrationScope Scope,
     long DesiredRevision,
@@ -98,7 +116,7 @@ internal sealed record ArchiveIntegrationPlan(
     ArchiveIntegrationAppliedFacts? AppliedFacts)
 {
     private const string Classes = @"Software\Classes";
-    private const string ProgId = "NxTools.Archive";
+    internal const string ProgId = "NxTools.Archive";
     private const string CascadeId = "NxTools.Archive";
 
     internal static ArchiveIntegrationPlan Create(
@@ -116,8 +134,8 @@ internal sealed record ArchiveIntegrationPlan(
         var normalized = NormalizeIntent(savedIntent);
         var extensions = normalized.Extensions!;
         var changes = new List<ArchiveRegistryValueChange>();
-        if (normalized.OpenWithEnabled)
-            AddOpenWith(changes, executablePath, extensions, normalized.DoubleClickAction);
+        if (normalized.OpenWithEnabled || normalized.SetDefault)
+            AddOpenWith(changes, executablePath, extensions, normalized.DoubleClickAction, normalized.SetDefault);
         if (normalized.ClassicCascadeEnabled)
         {
             if (selectionHelperPath is not null)
@@ -147,7 +165,8 @@ internal sealed record ArchiveIntegrationPlan(
         ICollection<ArchiveRegistryValueChange> changes,
         string executablePath,
         IReadOnlyList<string> extensions,
-        string doubleClickAction)
+        string doubleClickAction,
+        bool setDefault)
     {
         var root = Classes + "\\" + ProgId;
         Add(changes, root, "", "NxTools Archive", root);
@@ -162,6 +181,13 @@ internal sealed record ArchiveIntegrationPlan(
 
         foreach (var extension in extensions)
         {
+            // The class default precedes OpenWithProgids so reverse restoration empties the
+            // child first and a created extension key can be retired when it becomes empty.
+            if (setDefault)
+            {
+                var extensionKey = Classes + "\\" + extension;
+                Add(changes, extensionKey, "", ProgId, extensionKey);
+            }
             var openWith = Classes + "\\" + extension + @"\OpenWithProgids";
             Add(changes, openWith, ProgId, "", openWith);
         }
@@ -201,7 +227,7 @@ internal sealed record ArchiveIntegrationPlan(
         ArgumentNullException.ThrowIfNull(intent);
         intent.Validate();
         var extensions = NormalizeExtensions(intent.Extensions);
-        if ((intent.OpenWithEnabled || (intent.ClassicCascadeEnabled && intent.MenuCommands.Any(command => !ArchiveSelectionHandlerPlan.IsCreation(command)))) && extensions.Count == 0)
+        if ((intent.OpenWithEnabled || intent.SetDefault || (intent.ClassicCascadeEnabled && intent.MenuCommands.Any(command => !ArchiveSelectionHandlerPlan.IsCreation(command)))) && extensions.Count == 0)
             throw new ArgumentException("At least one archive extension is required for enabled integration.", nameof(intent));
         return intent with { Extensions = extensions, MenuCommands = intent.MenuCommands.ToArray() };
     }

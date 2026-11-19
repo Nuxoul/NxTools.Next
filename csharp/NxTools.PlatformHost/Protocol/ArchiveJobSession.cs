@@ -97,7 +97,7 @@ internal sealed partial class ArchiveJobSession : IAsyncDisposable {
                     new ArchiveAdmittedLimits(limits.MaxEntries,limits.MaxMetadataBytes,limits.MaxWorkingBytes,limits.MaxEntryBytes,limits.MaxOutputBytes),
                     Password:password,OutputRoot:ArchiveWorkerRunner.IsModification(kind)?Path.GetDirectoryName(request.Paths[0]):request.Destination,CreateName:create?.Name,CompressionLevel:create?.Level,
                     TimeoutMs:largeExtract?0:timeoutMs,
-                    ZipOptions:kind=="create_zip"?new(create!.Method!,password is null?"none":"aes256",create.StripSingleRoot,create.ExcludePatterns):null,
+                    ZipOptions:kind=="create_zip"?new(create!.Method!,password is null?"none":"aes256",create.StripSingleRoot,create.ExcludePatterns,create.SelfExtracting):null,
                     SourcePaths:ArchiveWorkerRunner.IsModification(kind) && request.Modify?.Action is ("add" or "replace_content")?request.Paths.Skip(1).ToArray():ArchiveWorkerRunner.IsTreeCreation(kind)?request.Paths:null,
                     TreeOptions:tree?new(create!.StripSingleRoot,create.ExcludePatterns):null,
                     SevenzOptions:kind=="create_7z"?new(create!.Solid??false,password is null?"none":"aes256",create.EncryptHeader??false):null,
@@ -106,7 +106,7 @@ internal sealed partial class ArchiveJobSession : IAsyncDisposable {
                     JobExecution:true,JobExtract:request.Extract,OutputReadmission:request.Readmission is {} readmission?JsonSerializer.SerializeToElement(readmission,JsonDefaults.Options):null,
                     VolumeBytes:create?.VolumeBytes,JobModify:request.Modify,JobLargeCount:largeExtract,
                     ParallelExtraction:kind=="extract" && request.Extract?.Reclamation is null),
-                    confirmCreateOverwrite:request.Kind=="create" && create?.VolumeBytes is null?(target,token)=>ConfirmCreateOverwrite(operation,target,token):null);
+                    confirmCreateOverwrite:request.Kind=="create" && create?.VolumeBytes is null && create?.SelfExtracting!=true?(target,token)=>ConfirmCreateOverwrite(operation,target,token):null);
                 return ArchiveJobWire.Result(admitted,admitted?null:operation.Failure??"io_failure");
             } finally { if(create?.Password is {} secret)CryptographicOperations.ZeroMemory(secret); }
         }} finally {if(command.Reply?.Password is {} replySecret)CryptographicOperations.ZeroMemory(replySecret);if(command.Request?.Create?.Password is {} createSecret)CryptographicOperations.ZeroMemory(createSecret);}

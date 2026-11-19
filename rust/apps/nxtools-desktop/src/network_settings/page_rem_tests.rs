@@ -158,7 +158,7 @@ fn audit06_pages_global_long_rules_reach_last_real_action_and_tab_scope(cx: &mut
             .expect("fixed footer");
         assert!(
             last.top() >= viewport.top() && last.bottom() <= viewport.bottom().min(footer.top()),
-            "actual last rule inside original120viewport at{value}: {last:?} / {viewport:?}"
+            "actual last rule inside bounded viewport at{value}: {last:?} / {viewport:?}"
         );
         let edit = kit_migration_tests::control_bounds(&mut surface, "global-blacklist-edit-23");
         surface.simulate_click(edit.center(), Default::default());

@@ -31,8 +31,10 @@ fn clipboard_history_window_is_bounded_and_can_load_both_directions() {
     assert!(source.contains("ClipboardPageRequest::Append"));
     assert!(source.contains("ClipboardPageRequest::Prepend"));
     assert!(source.contains("query_summary_page_async"));
+    assert!(include_str!("../clipboard_worker.rs").contains("history.filtered_summary_page("));
     assert!(
-        include_str!("../clipboard_worker.rs").contains("history.summary_category_page_after(")
+        include_str!("../../../../crates/nxtools-clipboard/src/query.rs")
+            .contains("self.select_items_after(")
     );
     assert!(source.contains("self.list_scroll.splice(0..removed, 0)"));
 }
@@ -80,17 +82,26 @@ fn production_clipboard_history_uses_official_empty_and_distinct_query_alert(
     cx: &mut TestAppContext,
 ) {
     cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
     let page = ClipboardHistoryPage {
         items: Vec::new(),
         total: 0,
         has_more: false,
     };
-    let categories = vec![ClipboardCategory {
-        id: BUILTIN_ALL_CATEGORY_ID.into(),
-        name: "全部".into(),
-        kind: ClipboardCategoryKind::All,
-        sort_order: 0,
-    }];
+    let categories = vec![
+        ClipboardCategory {
+            id: BUILTIN_ALL_CATEGORY_ID.into(),
+            name: "全部".into(),
+            kind: ClipboardCategoryKind::All,
+            sort_order: 0,
+        },
+        ClipboardCategory {
+            id: nxtools_clipboard::BUILTIN_FAVORITE_CATEGORY_ID.into(),
+            name: "收藏".into(),
+            kind: ClipboardCategoryKind::Favorite,
+            sort_order: 1,
+        },
+    ];
     let directory = tempfile::tempdir().expect("clipboard panel worker directory");
     let history_worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
         directory.path().join("clipboard.db"),
@@ -160,6 +171,44 @@ fn production_clipboard_history_uses_official_empty_and_distinct_query_alert(
         .debug_bounds("clipboard-history-viewport")
         .expect("clipboard history viewport");
     assert_eq!(state.size.width, viewport.size.width);
+    panel.update_in(window, |panel, _window, cx| {
+        panel.active_category_id = nxtools_clipboard::BUILTIN_FAVORITE_CATEGORY_ID.into();
+        cx.notify();
+    });
+    window.refresh().expect("render empty favorites");
+    let nodes = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    assert!(nodes.iter().any(|node| node.label() == Some("查看全部")));
+    panel.update_in(window, |panel, window, cx| {
+        panel.history_filters.query.source_process = Some("fixture.exe".into());
+        panel
+            .search_input
+            .update(cx, |input, cx| input.set_value("fixture", window, cx));
+        cx.notify();
+    });
+    window.refresh().expect("render filter and empty state");
+    let filter_strip = window
+        .debug_bounds("clipboard-history-active-filters")
+        .expect("active filter strip");
+    let clear = window
+        .debug_bounds("clipboard-history-clear-filters")
+        .expect("clear button in filter strip");
+    assert!(filter_strip.contains(&clear.center()));
+    window.simulate_click(clear.center(), gpui_kit::Modifiers::default());
+    for _ in 0..400 {
+        window.run_until_parked();
+        if !panel.read_with(window, |panel, _| panel.search_pending) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panel.update_in(window, |panel, _window, cx| {
+        assert!(
+            !panel.search_pending,
+            "filtered query should have completed"
+        );
+        assert!(panel.history_filters.query.source_process.is_none());
+        assert_eq!(panel.search_input.read(cx).value().as_ref(), "fixture");
+    });
     panel.update_in(window, |panel, _window, cx| {
         panel.search_pending = true;
         panel.query_error = None;

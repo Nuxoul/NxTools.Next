@@ -104,6 +104,188 @@ fn destination_conflict_task_window_keeps_named_actions_inside_failed_budget(
     }
 }
 
+#[gpui_kit::test]
+fn failed_task_window_recommends_the_action_that_matches_the_fault(cx: &mut TestAppContext) {
+    use nxtools_download::{DownloadFault, DownloadFaultCode};
+    let (application, engine, ids, _directory) = detail_request_tests::fixture(cx);
+    cx.update(crate::theme::apply_component_theme);
+    let mut snapshot = engine.task(ids[0]).expect("task").expect("snapshot");
+    let at = snapshot.task.created_at_unix_ms().saturating_add(1);
+    snapshot
+        .task
+        .transition_to(DownloadStatus::Probing, at)
+        .expect("probe");
+    snapshot
+        .task
+        .transition_to(DownloadStatus::Failed, at + 1)
+        .expect("failed");
+    for (code, message, retryable, expected) in [
+        (
+            DownloadFaultCode::UnexpectedWebPage,
+            "unexpected web page",
+            false,
+            "在浏览器中打开",
+        ),
+        (
+            DownloadFaultCode::Protocol,
+            "resource changed",
+            true,
+            "从头下载",
+        ),
+        (
+            DownloadFaultCode::FileInUse,
+            "file in use",
+            false,
+            "重新下载",
+        ),
+        (
+            DownloadFaultCode::Network,
+            "connection reset",
+            true,
+            "重试下载",
+        ),
+    ] {
+        snapshot.error = Some(DownloadFault {
+            code,
+            message: message.into(),
+            retryable,
+        });
+        let (bridge, _) = nxtools_ipc::platform_bridge(16);
+        let (_, window) = cx.add_window_view(|_, _| {
+            DownloadTaskWindowView::new(
+                application.clone(),
+                Rc::new(bridge),
+                ids[0],
+                TaskWindowIdentity {
+                    native_window_handle: 0,
+                    generation: uuid::Uuid::new_v4(),
+                },
+                Some(snapshot.clone()),
+                None,
+                false,
+            )
+        });
+        window.simulate_resize(size(px(440.0), px(196.0)));
+        window.refresh().expect("production failed window");
+        let bounds = window
+            .debug_bounds("download-window-failed-primary")
+            .expect("recommended action");
+        let nodes = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+        assert!(
+            nodes
+                .iter()
+                .any(|node| node.label() == Some(expected) && node.bounds() == bounds),
+            "{expected}"
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn failed_task_window_routes_raw_error_to_existing_notification_only(cx: &mut TestAppContext) {
+    let (application, engine, ids, _directory) = detail_request_tests::fixture(cx);
+    cx.update(crate::theme::apply_component_theme);
+    let mut snapshot = engine.task(ids[0]).expect("task").expect("snapshot");
+    let at = snapshot.task.created_at_unix_ms().saturating_add(1);
+    snapshot
+        .task
+        .transition_to(DownloadStatus::Probing, at)
+        .expect("probe");
+    snapshot
+        .task
+        .transition_to(DownloadStatus::Failed, at + 1)
+        .expect("failed");
+    let raw_error = "The remote host returned a very long original English error: connection aborted before the response completed";
+    snapshot.error = Some(nxtools_download::DownloadFault {
+        code: nxtools_download::DownloadFaultCode::Network,
+        message: raw_error.into(),
+        retryable: true,
+    });
+    let (bridge, _) = nxtools_ipc::platform_bridge(16);
+    let (view, window) = cx.add_window_view(|_, _| {
+        DownloadTaskWindowView::new(
+            application.clone(),
+            Rc::new(bridge),
+            ids[0],
+            TaskWindowIdentity {
+                native_window_handle: 0,
+                generation: uuid::Uuid::new_v4(),
+            },
+            Some(snapshot.clone()),
+            None,
+            false,
+        )
+    });
+    window.simulate_resize(size(px(440.0), px(196.0)));
+    window.refresh().expect("production failed window");
+    let nodes = window.update(|window, _| gpui_kit::base::test_support::snapshots(window));
+    assert!(
+        window
+            .debug_bounds("download-task-window-phase-failed")
+            .is_some()
+    );
+    assert!(
+        window
+            .debug_bounds("download-window-failure-kit-alert")
+            .is_none()
+    );
+    assert!(
+        nodes
+            .iter()
+            .all(|node| node.label().is_none_or(|label| !label.contains(raw_error)))
+    );
+    for action in ["取消任务", "重试下载", "重新下载"] {
+        assert!(
+            nodes.iter().any(|node| node.label() == Some(action)),
+            "missing {action}"
+        );
+    }
+    assert_eq!(
+        view.read_with(window, |view, _| view
+            .snapshot
+            .as_ref()
+            .expect("failed snapshot")
+            .task
+            .status()),
+        DownloadStatus::Failed
+    );
+    application.update(cx, |app, cx| {
+        app.notified_terminal_states
+            .remove(&(ids[0], DownloadStatus::Failed));
+        app.publish_terminal_notifications(&[snapshot.clone()], cx);
+        app.publish_terminal_notifications(&[snapshot.clone()], cx);
+        assert!(app.completion_feedback_scheduled);
+        app.flush_completion_feedback(cx);
+        {
+            let notices = app.notifications.read(cx).items();
+            assert_eq!(notices.len(), 1);
+            assert_eq!(
+                notices[0].level,
+                crate::notifications::NotificationLevel::Error
+            );
+            assert_eq!(notices[0].message.as_ref(), raw_error);
+        }
+        app.publish_terminal_notifications(&[snapshot], cx);
+        assert!(!app.completion_feedback_scheduled);
+        assert_eq!(app.notifications.read(cx).items().len(), 1);
+    });
+}
+
+#[gpui_kit::test]
+fn reopened_persisted_failure_does_not_publish_old_notification(cx: &mut TestAppContext) {
+    let (app, engine, id, _directory, _temporary, _target) = persisted_conflict_fixture(cx);
+    app.update(cx, |app, cx| {
+        assert!(
+            app.notified_terminal_states
+                .contains(&(id, DownloadStatus::Failed))
+        );
+        let task = engine.task(id).expect("task").expect("failed task");
+        app.publish_terminal_notifications(std::slice::from_ref(&task), cx);
+        app.publish_terminal_notifications(&[task], cx);
+        assert!(!app.completion_feedback_scheduled);
+        assert!(app.notifications.read(cx).items().is_empty());
+    });
+}
+
 fn persisted_conflict_fixture(
     cx: &mut TestAppContext,
 ) -> (
@@ -249,5 +431,131 @@ fn destination_conflict_cancel_click_only_cleans_owned_incomplete_data(cx: &mut 
     assert_eq!(
         std::fs::read(target).expect("existing destination"),
         b"existing"
+    );
+}
+
+#[gpui_kit::test]
+fn web_page_failure_opens_browser_once_and_retains_the_failed_window(cx: &mut TestAppContext) {
+    let (application, engine, ids, _directory) = detail_request_tests::fixture(cx);
+    cx.update(crate::theme::apply_component_theme);
+    let task_id = ids[0];
+    let mut snapshot = engine.task(task_id).expect("task").expect("snapshot");
+    let source = snapshot.task.request().source_url.clone();
+    let at = snapshot.task.created_at_unix_ms() + 1;
+    snapshot
+        .task
+        .transition_to(DownloadStatus::Probing, at)
+        .expect("probe");
+    snapshot
+        .task
+        .transition_to(DownloadStatus::Failed, at + 1)
+        .expect("failed");
+    snapshot.error = Some(nxtools_download::DownloadFault {
+        code: nxtools_download::DownloadFaultCode::UnexpectedWebPage,
+        message: "网站返回了网页而不是文件。".into(),
+        retryable: false,
+    });
+    let (bridge, endpoint) = nxtools_ipc::platform_bridge(16);
+    endpoint.set_connected_for_contract_test(true);
+    let bridge = Rc::new(bridge);
+    application.update(cx, |app, _| app.platform = bridge.clone());
+    let generation = uuid::Uuid::new_v4();
+    let (view, window) = cx.add_window_view(|_, _| {
+        DownloadTaskWindowView::new(
+            application.clone(),
+            bridge,
+            task_id,
+            TaskWindowIdentity {
+                native_window_handle: 0,
+                generation,
+            },
+            Some(snapshot),
+            None,
+            false,
+        )
+    });
+    window.simulate_resize(size(px(440.0), px(196.0)));
+    window.refresh().expect("failed window");
+    let action = window
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| {
+            node.role() == Some(gpui_kit::Role::Button) && node.label() == Some("在浏览器中打开")
+        })
+        .expect("actionable web-page failure");
+    assert!(action.bounds().right() <= px(440.0) && action.bounds().bottom() <= px(196.0));
+    window.simulate_click(action.bounds().center(), gpui_kit::Modifiers::default());
+    window.run_until_parked();
+    let command = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("native browser command");
+    assert!(matches!(&command.message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(open))
+        if open.target == source && open.action == ShellOpenAction::Open));
+    window.simulate_click(action.bounds().center(), gpui_kit::Modifiers::default());
+    window.run_until_parked();
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "pending opens coalesce"
+    );
+    application.update(window, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: command.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        )
+    });
+    for failure in ["native", "timeout", "disconnect"] {
+        window.simulate_click(action.bounds().center(), gpui_kit::Modifiers::default());
+        window.run_until_parked();
+        let command = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("browser retry");
+        application.update(window, |app, cx| {
+            match failure {
+                "native" => app.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: command.id,
+                        result: PlatformCommandResult {
+                            success: false,
+                            error: Some("Shell failed".into()),
+                            native_error_code: Some(5),
+                            data: None,
+                        },
+                    },
+                    cx,
+                ),
+                "timeout" => app.artifact_action_timed_out(command.id, cx),
+                _ => app.disconnect_artifact_actions(cx),
+            }
+            assert!(!app.pending_artifact_actions.contains_key(&command.id));
+        });
+        window.refresh().expect("browser failure retains window");
+    }
+    window
+        .refresh()
+        .expect("browser open retains failure presentation");
+    view.read_with(window, |view, _| {
+        assert_eq!(view.window_generation, generation);
+        assert_eq!(
+            view.snapshot.as_ref().expect("snapshot").task.status(),
+            DownloadStatus::Failed
+        );
+    });
+    assert_eq!(
+        engine
+            .task(task_id)
+            .expect("task")
+            .expect("record")
+            .task
+            .status(),
+        DownloadStatus::Created
     );
 }

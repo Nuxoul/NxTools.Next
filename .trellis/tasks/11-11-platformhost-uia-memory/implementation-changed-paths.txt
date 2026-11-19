@@ -1,0 +1,10 @@
+csharp/NxTools.PlatformHost/Windows/NativeUiAutomation.cs
+csharp/NxTools.PlatformHost/Windows/OneCommanderUiaSession.cs
+csharp/NxTools.PlatformHost/Windows/OneCommanderFocusTracker.cs
+csharp/NxTools.PlatformHost/Windows/OneCommanderFileManagerOperations.cs
+csharp/NxTools.PlatformHost/Windows/ThirdPartyFileManagerAdapter.cs
+csharp/NxTools.PlatformHost/Windows/ElevatedDirectoryNavigation.cs
+csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.cs
+csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.EventWindow.cs
+csharp/NxTools.PlatformHost/Protocol/PlatformPipeClient.cs
+csharp/NxTools.PlatformHost/Program.cs

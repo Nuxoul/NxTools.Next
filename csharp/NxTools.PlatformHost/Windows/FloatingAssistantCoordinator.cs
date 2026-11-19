@@ -386,13 +386,14 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
             else
             {
                 result = RunImagePicker(token => StaDialogRunner.RunInline(() =>
+                    RunImagePickerWithOwner(command.SourceWindowHandle, command.SourceProcessId, owner =>
                     {
                         using var dialog = new OpenFileDialog { Title = "选择悬浮图片",
                             Filter = "图片|*.png;*.gif;*.jpg;*.jpeg;*.bmp;*.webp",
                             CheckFileExists = true, CheckPathExists = true, Multiselect = false, RestoreDirectory = true };
                         return new WindowsCommandResult(true, Data: JsonSerializer.Serialize(new {
-                            selected_path = dialog.ShowDialog() == DialogResult.OK ? dialog.FileName : null }));
-                    }, token), _pickerStop.Token);
+                            selected_path = dialog.ShowDialog(owner) == DialogResult.OK ? dialog.FileName : null }));
+                    }, token), token), _pickerStop.Token);
                 lock (_gate) if (_stopping) result = new(false, "picker_retired");
             }
         }
@@ -412,6 +413,15 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
             dialog, out WindowsCommandResult? picked, out _, cancellation);
         return cancellation.IsCancellationRequested ? new(false, "picker_retired")
             : ok && picked is not null ? picked : new(false, "picker_busy");
+    }
+
+    internal static WindowsCommandResult RunImagePickerWithOwner(
+        long sourceWindowHandle,
+        uint sourceProcessId,
+        Func<IWin32Window, WindowsCommandResult> present,
+        CancellationToken cancellation)
+    {
+        return PickerOwner.Run(sourceWindowHandle, sourceProcessId, cancellation, present);
     }
 
     private void ReceiveInput(FloatingAssistantInputEvent input)

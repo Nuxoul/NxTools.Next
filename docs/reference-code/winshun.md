@@ -130,3 +130,27 @@ P3 source closeout precedes canonical P4. For proxy/HTTP behavior the matching p
 Read-only Host.cpp1120–1228 recheck retains discarded once-run ownership through actual finish. Next temporary BlobStore is an additive owner: `blobs.rs::Backing::drop` closes the file and transfers byte/slot permits into `Root::pending`; `blob_host_io.rs::HostBlobWriter` and blocking IoLease keep that same backing alive until actual I/O returns. Physical deletion, not logical retirement, returns capacity.
 Verified Next exit chain: GUI `main.rs` returns from GPUI Application::run to DesktopRuntime; headless `runtime.rs::run_background_download_host` reaches the idle drain boundary. Both own `extensions/service.rs::ExtensionService`, whose resolver can remain cloned inside DownloadEngine. Normal exit must signal and join its original executor; the executor drives `ExtensionRuntime::shutdown_and_wait` while Tokio is alive, then joins the original Blob cleanup owner. No entity callback, layout, focus or native show/hide behavior changes.
 Recovery uses the original cleanup owner and shared four-I/O budget. Only canonical UUID run roots with a fixed valid owner marker and an independently acquired exclusive file lease qualify; a held lease remains live regardless of age. Parent/candidate/direct-file scans are finite, validate the entire direct entry set before deletion, and never recurse. Failed deletion retains ownership for retry. Unknown or unmarked historical roots remain untouched; a prefix/UUID/age alone cannot prove inactivity. No reference process or extension was executed.
+
+## Extension replacement review
+`D:\Code\WinShun-main\src\app\PluginSettings.cpp:827#install` -> `install::inspect` ->
+`installQuestion` compares installed and candidate versions; `confirmInstall` consumes the pending
+candidate while `cancelInstall` discards it. `finishInstall` stops the old host before
+`src/plugin/Install.cpp:202#place`; the reference returns early for the installed source directory
+and restores the previous directory on placement failure. Legacy `D:\Code\NxTools` has no matching
+extension package manager (C#/AXAML manifest and settings entry search); WinShun is the comparison.
+Next uses its existing validated content identity for duplicate ZIPs, keeps the existing locked
+Core comparison and immutable staging for changed packages, and reports Next's own setting and
+trust effects rather than importing the Qt policy. Keep the Kit Root/Dialog focus, fixed risk and
+footer actions, exact candidate cancellation, deferred callbacks, and no native-window changes
+to the ZIP picker or confirmation.
+`src/app/qml/PluginDialog.qml:45,93–126` receives that signal and shows both versions in
+the existing dialog body; its data-retention copy is specific to WinShun, not Next.
+
+## Extensions workspace presentation
+The approved Next design is `docs/ui/extensions-workspace-redesign.md`; it intentionally changes
+presentation, not WinShun behavior. Rechecked `PluginSettings.cpp` install/confirm/cancel and
+`src/app/qml/PluginDialog.qml` signal-to-confirmation composition. Next retains the ZIP picker,
+immutable candidate, trust and explicit enable boundaries, and no extra native window. Kit0.8.0
+`Root::open_sheet_at` snapshots the previous focus before pushing its one active sheet;
+`Root::close_sheet` restores it. `Sheet` uses the existing Root, scrolls its body, and owns
+Escape/close through BaseSheet; opening/closing cross-owner actions must happen after view leases.

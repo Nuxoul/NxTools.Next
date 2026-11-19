@@ -113,6 +113,8 @@ pub struct ZipCreateOptions {
     pub encryption: String,
     pub strip_single_root: bool,
     pub exclude_patterns: Vec<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub self_extracting: bool,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -533,6 +535,18 @@ impl WorkerRequest {
                 .zip_options
                 .as_ref()
                 .ok_or(io::ErrorKind::InvalidData)?;
+            if options.self_extracting
+                && (options.encryption != "none"
+                    || self.password.is_some()
+                    || self.create_name.as_deref().is_none_or(|name| {
+                        name.len() <= 4 || !name.to_ascii_lowercase().ends_with(".exe")
+                    })
+                    || self
+                        .volume_bytes
+                        .is_some_and(|bytes| bytes > u64::from(u32::MAX)))
+            {
+                return Err(io::ErrorKind::InvalidData.into());
+            }
             if !matches!(options.method.as_str(), "store" | "deflate")
                 || !matches!(options.encryption.as_str(), "none" | "aes256")
                 || (options.method == "store")
@@ -1113,6 +1127,13 @@ pub fn run<R: Read + Send + 'static, W: Write + Send>(
             accepted
                 .capabilities
                 .extend(["source_tree_v1".into(), "zip_create_v1".into()]);
+            if request
+                .zip_options
+                .as_ref()
+                .is_some_and(|options| options.self_extracting)
+            {
+                accepted.capabilities.push("zip_sfx_v1".into());
+            }
         }
         if matches!(
             request.operation.as_str(),
@@ -1354,7 +1375,7 @@ fn job_password_format(
             .encoding()
             .map_err(|_| ArchiveError::UnsupportedOperation)?;
         let engine = ArchiveEngine::with_limits(request.limits.into());
-        let engine = if request.volume_paths.len() > 1 {
+        let engine = if !request.volume_paths.is_empty() {
             engine.with_held_zip_volumes(&request.volume_paths)
         } else {
             engine
@@ -1370,7 +1391,9 @@ fn job_password_format(
         }
         return Ok(encrypted);
     }
-    Ok(count >= 6 && &bytes[..6] == b"7z\xbc\xaf\x27\x1c" || count >= 7 && &bytes[..4] == b"Rar!")
+    Ok(count >= 4 && matches!(&bytes[..4], b"ALZ\x01" | b"EGGA")
+        || count >= 6 && &bytes[..6] == b"7z\xbc\xaf\x27\x1c"
+        || count >= 7 && &bytes[..4] == b"Rar!")
 }
 
 pub(crate) fn execute_attempt<W: Write + Send>(
@@ -1499,10 +1522,18 @@ fn execute_opened_attempt<W: Write + Send>(
     } else {
         limits
     };
-    if request.browser_entry.is_some() && request.volume_paths.len() > 1 {
+    if !request.volume_paths.is_empty()
+        && (request.browser_entry.is_some()
+            || request.operation == "extract"
+                && (request.output_readmission.is_some()
+                    || request
+                        .job_extract
+                        .as_ref()
+                        .is_some_and(|options| options.selection.is_some())))
+    {
         discovery_limits.max_output_bytes = ResourceLimits::default().max_output_bytes;
     }
-    let engine = if request.volume_paths.len() > 1 {
+    let engine = if !request.volume_paths.is_empty() {
         ArchiveEngine::with_limits(discovery_limits).with_held_zip_volumes(&request.volume_paths)
     } else {
         ArchiveEngine::with_limits(discovery_limits)
@@ -1654,7 +1685,7 @@ fn execute_opened_attempt<W: Write + Send>(
             )
         } else {
             let extraction_limits = crate::worker_browser::decode_limits(request);
-            let extraction = if request.volume_paths.len() > 1 {
+            let extraction = if !request.volume_paths.is_empty() {
                 ArchiveEngine::with_limits(extraction_limits)
                     .with_held_zip_volumes(&request.volume_paths)
             } else {

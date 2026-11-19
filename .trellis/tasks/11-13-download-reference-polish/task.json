@@ -1,0 +1,32 @@
+{
+  "id": "download-reference-polish",
+  "name": "download-reference-polish",
+  "title": "Download reference correctness and completion improvements",
+  "description": "Apply five ordered reference-backed slices: unexpected HTML, disk backpressure, finishing progress, grouped completion, durable page provenance.",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "nxtools-download",
+  "priority": "P2",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-11-13",
+  "completedAt": "2026-11-13",
+  "branch": "refactor/ui-gpui-kit",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "11-13-download-web-page",
+    "11-13-download-disk-backpressure",
+    "11-13-download-finishing-progress",
+    "11-13-download-grouped-completion",
+    "11-13-download-page-provenance"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -7,10 +7,75 @@ use super::polish_tests::{
 };
 use super::*;
 
+#[gpui_kit::test]
+fn extensionless_unfinished_tasks_request_the_shared_generic_shell_icon(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (application, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "extensionless-shell-icon");
+    endpoint.set_connected_for_contract_test(true);
+    application.update(cx, |app, cx| {
+        app.engine
+            .enqueue(
+                DownloadRequest {
+                    source_url: "https://example.test/3".into(),
+                    save_directory: directory.clone(),
+                    save_directory_explicit: false,
+                    file_name: Some("3".into()),
+                    headers: Vec::new(),
+                    cookie: None,
+                    referrer: None,
+                    source_page: None,
+                    certificate_policy: Default::default(),
+                    connection_limit: Some(1),
+                    speed_limit_bytes_per_second: None,
+                    expected_total_bytes: None,
+                    scheduled_at_unix_ms: None,
+                    adaptive_segment_policy: None,
+                    media: None,
+                    category_id: None,
+                    category_name: None,
+                    duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+                },
+                RequestOrigin::Internal,
+            )
+            .expect("enqueue extensionless fixture");
+        app.refresh_snapshot(false, cx);
+    });
+    let mut targets = Vec::new();
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        if let nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExtractShellIcon(
+            command,
+        )) = envelope.message
+        {
+            targets.push(command.target);
+        }
+    }
+    assert_eq!(targets, ["nxtools-file-type:generic"]);
+    let _ = std::fs::remove_dir_all(directory);
+}
+
 #[test]
 fn task_icon_requests_use_a_bounded_inflight_budget_and_retry_window() {
     assert_eq!(DOWNLOAD_TASK_ICON_MAX_IN_FLIGHT, 8);
     assert_eq!(DOWNLOAD_TASK_ICON_RETRY_DELAY, Duration::from_secs(5));
+}
+
+#[test]
+fn download_row_image_load_failure_uses_original_file_icon() {
+    let source = include_str!("../main_window/download_page.rs");
+    let icon_slot = source
+        .split("download-task-shell-icon-selected")
+        .nth(1)
+        .expect("Shell icon slot")
+        .split(".when(!has_icon_path")
+        .next()
+        .expect("fallback slot");
+    assert!(
+        icon_slot.contains(".with_fallback(move ||")
+            && icon_slot.contains("Icon::new(IconName::File)")
+            && icon_slot.contains(".size(ordinary_rem(30.0))"),
+        "failed img loading retains the 30DIP File icon inside the existing 40DIP well"
+    );
 }
 
 #[test]
@@ -130,6 +195,7 @@ fn download_task_icons_use_the_typed_shell_boundary_and_publish_by_task_id(
                         headers: Vec::new(),
                         cookie: None,
                         referrer: None,
+                        source_page: None,
                         certificate_policy: Default::default(),
                         connection_limit: Some(1),
                         speed_limit_bytes_per_second: None,
@@ -155,6 +221,7 @@ fn download_task_icons_use_the_typed_shell_boundary_and_publish_by_task_id(
                         headers: Vec::new(),
                         cookie: None,
                         referrer: None,
+                        source_page: None,
                         certificate_policy: Default::default(),
                         connection_limit: Some(1),
                         speed_limit_bytes_per_second: None,
@@ -241,6 +308,7 @@ fn completed_icon_fixture(directory: &Path, name: &str) -> DownloadEngineTask {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -316,6 +384,102 @@ fn fail_task_icon_request(
 }
 
 #[gpui_kit::test]
+fn missing_completed_icon_uses_type_resource_even_without_extension(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (application, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "icon-missing-extensionless");
+    endpoint.set_connected_for_contract_test(true);
+    let task = completed_icon_fixture(&directory, "removed");
+    let task_id = task.task.id();
+    application.update(cx, |app, cx| {
+        app.tasks = Rc::new(vec![task]);
+        app.request_task_icons(cx);
+    });
+    let path_command = receive_task_icon_command(&endpoint).expect("path icon request");
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: path_command.id,
+                result: PlatformCommandResult {
+                    success: false,
+                    error: Some("shell_icon_target_unavailable".into()),
+                    native_error_code: Some(2),
+                    data: None,
+                },
+            },
+            cx,
+        );
+    });
+    let type_command = receive_task_icon_command(&endpoint).expect("generic file-type fallback");
+    match &type_command.message {
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExtractShellIcon(command)) => {
+            assert_eq!(command.target, "nxtools-file-type:generic");
+            assert_eq!(command.size, 48);
+        }
+        message => panic!("unexpected platform message: {message:?}"),
+    }
+    let icon_path = directory.join("generic.png");
+    std::fs::write(&icon_path, crate::icons::ONE_PIXEL_PNG).expect("write generic icon");
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: type_command.id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: Some(icon_path.to_string_lossy().into_owned()),
+                },
+            },
+            cx,
+        );
+        assert_eq!(app.task_icon_path(task_id), Some(icon_path.as_path()));
+    });
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn busy_shell_icon_sta_retries_without_spending_failure_budget(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (application, directory, endpoint) =
+        download_application_for_window_test_with_platform(cx, "icon-sta-busy");
+    endpoint.set_connected_for_contract_test(true);
+    application.update(cx, |app, cx| {
+        app.tasks = Rc::new(vec![completed_icon_fixture(&directory, "completed.zip")]);
+        app.request_task_icons(cx);
+    });
+    for _ in 0..4 {
+        let command = receive_task_icon_command(&endpoint).expect("busy attempt");
+        application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: command.id,
+                    result: PlatformCommandResult {
+                        success: false,
+                        error: Some("shell_icon_sta_unavailable".into()),
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            );
+            assert!(
+                app.failed_task_icon_resources
+                    .values()
+                    .all(|failure| failure.attempts == 0)
+            );
+        });
+        cx.executor().advance_clock(Duration::from_secs(1));
+        cx.run_until_parked();
+    }
+    assert!(
+        receive_task_icon_command(&endpoint).is_some(),
+        "bounded STA pressure must not exhaust icons"
+    );
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
 fn download_task_icon_failures_back_off_and_stop_after_three_attempts(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let (application, directory, endpoint) =
@@ -343,6 +507,14 @@ fn download_task_icon_failures_back_off_and_stop_after_three_attempts(cx: &mut T
         command = receive_task_icon_command(&endpoint).expect("bounded retry after backoff");
     }
     fail_task_icon_request(&application, command.id, cx);
+    let fallback =
+        receive_task_icon_command(&endpoint).expect("exhausted path falls back to generic type");
+    match fallback.message {
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExtractShellIcon(command)) => {
+            assert_eq!(command.target, "nxtools-file-type:generic");
+        }
+        message => panic!("unexpected platform message: {message:?}"),
+    }
     cx.executor().advance_clock(Duration::from_secs(86_400));
     cx.run_until_parked();
     application.update(cx, |app, cx| {
@@ -380,7 +552,13 @@ fn download_task_icon_reconnect_rearms_exhausted_resources_once(cx: &mut TestApp
         command = receive_task_icon_command(&endpoint).expect("bounded retry");
     }
     fail_task_icon_request(&application, command.id, cx);
-    assert!(receive_task_icon_command(&endpoint).is_none());
+    let fallback = receive_task_icon_command(&endpoint).expect("exhausted path falls back to type");
+    match fallback.message {
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExtractShellIcon(command)) => {
+            assert_eq!(command.target, "nxtools-file-type:.zip");
+        }
+        message => panic!("unexpected platform message: {message:?}"),
+    }
     endpoint.set_connected_for_contract_test(false);
     application.update(cx, |app, cx| {
         app.handle_platform_notification(
@@ -618,6 +796,7 @@ fn stale_progress_envelopes_are_rejected_before_touching_cached_progress(cx: &mu
         bytes_per_second: 4,
         active_connections: 1,
         segments: Vec::new(),
+        finishing: None,
     };
     let stale = DownloadProgress {
         downloaded_bytes: 4,
@@ -659,6 +838,7 @@ fn authoritative_snapshot_refresh_discards_live_progress_cache(cx: &mut TestAppC
                     bytes_per_second: 2,
                     active_connections: 1,
                     segments: Vec::new(),
+                    finishing: None,
                 },
             );
             application.refresh_snapshot(false, cx);
@@ -680,6 +860,7 @@ fn live_progress_updates_the_cached_selected_segment_without_requerying_sqlite()
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(2),
                 speed_limit_bytes_per_second: None,
@@ -704,6 +885,7 @@ fn live_progress_updates_the_cached_selected_segment_without_requerying_sqlite()
             DownloadSegment::new(0, 0, 9, 0, DownloadSegmentState::Waiting).expect("segment"),
         ],
         timeline: Vec::new(),
+        paused_url_revision: 0,
     };
     let progress = DownloadProgress {
         task_id,
@@ -713,9 +895,11 @@ fn live_progress_updates_the_cached_selected_segment_without_requerying_sqlite()
         active_connections: 1,
         segments: vec![nxtools_download::DownloadSegmentProgress {
             segment_index: 0,
+            start_byte: None,
             downloaded_bytes: 6,
             total_bytes: Some(10),
         }],
+        finishing: None,
     };
 
     apply_progress_to_task_detail(&mut detail, &progress);
@@ -756,9 +940,6 @@ fn download_settings_validation_uses_real_engine_ranges() {
     let draft = parse_download_settings_draft(DownloadSettingsInput {
         default_directory: r"C:\Downloads",
         connection_limit: "8",
-        adaptive_segment_scaling_enabled: true,
-        adaptive_segment_max_segments: "32",
-        adaptive_segment_min_mib: "3",
         max_concurrent_tasks: "3",
         speed_limit_kib: "2048",
         show_progress_window: true,
@@ -802,9 +983,6 @@ fn download_settings_validation_uses_real_engine_ranges() {
         parse_download_settings_draft(DownloadSettingsInput {
             default_directory: r"C:\Downloads",
             connection_limit: "65",
-            adaptive_segment_scaling_enabled: true,
-            adaptive_segment_max_segments: "65",
-            adaptive_segment_min_mib: "3",
             max_concurrent_tasks: "3",
             speed_limit_kib: "0",
             show_progress_window: true,
@@ -832,9 +1010,6 @@ fn download_settings_validation_uses_real_engine_ranges() {
         parse_download_settings_draft(DownloadSettingsInput {
             default_directory: r"C:\Downloads",
             connection_limit: "8",
-            adaptive_segment_scaling_enabled: true,
-            adaptive_segment_max_segments: "32",
-            adaptive_segment_min_mib: "3",
             max_concurrent_tasks: "0",
             speed_limit_kib: "0",
             show_progress_window: true,
@@ -857,68 +1032,6 @@ fn download_settings_validation_uses_real_engine_ranges() {
             taskbar_overlay_show_transferred_bytes: false,
         })
         .is_err()
-    );
-    assert!(
-        parse_download_settings_draft(DownloadSettingsInput {
-            default_directory: r"C:\Downloads",
-            connection_limit: "8",
-            adaptive_segment_scaling_enabled: true,
-            adaptive_segment_max_segments: "7",
-            adaptive_segment_min_mib: "3",
-            max_concurrent_tasks: "3",
-            speed_limit_kib: "0",
-            show_progress_window: true,
-            show_completion_window: true,
-            completion_sound_enabled: true,
-            open_directory_on_completion: false,
-            task_removal_deletes_file: true,
-            taskbar_overlay_enabled: true,
-            taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
-            taskbar_overlay_offset_x: "12",
-            taskbar_overlay_offset_y: "0",
-            taskbar_overlay_width: "132",
-            taskbar_overlay_height: "8",
-            taskbar_overlay_progress_mode: DownloadTaskbarProgressMode::PerTask,
-            taskbar_overlay_show_progress: true,
-            taskbar_overlay_show_speed: false,
-            taskbar_overlay_show_remaining_time: false,
-            taskbar_overlay_show_active_tasks: false,
-            taskbar_overlay_show_active_connections: false,
-            taskbar_overlay_show_transferred_bytes: false,
-        })
-        .is_err(),
-        "adaptive segment ceiling cannot be below the initial connection count"
-    );
-    assert!(
-        parse_download_settings_draft(DownloadSettingsInput {
-            default_directory: r"C:\Downloads",
-            connection_limit: "8",
-            adaptive_segment_scaling_enabled: true,
-            adaptive_segment_max_segments: "32",
-            adaptive_segment_min_mib: "0",
-            max_concurrent_tasks: "3",
-            speed_limit_kib: "0",
-            show_progress_window: true,
-            show_completion_window: true,
-            completion_sound_enabled: true,
-            open_directory_on_completion: false,
-            task_removal_deletes_file: true,
-            taskbar_overlay_enabled: true,
-            taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor::Right,
-            taskbar_overlay_offset_x: "12",
-            taskbar_overlay_offset_y: "0",
-            taskbar_overlay_width: "132",
-            taskbar_overlay_height: "8",
-            taskbar_overlay_progress_mode: DownloadTaskbarProgressMode::PerTask,
-            taskbar_overlay_show_progress: true,
-            taskbar_overlay_show_speed: false,
-            taskbar_overlay_show_remaining_time: false,
-            taskbar_overlay_show_active_tasks: false,
-            taskbar_overlay_show_active_connections: false,
-            taskbar_overlay_show_transferred_bytes: false,
-        })
-        .is_err(),
-        "adaptive split tail threshold cannot be zero"
     );
 }
 
@@ -1873,6 +1986,7 @@ fn browser_download_window_starts_at_compact_probe_height() {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(4),
         speed_limit_bytes_per_second: None,
@@ -1923,6 +2037,7 @@ fn browser_download_window_shrinks_to_compact_height_while_probe_is_unconfirmed(
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(4),
         speed_limit_bytes_per_second: None,
@@ -2517,6 +2632,7 @@ fn confirmed_new_download_submit_error_keeps_the_footer_inside_the_window(cx: &m
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(default_connection_limit),
         speed_limit_bytes_per_second: None,
@@ -2697,6 +2813,7 @@ fn confirmed_new_download_schedule_and_actions_stay_inside_the_footer(cx: &mut T
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(default_connection_limit),
         speed_limit_bytes_per_second: None,
@@ -3039,6 +3156,7 @@ fn confirmed_hls_master_submits_the_selected_quality_as_typed_media(cx: &mut Tes
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(default_connection_limit),
         speed_limit_bytes_per_second: None,
@@ -3342,6 +3460,7 @@ fn dash_probe_renders_track_choices_and_builds_a_typed_selection(cx: &mut TestAp
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(default_connection_limit),
         speed_limit_bytes_per_second: None,
@@ -3487,6 +3606,7 @@ fn browser_prefilled_download_window_preserves_private_request_context(cx: &mut 
         }],
         cookie: Some("session=secret".into()),
         referrer: Some("https://example.test/page".into()),
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(4),
         speed_limit_bytes_per_second: Some(512_000),
@@ -3803,6 +3923,7 @@ fn delete_dialog_uses_shared_danger_semantics_and_closes_only_after_a_decision(
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -4151,6 +4272,7 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -4296,23 +4418,19 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
             .expect("failed shared body")
     );
 
-    let failure_detail = window
+    let failure_status = window
         .debug_bounds("download-window-failure-detail")
-        .expect("readable multi-line failure detail");
+        .expect("failure status remains visible");
     assert!(
         window
             .debug_bounds("download-window-failure-kit-alert")
-            .is_some(),
-        "queue10 actual task failure Alert"
+            .is_none(),
+        "raw failure belongs to NotificationCenter, not this compact window"
     );
     let failed_footer = window
         .debug_bounds("download-task-window-footer")
         .expect("failed footer");
-    assert!(
-        failure_detail.size.height >= px(30.0),
-        "the failure message must wrap across readable lines instead of truncating to one"
-    );
-    assert!(failure_detail.bottom() <= failed_footer.top());
+    assert!(failure_status.bottom() <= failed_footer.top());
     let mut completed_snapshot = base_snapshot;
     for (status, timestamp) in [
         (DownloadStatus::Probing, 2),
@@ -4737,6 +4855,15 @@ fn production_task_window_reuses_one_skeleton_and_generation_across_phases(
     assert!(
         matches!(chooser.message, nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(ref command)) if command.action == ShellOpenAction::OpenWith)
     );
+    cx.executor().advance_clock(Duration::from_secs(601));
+    cx.run_until_parked();
+    assert!(
+        cx.read(|cx| application
+            .read(cx)
+            .pending_artifact_actions
+            .contains_key(&chooser.id)),
+        "human Open With selection must remain pending beyond the former ten-minute deadline"
+    );
     let notifications_before =
         cx.read(|cx| application.read(cx).notifications.read(cx).items().len());
     cx.update(|cx| {
@@ -4854,6 +4981,7 @@ fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppCont
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -4889,72 +5017,13 @@ fn task_window_arms_and_cancels_the_real_shutdown_countdown(cx: &mut TestAppCont
     task_window
         .refresh()
         .expect("render production task window");
-    let arm = task_window
-        .debug_bounds("download-window-shutdown-arm-button")
-        .expect("task-local shutdown arm");
-    assert!(
-        arm.size.height > px(0.0) && arm.size.height <= px(32.0),
-        "official Small Checkbox inside original footer"
-    );
-    let footer = task_window
-        .debug_bounds("download-task-window-footer")
-        .expect("original footer");
-    assert!(arm.top() >= footer.top() && arm.bottom() <= footer.bottom());
-    task_window.simulate_click(arm.center(), Modifiers::default());
-    task_window.run_until_parked();
-    assert!(cx.read(|cx| application.read(cx).is_shutdown_armed(task_id)));
-    task_window.update(|window, _| window.activate_window());
-    task_window.run_until_parked();
-    for _ in 0..16 {
-        let focused = task_window.update(|window, _| {
-            gpui_kit::base::test_support::snapshots(window)
-                .into_iter()
-                .any(|node| {
-                    node.role() == Some(gpui_kit::Role::CheckBox)
-                        && node.focused() == Some(true)
-                        && node
-                            .path()
-                            .contains(&gpui_kit::ElementId::from("download-task-window-toolbar"))
-                })
-        });
-        if focused {
-            break;
-        }
-        task_window.update(|window, cx| window.focus_next(cx));
-        task_window
-            .refresh()
-            .expect("actual caption-to-toolbar focus");
-    }
-    assert!(
-        task_window.update(|window, _| gpui_kit::base::test_support::snapshots(window)
-            .into_iter()
-            .any(|node| node.role() == Some(gpui_kit::Role::CheckBox)
-                && node.focused() == Some(true)
-                && node
-                    .path()
-                    .contains(&gpui_kit::ElementId::from("download-task-window-toolbar")))),
-        "shutdown Checkbox has actual focus before Space"
-    );
-    assert!(
-        task_window
-            .update(|window, cx| window.focused(cx))
-            .is_some()
-    );
-    for expected in [false, true] {
-        task_window.simulate_event(gpui_kit::KeyDownEvent {
-            keystroke: gpui_kit::Keystroke::parse("space").expect("Checkbox Space"),
-            is_held: false,
-            prefer_character_input: false,
-        });
-        task_window.simulate_event(gpui_kit::KeyUpEvent {
-            keystroke: gpui_kit::Keystroke::parse("space").expect("Checkbox release"),
-        });
-        task_window.run_until_parked();
-        task_window.refresh().expect("controlled shutdown Checkbox");
+    for (choice, expected) in [("关机", true), ("无电源或退出动作", false), ("关机", true)]
+    {
+        super::task_window::layout_tests::choose_completion_action(&mut task_window, choice);
         assert_eq!(
             cx.read(|cx| application.read(cx).is_shutdown_armed(task_id)),
             expected,
-            "one real Checkbox release toggles task-local intent once"
+            "one completion choice persists one task-local intention"
         );
     }
 
@@ -5026,6 +5095,7 @@ fn a_native_task_window_close_releases_the_keyed_lifecycle_registration(cx: &mut
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -5159,6 +5229,7 @@ fn stale_shutdown_arm_click_cannot_arm_a_task_that_already_terminated(cx: &mut T
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -5194,9 +5265,19 @@ fn stale_shutdown_arm_click_cannot_arm_a_task_that_already_terminated(cx: &mut T
     task_window
         .refresh()
         .expect("render task window before terminal");
+    super::task_window::layout_tests::open_completion_page(&mut task_window);
+    let trigger = task_window
+        .debug_bounds("download-window-completion-menu")
+        .expect("completion picker");
+    task_window.simulate_click(trigger.center(), Modifiers::default());
+    task_window.run_until_parked();
+    task_window.refresh().expect("current completion menu");
     let arm = task_window
-        .debug_bounds("download-window-shutdown-arm")
-        .expect("stale shutdown arm hit target");
+        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
+        .into_iter()
+        .find(|node| node.label() == Some("关机"))
+        .expect("stale completion choice")
+        .bounds();
 
     cx.read(|cx| {
         application
@@ -5243,18 +5324,7 @@ fn shutdown_now_crosses_the_typed_platform_boundary_and_closes_on_success(cx: &m
             )
         })
     });
-    let task_id = DownloadTaskId::new();
-    cx.update(|cx| {
-        application.update(cx, |application, cx| {
-            application
-                .completion_actions
-                .set_shutdown_armed(task_id, true);
-            let transition = application
-                .completion_actions
-                .evaluate_shutdown([(task_id, DownloadStatus::Completed)], Instant::now());
-            application.apply_shutdown_transition(transition, cx);
-        });
-    });
+    b5_complete_original_task_for_test(&application, cx);
     cx.run_until_parked();
     let window_handle = cx
         .read(|cx| {
@@ -5270,6 +5340,17 @@ fn shutdown_now_crosses_the_typed_platform_boundary_and_closes_on_success(cx: &m
     let shutdown_now = window
         .debug_bounds("download-shutdown-danger-now-action")
         .expect("immediate shutdown action");
+    while let Ok(envelope) = platform_endpoint.try_receive_command_for_contract_test() {
+        assert!(
+            !matches!(
+                envelope.message,
+                nxtools_protocol::Message::PlatformCommand(
+                    PlatformCommand::ShutdownSystem(_) | PlatformCommand::SuspendSystem(_)
+                )
+            ),
+            "successful completion alone must not dispatch a power action before countdown execution"
+        );
+    }
     window.simulate_click(shutdown_now.center(), Modifiers::default());
     window.run_until_parked();
 
@@ -5783,9 +5864,6 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
     for selector in [
         "download-settings-connection-limit-field",
         "download-settings-concurrent-tasks-field",
-        "download-settings-adaptive-segments",
-        "download-settings-adaptive-max-field",
-        "download-settings-adaptive-min-field",
         "download-settings-speed-limit-field",
     ] {
         let control = reveal_download_setting(&mut window, selector);
@@ -5793,6 +5871,13 @@ fn settings_sections_share_one_content_width_and_diagnostics_are_not_half_width(
             control.left() >= px(expected_left)
                 && control.right() <= px(expected_left + expected_width)
         );
+    }
+    for obsolete in [
+        "download-settings-adaptive-segments",
+        "download-settings-adaptive-max-field",
+        "download-settings-adaptive-min-field",
+    ] {
+        assert!(window.debug_bounds(obsolete).is_none());
     }
     let ffmpeg = reveal_download_setting(&mut window, "download-settings-ffmpeg-control");
     let media = official_download_group_bounds(&mut window, DownloadSettingsPage::Transfer, 1);
@@ -6488,6 +6573,8 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     let config_path = directory.join("config.json");
     let mut config = AppConfig::default();
     config.quick_launch.enabled = false;
+    config.download.default_connection_limit = 8;
+    config.download.adaptive_segment_max_segments = 16;
     config.save_to(&config_path).expect("save settings fixture");
     let engine = DownloadEngine::open_in_memory().expect("open settings engine");
     let engine_for_assertion = engine.clone();
@@ -6530,6 +6617,9 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     );
     window.update(|window, cx| {
         settings.update(cx, |settings, cx| {
+            settings.connection_limit.update(cx, |input, cx| {
+                input.replace_all("32", window, cx);
+            });
             settings.default_request_headers.update(cx, |input, cx| {
                 input.replace_all(
                     "X-NxTools-Default: desktop\nReferer: https://example.test/",
@@ -6784,6 +6874,8 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     window.run_until_parked();
 
     let persisted = AppConfig::load_from(&config_path).expect("reload applied settings");
+    assert_eq!(persisted.download.default_connection_limit, 32);
+    assert!(persisted.download.adaptive_segment_max_segments >= 32);
     assert_eq!(
         persisted.download.default_directory,
         selected_directory.display().to_string()
@@ -6839,6 +6931,31 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
         "applying download settings must preserve current quick-launch settings"
     );
 
+    let init = cx.read(|cx| {
+        let app = application.read(cx);
+        NewDownloadViewInit {
+            application: application.clone(),
+            default_directory: selected_directory.clone(),
+            default_connection_limit: app.default_connection_limit(),
+            default_adaptive_segment_policy: app.default_adaptive_segment_policy(),
+            categories: persisted.download.categories.clone(),
+            initial_source: None,
+        }
+    });
+    let (new_download, new_window) =
+        cx.add_window_view(move |window, cx| NewDownloadView::new(init, window, cx));
+    new_download.update_in(new_window, |view, window, cx| {
+        view.url.update(cx, |input, cx| {
+            input.set_value("https://example.test/settings-test.bin", window, cx);
+        });
+        assert_eq!(
+            view.request(cx)
+                .expect("validate new task defaults")
+                .connection_limit,
+            Some(32)
+        );
+    });
+
     let application_for_cancel = application.clone();
     let cancel_initial = cx.read(|cx| application.read(cx).settings_view_initial());
     let (_cancel_view, cancel_window) = cx.add_window_view(move |window, cx| {
@@ -6846,6 +6963,7 @@ fn settings_window_routes_picker_applies_and_cancels_without_cross_module_loss(
     });
     cancel_window.read(|cx| {
         let view = _cancel_view.read(cx);
+        assert_eq!(view.connection_limit.read(cx).value().as_ref(), "32");
         assert!(
             view.default_request_headers.read(cx).value()
                 == "X-NxTools-Default: desktop\nReferer: https://example.test/",
@@ -6925,6 +7043,9 @@ fn settings_persistence_failure_rolls_back_engine_values(cx: &mut TestAppContext
         application.update(cx, |application, cx| {
             application.apply_settings(
                 DownloadSettingsDraft {
+                    baseline: None,
+                    max_concurrent_tasks_baseline: None,
+                    global_speed_limit_edited: true,
                     default_directory: directory.clone(),
                     chrome_web_store_extension_id: String::new(),
                     automatic_categories_enabled: true,
@@ -6938,9 +7059,6 @@ fn settings_persistence_failure_rolls_back_engine_values(cx: &mut TestAppContext
                     default_cookie: "tentative=1".into(),
                     accept_invalid_certificates: true,
                     default_connection_limit: 12,
-                    adaptive_segment_scaling_enabled: true,
-                    adaptive_segment_max_segments: 32,
-                    adaptive_segment_min_mib: 3,
                     max_concurrent_tasks: 7,
                     global_speed_limit_bytes_per_second: Some(1024 * 1024),
                     background_speed_limit: Default::default(),
@@ -6968,6 +7086,7 @@ fn settings_persistence_failure_rolls_back_engine_values(cx: &mut TestAppContext
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(1),
                 speed_limit_bytes_per_second: None,
@@ -7398,6 +7517,7 @@ fn progress_window_exposes_expandable_segment_details() {
 fn segment_status_never_fabricates_completion_for_unknown_size() {
     let segment = |downloaded: u64, total: Option<u64>| nxtools_download::DownloadSegmentProgress {
         segment_index: 0,
+        start_byte: None,
         downloaded_bytes: downloaded,
         total_bytes: total,
     };
@@ -7627,6 +7747,10 @@ fn confirmed_probe_keeps_destination_and_filename_editable() {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: Some(nxtools_download::DownloadSourcePage {
+            url: "https://page.example.test/article".into(),
+            title: "Original page".into(),
+        }),
         certificate_policy: Default::default(),
         connection_limit: Some(1),
         speed_limit_bytes_per_second: None,
@@ -7652,6 +7776,10 @@ fn confirmed_probe_keeps_destination_and_filename_editable() {
 
     assert_eq!(merged.save_directory, PathBuf::from(r"D:\Archive"));
     assert_eq!(merged.file_name.as_deref(), Some("renamed.bin"));
+    assert_eq!(
+        merged.source_page.as_ref().expect("original page").url,
+        "https://page.example.test/article"
+    );
     assert_eq!(merged.category_id.as_deref(), Some("documents"));
     assert_eq!(
         merged.duplicate_strategy,
@@ -7794,6 +7922,7 @@ fn retrying_an_expanded_task_window_resets_details_and_native_progress_height(
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,
@@ -8969,4 +9098,61 @@ fn ux_repair_invalid_new_download_notifies_once_without_banner_resize_or_probe(
         ""
     );
     let _ = std::fs::remove_dir_all(directory);
+}
+
+use crate::completion_http_fixture as b5_power_fixture;
+
+pub(super) fn b5_complete_original_task_for_test(
+    application: &Entity<DownloadApplication>,
+    cx: &mut TestAppContext,
+) {
+    b5_complete_original_action_for_test(
+        application,
+        cx,
+        nxtools_download::DownloadCompletionAction::Shutdown,
+    );
+}
+
+pub(super) fn b5_complete_original_action_for_test(
+    application: &Entity<DownloadApplication>,
+    cx: &mut TestAppContext,
+    action: nxtools_download::DownloadCompletionAction,
+) {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("owned completion HTTP runtime");
+    let server = runtime.block_on(b5_power_fixture::UrlServer::start());
+    let directory = tempfile::tempdir().expect("owned completed artifact");
+    let engine = application.read_with(cx, |app, _| app.engine.clone());
+    let request:DownloadRequest=serde_json::from_value(serde_json::json!({"source_url":server.url("/compatible"),"save_directory":directory.path(),"file_name":"completed.bin","connection_limit":1})).expect("original request");
+    let task_id = engine
+        .enqueue(request, RequestOrigin::Internal)
+        .expect("original accepted task");
+    application.update(cx, |app, cx| {
+        app.refresh(cx);
+        app.save_completion_intention(
+            CompletionIntentionTarget::Task(task_id),
+            Some(Some(action)),
+            None,
+            cx,
+        );
+    });
+    engine.resume(task_id).expect("original admission");
+    let task = runtime
+        .block_on(engine.wait_for_terminal(task_id, Duration::from_secs(5)))
+        .expect("actual writer completion");
+    assert_eq!(task.task.status(), DownloadStatus::Completed);
+    assert_eq!(
+        std::fs::read(task.final_path.expect("committed artifact")).expect("writer bytes"),
+        b5_power_fixture::CONTENT
+    );
+    application.update(cx, |app, cx| app.refresh(cx));
+    cx.run_until_parked();
+    assert!(application.read_with(cx, |app, _| {
+        app.completion_actions.active_countdown().is_some()
+    }));
+    runtime.block_on(server.wait_drained());
+    runtime.block_on(server.close());
 }

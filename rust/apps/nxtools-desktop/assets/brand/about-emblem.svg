@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="88" height="88" viewBox="0 0 88 88">
+  <defs>
+    <radialGradient id="halo">
+      <stop stop-color="#60a5fa" stop-opacity=".36"/>
+      <stop offset="1" stop-color="#60a5fa" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="depth" x1="0" y1="0" x2="0" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#203a69"/><stop offset="1" stop-color="#07112b"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="1" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#263e66"/><stop offset=".5" stop-color="#172947"/><stop offset="1" stop-color="#0f1a31"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2=".85" y2="1" gradientUnits="objectBoundingBox">
+      <stop stop-color="#92caff" stop-opacity=".72"/><stop offset=".48" stop-color="#60a5fa" stop-opacity=".26"/><stop offset="1" stop-color="#345485" stop-opacity=".38"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="44" cy="50" rx="44" ry="38" fill="url(#halo)"/>
+  <ellipse cx="44" cy="79" rx="28" ry="5" fill="#071023" opacity=".28"/>
+  <rect x="8" y="10" width="72" height="70" rx="18" fill="url(#depth)"/>
+  <rect x="8.5" y="4.5" width="71" height="71" rx="17.5" fill="url(#face)" stroke="url(#rim)"/>
+  <path d="M24 7.5h26M12 20v13" fill="none" stroke="#d4ecff" stroke-opacity=".23" stroke-linecap="round"/>
+  <rect x="18.5" y="15.5" width="51" height="51" rx="13" fill="#0b1836" stroke="#87bdff" stroke-opacity=".18"/>
+  <path d="M25 77.5h38" fill="none" stroke="#4a79cf" stroke-opacity=".37" stroke-linecap="round"/>
+</svg>

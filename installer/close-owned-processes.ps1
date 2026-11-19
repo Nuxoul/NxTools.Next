@@ -10,7 +10,8 @@ param(
     [string]$NewSignaturePath = '',
     [string]$BootstrapMigrationPackage = '',
     [string]$DiagnosticPath = '',
-    [switch]$RepairMissingBootstrap
+    [switch]$RepairMissingBootstrap,
+    [switch]$RotateTrustedBootstrap
 )
 $ErrorActionPreference = 'Stop'
 
@@ -698,14 +699,15 @@ function Prepare-UpgradeBrowserHost([string]$InstallRoot, [string]$StateFile, [s
     }
     Suspend-UpgradeBrowserHost $installPath $statePath $OperationId -NewManifestPath $NewManifestPath -NewSignaturePath $NewSignaturePath
 }
-
-function Invoke-UpgradeBootstrapMigration([string]$Package, [string]$OperationId, [switch]$RepairMissing) {
+function Invoke-UpgradeBootstrapMigration([string]$Package, [string]$OperationId, [switch]$RepairMissing, [switch]$RotateTrusted) {
     $migrationHost = Join-Path $Package 'NxTools.PlatformHost.exe'
     Assert-UpgradePlainPath $migrationHost
     $repairId=[Guid]::NewGuid()
-    Write-Output "installer.bootstrap_migration.started correlation=$OperationId repair_id=$repairId missing_root=$([int][bool]$RepairMissing)"
+    Write-Output "installer.bootstrap_migration.started correlation=$OperationId repair_id=$repairId missing_root=$([int][bool]$RepairMissing) trust_rotation=$([int][bool]$RotateTrusted)"
     if ($RepairMissing) {
         & $migrationHost --repair-missing-trusted-bootstrap $repairId.ToString('D')
+    } elseif ($RotateTrusted) {
+        & $migrationHost --rotate-trusted-bootstrap
     } else {
         & $migrationHost --maintain-trusted-bootstrap
     }
@@ -769,7 +771,7 @@ try {
     }
     if ($BootstrapMigrationPackage) {
         $diagnosticStage = 'bootstrap_migration'
-        Write-UpgradeDiagnostic 'stage' $diagnosticStage
+        Invoke-UpgradeBootstrapMigration $BootstrapMigrationPackage $CorrelationId -RepairMissing:$RepairMissingBootstrap -RotateTrusted:$RotateTrustedBootstrap
         Invoke-UpgradeBootstrapMigration $BootstrapMigrationPackage $CorrelationId -RepairMissing:$RepairMissingBootstrap
     }
     if (!$InstallDirectory -or !(Test-Path -LiteralPath $InstallDirectory -PathType Container)) {

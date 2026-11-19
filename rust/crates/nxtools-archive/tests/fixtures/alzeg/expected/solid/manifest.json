@@ -1,0 +1,124 @@
+{
+  "oracle": "independent CPython struct/raw zlib/per-block CRC",
+  "fixtures": [
+    {
+      "fixture": "solid.egg",
+      "origin": "unchanged alkegi/unegg CC0 producer sample",
+      "files": 5,
+      "bytes": 6342,
+      "members": [
+        {
+          "index": 0,
+          "name": "a",
+          "size": 1,
+          "crc32": "e8b7be43",
+          "expected": "solid.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "name": "empty.txt",
+          "size": 0,
+          "crc32": "00000000",
+          "expected": "solid.egg/1.gz"
+        },
+        {
+          "index": 2,
+          "name": "hello.txt",
+          "size": 45,
+          "crc32": "eb50cc6a",
+          "expected": "solid.egg/2.gz"
+        },
+        {
+          "index": 3,
+          "name": "lorem.txt",
+          "size": 2200,
+          "crc32": "cc0c6d8d",
+          "expected": "solid.egg/3.gz"
+        },
+        {
+          "index": 4,
+          "name": "random.bin",
+          "size": 4096,
+          "crc32": "b4c1d904",
+          "expected": "solid.egg/4.gz"
+        }
+      ],
+      "blocks": [
+        {
+          "header": 278,
+          "offset": 300,
+          "method": 1,
+          "level": 6,
+          "packed": 4265,
+          "size": 6342,
+          "crc32": "e5b2356e"
+        }
+      ]
+    },
+    {
+      "fixture": "spec_egg_solid_deflate_three_blocks.egg",
+      "origin": "project-owned specification fixture; CPython raw Deflate and fixed literal",
+      "files": 4,
+      "bytes": 196656,
+      "members": [
+        {
+          "index": 0,
+          "name": "first.txt",
+          "size": 65537,
+          "crc32": "c61bb94f",
+          "expected": "spec_egg_solid_deflate_three_blocks.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "name": "empty.txt",
+          "size": 0,
+          "crc32": "00000000",
+          "expected": "spec_egg_solid_deflate_three_blocks.egg/1.gz"
+        },
+        {
+          "index": 2,
+          "name": "dependent.txt",
+          "size": 131072,
+          "crc32": "df2c8a59",
+          "expected": "spec_egg_solid_deflate_three_blocks.egg/2.gz"
+        },
+        {
+          "index": 3,
+          "name": "tail.txt",
+          "size": 47,
+          "crc32": "be2696b6",
+          "expected": "spec_egg_solid_deflate_three_blocks.egg/3.gz"
+        }
+      ],
+      "blocks": [
+        {
+          "header": 236,
+          "offset": 258,
+          "method": 1,
+          "level": 0,
+          "packed": 31,
+          "size": 40000,
+          "crc32": "f22a630c"
+        },
+        {
+          "header": 289,
+          "offset": 311,
+          "method": 1,
+          "level": 0,
+          "packed": 69,
+          "size": 100000,
+          "crc32": "3e674224"
+        },
+        {
+          "header": 380,
+          "offset": 402,
+          "method": 1,
+          "level": 0,
+          "packed": 649,
+          "size": 56656,
+          "crc32": "b8fa7b10"
+        }
+      ]
+    }
+  ]
+}

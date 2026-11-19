@@ -8,7 +8,12 @@ use nxtools_finder::search_char_mask;
 
 #[cfg(test)]
 pub(crate) mod allocation_probe;
+#[cfg(any(windows, test))]
+mod bulk_times;
 mod cache;
+#[cfg(all(test, windows))]
+#[path = "mft/initial_build_tests.rs"]
+mod initial_build_tests;
 mod time_metadata;
 #[cfg(windows)]
 pub(crate) use time_metadata::read_last_write_by_id;
@@ -192,6 +197,32 @@ impl MftSnapshot {
         }
     }
 
+    // Only durable-build callers may use this unpublished representation. The writer
+    // derives its own row order/masks; runtime auxiliaries belong to the final mmap.
+    fn from_entries_for_persistence(
+        mount_point: impl Into<String>,
+        journal_id: Option<u64>,
+        next_usn: Option<i64>,
+        entries: Vec<MftEntry>,
+    ) -> Self {
+        let visible_count = entries.len();
+        Self {
+            mount_point: mount_point.into(),
+            journal_id,
+            next_usn,
+            base_next_usn: next_usn,
+            base: MftBase::Owned(Arc::new(entries)),
+            owned_name_masks: None,
+            search_data: None,
+            overlay: MftOverlay::default(),
+            visible_count,
+            reference_index: Arc::new(HashMap::new()),
+            children_index: Arc::new(HashMap::new()),
+            cache_path: None,
+            delta_checkpoint: Arc::new(Mutex::new(None)),
+        }
+    }
+
     fn from_mapped(
         mount_point: String,
         journal_id: Option<u64>,
@@ -329,6 +360,7 @@ impl MftSnapshot {
 
 #[derive(Clone, Debug)]
 struct RawMftRecord {
+    last_usn: i64,
     file_reference: u64,
     parent_reference: u64,
     name: String,
@@ -340,26 +372,57 @@ struct RawMftRecord {
 // Injection seam shared by production enumeration and synthetic native-boundary fixtures.
 fn hydrate_record_times_while(
     records: &mut [RawMftRecord],
-    mut read: impl FnMut(u64) -> Option<i64>,
+    mut read: impl FnMut(u64, i64) -> Result<Option<i64>>,
     is_current: &impl Fn() -> bool,
-) -> bool {
+) -> Result<bool> {
     for (index, record) in records.iter_mut().enumerate() {
         if !is_current() {
-            return false;
+            return Ok(false);
         }
-        record.modified_at_unix_ms = read(record.file_reference);
+        record.modified_at_unix_ms = read(record.file_reference, record.last_usn)?;
         if index.is_multiple_of(64) {
             std::thread::yield_now();
         }
     }
-    is_current()
+    Ok(is_current())
 }
+fn snapshot_for_persistence_from_records(
+    mount_point: &str,
+    journal_id: Option<u64>,
+    next_usn: Option<i64>,
+    records: Vec<RawMftRecord>,
+) -> MftSnapshot {
+    MftSnapshot::from_entries_for_persistence(
+        mount_point,
+        journal_id,
+        next_usn,
+        unsorted_entries_from_records(mount_point, records),
+    )
+}
+
+#[cfg(test)]
 fn snapshot_from_records(
     mount_point: &str,
     journal_id: Option<u64>,
     next_usn: Option<i64>,
     records: Vec<RawMftRecord>,
 ) -> MftSnapshot {
+    MftSnapshot::from_entries(
+        mount_point,
+        journal_id,
+        next_usn,
+        entries_from_records(mount_point, records),
+    )
+}
+
+#[cfg(test)]
+fn entries_from_records(mount_point: &str, records: Vec<RawMftRecord>) -> Vec<MftEntry> {
+    let mut entries = unsorted_entries_from_records(mount_point, records);
+    entries.sort_by(|left, right| left.path.cmp(&right.path));
+    entries
+}
+
+fn unsorted_entries_from_records(mount_point: &str, records: Vec<RawMftRecord>) -> Vec<MftEntry> {
     let records = records
         .into_iter()
         .map(|record| (record.file_reference, record))
@@ -367,15 +430,19 @@ fn snapshot_from_records(
     let mut paths = HashMap::<u64, Option<String>>::with_capacity(records.len());
     for record in records.values() {
         if is_ntfs_root_reference(record.file_reference) {
-            paths.insert(record.file_reference, Some(mount_point.into()));
+            paths
+                .entry(record.file_reference)
+                .or_insert_with(|| Some(mount_point.into()));
         }
         if is_ntfs_root_reference(record.parent_reference) {
-            paths.insert(record.parent_reference, Some(mount_point.into()));
+            paths
+                .entry(record.parent_reference)
+                .or_insert_with(|| Some(mount_point.into()));
         }
     }
+    let mut visiting = HashSet::new();
     for record in records.values() {
-        let mut visiting = HashSet::new();
-        let _ = resolve_record_path(
+        resolve_record_path(
             record.file_reference,
             mount_point,
             &records,
@@ -384,7 +451,7 @@ fn snapshot_from_records(
         );
     }
     let mut entries = Vec::with_capacity(records.len());
-    for record in records.values() {
+    for record in records.into_values() {
         if !is_ntfs_root_reference(record.file_reference)
             && let Some(path) = paths.remove(&record.file_reference).flatten()
         {
@@ -394,15 +461,14 @@ fn snapshot_from_records(
                     parent_reference: record.parent_reference,
                 }),
                 path,
-                name: record.name.clone(),
+                name: record.name,
                 is_directory: record.is_directory,
                 size_bytes: None,
                 modified_at_unix_ms: record.modified_at_unix_ms,
             });
         }
     }
-    entries.sort_by(|left, right| left.path.cmp(&right.path));
-    MftSnapshot::from_entries(mount_point, journal_id, next_usn, entries)
+    entries
 }
 
 fn is_ntfs_root_reference(file_reference: u64) -> bool {
@@ -416,37 +482,42 @@ fn resolve_record_path(
     records: &HashMap<u64, RawMftRecord>,
     cache: &mut HashMap<u64, Option<String>>,
     visiting: &mut HashSet<u64>,
-) -> Option<String> {
-    if let Some(cached) = cache.get(&file_reference) {
-        return cached.clone();
+) {
+    if cache.contains_key(&file_reference) {
+        return;
     }
     if !visiting.insert(file_reference) {
         cache.insert(file_reference, None);
-        return None;
+        return;
     }
-    let record = records.get(&file_reference)?;
-    let path = if record.file_reference == record.parent_reference {
-        Some(mount_point.to_owned())
-    } else {
-        resolve_record_path(
-            record.parent_reference,
-            mount_point,
-            records,
-            cache,
-            visiting,
-        )
-        .map(|parent| {
-            let separator = if parent.ends_with(['\\', '/']) {
-                ""
-            } else {
-                "\\"
-            };
-            format!("{parent}{separator}{}", record.name)
-        })
-    };
+    let path = records.get(&file_reference).and_then(|record| {
+        if record.file_reference == record.parent_reference {
+            Some(mount_point.to_owned())
+        } else {
+            resolve_record_path(
+                record.parent_reference,
+                mount_point,
+                records,
+                cache,
+                visiting,
+            );
+            cache.get(&record.parent_reference).and_then(|parent| {
+                let parent = parent.as_deref()?;
+                let separator = !parent.ends_with(['\\', '/']);
+                let mut path = String::with_capacity(
+                    parent.len() + usize::from(separator) + record.name.len(),
+                );
+                path.push_str(parent);
+                if separator {
+                    path.push('\\');
+                }
+                path.push_str(&record.name);
+                Some(path)
+            })
+        }
+    });
     visiting.remove(&file_reference);
-    cache.insert(file_reference, path.clone());
-    path
+    cache.insert(file_reference, path);
 }
 
 fn parse_enumeration_batch(buffer: &[u8]) -> Result<(u64, Vec<RawMftRecord>)> {
@@ -503,6 +574,7 @@ fn parse_enumeration_batch(buffer: &[u8]) -> Result<(u64, Vec<RawMftRecord>)> {
             let name = String::from_utf16_lossy(&utf16);
             if !name.is_empty() {
                 records.push(RawMftRecord {
+                    last_usn: read_u64(buffer, offset + 24)? as i64,
                     file_reference: read_u64(buffer, offset + 8)?,
                     parent_reference: read_u64(buffer, offset + 16)?,
                     name,
@@ -541,12 +613,15 @@ fn read_u64(buffer: &[u8], offset: usize) -> Result<u64> {
     ))
 }
 
+type SnapshotConstructor = fn(&str, Option<u64>, Option<i64>, Vec<RawMftRecord>) -> MftSnapshot;
+
 #[cfg(any(windows, test))]
 fn enumerate_initial_snapshot(
     mount_point: &str,
     journal_id: u64,
     start_usn: i64,
     enumerate: impl FnOnce(i64) -> Result<Vec<RawMftRecord>>,
+    construct: SnapshotConstructor,
 ) -> Result<MftSnapshot> {
     // Keep the pre-scan cursor for replay, but include rows whose latest USN changes
     // during enumeration; metadata-only catch-up cannot create an omitted base row.
@@ -561,7 +636,7 @@ fn enumerate_initial_snapshot(
         "MFT enumeration completed"
     );
     let constructed = Instant::now();
-    let snapshot = snapshot_from_records(mount_point, Some(journal_id), Some(start_usn), records);
+    let snapshot = construct(mount_point, Some(journal_id), Some(start_usn), records);
     tracing::info!(
         event = "indexer.snapshot.construction",
         raw_rows,
@@ -572,9 +647,9 @@ fn enumerate_initial_snapshot(
     Ok(snapshot)
 }
 
-#[cfg(windows)]
+#[cfg(all(windows, test))]
 pub(crate) fn scan_volume(mount_point: &str) -> Result<MftSnapshot> {
-    windows::scan_volume(mount_point)
+    windows::scan_volume(mount_point, snapshot_from_records)
 }
 
 #[cfg(not(windows))]
@@ -583,16 +658,20 @@ pub(crate) fn scan_volume(_mount_point: &str) -> Result<MftSnapshot> {
 }
 
 pub(crate) fn scan_volume_and_persist(mount_point: &str) -> Result<MftSnapshot> {
-    scan_volume_and_persist_with(mount_point, scan_volume, persist_system_snapshot)
+    #[cfg(windows)]
+    let scan = windows::scan_volume;
+    #[cfg(not(windows))]
+    let scan = |mount: &str, _: SnapshotConstructor| scan_volume(mount);
+    scan_volume_and_persist_with(mount_point, scan, persist_system_snapshot)
 }
 
 fn scan_volume_and_persist_with(
     mount_point: &str,
-    scan: impl Fn(&str) -> Result<MftSnapshot>,
+    scan: impl Fn(&str, SnapshotConstructor) -> Result<MftSnapshot>,
     persist: impl Fn(&mut MftSnapshot) -> Result<()>,
 ) -> Result<MftSnapshot> {
     let started = Instant::now();
-    let mut snapshot = scan(mount_point)?;
+    let mut snapshot = scan(mount_point, snapshot_for_persistence_from_records)?;
     tracing::info!(
         event = "indexer.snapshot.scan",
         rows = snapshot.visible_len(),
@@ -640,8 +719,8 @@ mod windows {
     };
 
     use super::{
-        MftSnapshot, RawMftRecord, enumerate_initial_snapshot, hydrate_record_times_while,
-        parse_enumeration_batch,
+        MftSnapshot, RawMftRecord, SnapshotConstructor, enumerate_initial_snapshot,
+        hydrate_record_times_while, parse_enumeration_batch,
     };
 
     const ENUMERATION_BUFFER_BYTES: usize = 1024 * 1024;
@@ -656,7 +735,10 @@ mod windows {
         }
     }
 
-    pub(super) fn scan_volume(mount_point: &str) -> Result<MftSnapshot> {
+    pub(super) fn scan_volume(
+        mount_point: &str,
+        construct: SnapshotConstructor,
+    ) -> Result<MftSnapshot> {
         let device_path = volume_device_path(mount_point)?;
         let wide_path = device_path
             .encode_utf16()
@@ -682,7 +764,8 @@ mod windows {
             mount_point,
             journal.UsnJournalID,
             journal.NextUsn,
-            |high_usn| enumerate_mft(handle.0, high_usn),
+            |high_usn| enumerate_mft(handle.0, mount_point, high_usn),
+            construct,
         )
     }
 
@@ -725,7 +808,12 @@ mod windows {
         Ok(journal)
     }
 
-    fn enumerate_mft(handle: HANDLE, high_usn: i64) -> Result<Vec<RawMftRecord>> {
+    fn enumerate_mft(
+        handle: HANDLE,
+        mount_point: &str,
+        high_usn: i64,
+    ) -> Result<Vec<RawMftRecord>> {
+        let mut times = super::bulk_times::open(handle, mount_point)?;
         let mut request = MFT_ENUM_DATA_V0 {
             StartFileReferenceNumber: 0,
             LowUsn: 0,
@@ -767,15 +855,15 @@ mod windows {
                 next_reference > request.StartFileReferenceNumber || batch.is_empty(),
                 "MFT enumeration did not advance its continuation reference"
             );
-            // Enumeration's USN timestamp is not last-write. Hydrate this bounded batch on
-            // the snapshot worker, never in a search or an idle maintenance pass.
+            // USN event time is not LastWriteTime. Read matching base FILE records in
+            // bounded raw blocks on this worker, never from interactive search.
             let metadata_started = Instant::now();
             metadata_rows += batch.len();
             let _ = hydrate_record_times_while(
                 &mut batch,
-                |reference| super::read_last_write_by_id(handle, reference),
+                |reference, usn| times.last_write(reference, usn),
                 &|| true,
-            );
+            )?;
             metadata_elapsed += metadata_started.elapsed();
             records.append(&mut batch);
             if next_reference <= request.StartFileReferenceNumber {
@@ -787,6 +875,10 @@ mod windows {
             event = "indexer.snapshot.native_enumeration",
             rows = records.len(),
             metadata_rows,
+            metadata_mode = "bulk_mft",
+            metadata_reads = times.reads,
+            metadata_unknown = times.unknown,
+            metadata_fallback_reads = times.fallback_reads,
             metadata_elapsed_ms = metadata_elapsed.as_millis() as u64,
             elapsed_ms = started.elapsed().as_millis() as u64,
             "native MFT enumeration and LastWriteTime hydration completed"
@@ -827,7 +919,7 @@ mod tests {
         service.rebuild_with(|mount| {
             scan_volume_and_persist_with(
                 mount,
-                |mount| {
+                |mount, _| {
                     Ok(MftSnapshot::from_entries(
                         mount,
                         Some(17),
@@ -862,26 +954,33 @@ mod tests {
     }
 
     fn changing_enumeration() -> MftSnapshot {
-        enumerate_initial_snapshot(r"C:\", 17, 100, |high_usn| {
-            Ok([
-                (110, 10, 5, "changing.txt", false),
-                (111, 20, 5, "ChangingDirectory", true),
-                (90, 21, 20, "child.txt", false),
-                (112, 30, 5, "created.txt", false),
-            ]
-            .into_iter()
-            .filter(|(latest_usn, ..)| *latest_usn <= high_usn)
-            .map(
-                |(_, file_reference, parent_reference, name, is_directory)| RawMftRecord {
-                    file_reference,
-                    parent_reference,
-                    name: name.into(),
-                    is_directory,
-                    modified_at_unix_ms: Some(1),
-                },
-            )
-            .collect())
-        })
+        enumerate_initial_snapshot(
+            r"C:\",
+            17,
+            100,
+            |high_usn| {
+                Ok([
+                    (110, 10, 5, "changing.txt", false),
+                    (111, 20, 5, "ChangingDirectory", true),
+                    (90, 21, 20, "child.txt", false),
+                    (112, 30, 5, "created.txt", false),
+                ]
+                .into_iter()
+                .filter(|(latest_usn, ..)| *latest_usn <= high_usn)
+                .map(
+                    |(_, file_reference, parent_reference, name, is_directory)| RawMftRecord {
+                        last_usn: 0,
+                        file_reference,
+                        parent_reference,
+                        name: name.into(),
+                        is_directory,
+                        modified_at_unix_ms: Some(1),
+                    },
+                )
+                .collect())
+            },
+            snapshot_from_records,
+        )
         .expect("synthetic production enumeration")
     }
 
@@ -955,6 +1054,7 @@ mod tests {
     fn w4_mft_metadata_seam_publishes_true_time_and_keeps_failure_unknown() {
         let mut records = vec![
             RawMftRecord {
+                last_usn: 0,
                 file_reference: (3_u64 << 48) | 10,
                 parent_reference: 5,
                 name: "notes.txt".into(),
@@ -962,6 +1062,7 @@ mod tests {
                 modified_at_unix_ms: None,
             },
             RawMftRecord {
+                last_usn: 0,
                 file_reference: 11,
                 parent_reference: 5,
                 name: "denied.txt".into(),
@@ -970,14 +1071,17 @@ mod tests {
             },
         ];
         let mut seen = Vec::new();
-        assert!(hydrate_record_times_while(
-            &mut records,
-            |reference| {
-                seen.push(reference);
-                (reference == ((3_u64 << 48) | 10)).then_some(1234)
-            },
-            &|| true
-        ));
+        assert!(
+            hydrate_record_times_while(
+                &mut records,
+                |reference, _| {
+                    seen.push(reference);
+                    Ok((reference == ((3_u64 << 48) | 10)).then_some(1234))
+                },
+                &|| true
+            )
+            .expect("metadata read")
+        );
         assert_eq!(seen, [(3_u64 << 48) | 10, 11]);
         let snapshot = snapshot_from_records("C:\\", Some(17), Some(100), records);
         assert_eq!(
@@ -1000,17 +1104,21 @@ mod tests {
     #[test]
     fn w4_mft_metadata_seam_cancel_reads_nothing() {
         let mut records = vec![RawMftRecord {
+            last_usn: 0,
             file_reference: 10,
             parent_reference: 5,
             name: "notes.txt".into(),
             is_directory: false,
             modified_at_unix_ms: None,
         }];
-        assert!(!hydrate_record_times_while(
-            &mut records,
-            |_| panic!("cancel must not read"),
-            &|| false
-        ));
+        assert!(
+            !hydrate_record_times_while(
+                &mut records,
+                |_, _| panic!("cancel must not read"),
+                &|| { false }
+            )
+            .expect("cancelled metadata read")
+        );
         assert_eq!(records[0].modified_at_unix_ms, None);
     }
 
@@ -1022,6 +1130,7 @@ mod tests {
             Some(11),
             vec![
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: 5,
                     parent_reference: 5,
                     name: ".".into(),
@@ -1029,6 +1138,7 @@ mod tests {
                     is_directory: true,
                 },
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: 10,
                     parent_reference: 5,
                     name: "Work".into(),
@@ -1036,6 +1146,7 @@ mod tests {
                     is_directory: true,
                 },
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: 11,
                     parent_reference: 10,
                     name: "Budget.xlsx".into(),
@@ -1139,6 +1250,7 @@ mod tests {
             Some(11),
             vec![
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: (3_u64 << 48) | 10,
                     parent_reference: root_reference,
                     name: "Work".into(),
@@ -1146,6 +1258,7 @@ mod tests {
                     is_directory: true,
                 },
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: (8_u64 << 48) | 11,
                     parent_reference: (3_u64 << 48) | 10,
                     name: "Budget.xlsx".into(),
@@ -1170,6 +1283,7 @@ mod tests {
             None,
             vec![
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: 10,
                     parent_reference: 11,
                     name: "first".into(),
@@ -1177,6 +1291,7 @@ mod tests {
                     is_directory: true,
                 },
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: 11,
                     parent_reference: 10,
                     name: "second".into(),
@@ -1184,6 +1299,7 @@ mod tests {
                     is_directory: true,
                 },
                 RawMftRecord {
+                    last_usn: 0,
                     file_reference: 12,
                     parent_reference: 99,
                     name: "orphan.txt".into(),

@@ -1,0 +1,1587 @@
+{
+  "oracle": "CPython struct/zipfile/zlib/bz2/lzma/hashlib/hmac; PyCryptodome AES; specification LEA vectors",
+  "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+  "pycryptodome": "3.17",
+  "fixtures": [
+    {
+      "fixture": "enc_zip20.egg",
+      "length": 867,
+      "files": 2,
+      "bytes": 3662,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "a.txt",
+          "kind": "file",
+          "size": 3150,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 69,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 2,
+              "expanded": 3150,
+              "packed": 140,
+              "crc": 2052405917,
+              "offset": 112
+            }
+          ],
+          "expected": "enc_zip20.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "b.bin",
+          "kind": "file",
+          "size": 512,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 303,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 512,
+              "packed": 517,
+              "crc": 1999967099,
+              "offset": 346
+            }
+          ],
+          "expected": "enc_zip20.egg/1.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "enc_aes128.egg",
+      "length": 875,
+      "files": 2,
+      "bytes": 3662,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "a.txt",
+          "kind": "file",
+          "size": 3150,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 69,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 2,
+              "expanded": 3150,
+              "packed": 140,
+              "crc": 2052405917,
+              "offset": 116
+            }
+          ],
+          "expected": "enc_aes128.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "b.bin",
+          "kind": "file",
+          "size": 512,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 307,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 512,
+              "packed": 517,
+              "crc": 1999967099,
+              "offset": 354
+            }
+          ],
+          "expected": "enc_aes128.egg/1.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "enc_aes256.egg",
+      "length": 891,
+      "files": 2,
+      "bytes": 3662,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "a.txt",
+          "kind": "file",
+          "size": 3150,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 69,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 2,
+              "expanded": 3150,
+              "packed": 140,
+              "crc": 2052405917,
+              "offset": 124
+            }
+          ],
+          "expected": "enc_aes256.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "b.bin",
+          "kind": "file",
+          "size": 512,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 315,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 512,
+              "packed": 517,
+              "crc": 1999967099,
+              "offset": 370
+            }
+          ],
+          "expected": "enc_aes256.egg/1.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "lea128.egg",
+      "length": 32231,
+      "files": 10,
+      "bytes": 133486,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "hello.txt",
+          "kind": "file",
+          "size": 131,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 73,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131,
+              "packed": 126,
+              "crc": 455319225,
+              "offset": 120
+            }
+          ],
+          "expected": "lea128.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "large.txt",
+          "kind": "file",
+          "size": 131364,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 301,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131364,
+              "packed": 30475,
+              "crc": 4267022572,
+              "offset": 348
+            }
+          ],
+          "expected": "lea128.egg/1.gz"
+        },
+        {
+          "index": 2,
+          "id": 2,
+          "name": "repeated.txt",
+          "kind": "file",
+          "size": 720,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 30881,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 720,
+              "packed": 54,
+              "crc": 866846570,
+              "offset": 30928
+            }
+          ],
+          "expected": "lea128.egg/2.gz"
+        },
+        {
+          "index": 3,
+          "id": 3,
+          "name": "뷁테스트.txt",
+          "kind": "file",
+          "size": 72,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 31044,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 72,
+              "packed": 69,
+              "crc": 1679842995,
+              "offset": 31091
+            }
+          ],
+          "expected": "lea128.egg/3.gz"
+        },
+        {
+          "index": 4,
+          "id": 4,
+          "name": "한글파일.txt",
+          "kind": "file",
+          "size": 56,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 31222,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 56,
+              "packed": 61,
+              "crc": 4062435052,
+              "offset": 31269
+            }
+          ],
+          "expected": "lea128.egg/4.gz"
+        },
+        {
+          "index": 5,
+          "id": 5,
+          "name": "subdir/nested/deep.txt",
+          "kind": "file",
+          "size": 20,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 31398,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 20,
+              "packed": 22,
+              "crc": 2864028733,
+              "offset": 31445
+            }
+          ],
+          "expected": "lea128.egg/5.gz"
+        },
+        {
+          "index": 6,
+          "id": 6,
+          "name": "subdir/inner.txt",
+          "kind": "file",
+          "size": 28,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 31529,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 28,
+              "packed": 30,
+              "crc": 3666292504,
+              "offset": 31576
+            }
+          ],
+          "expected": "lea128.egg/6.gz"
+        },
+        {
+          "index": 7,
+          "id": 7,
+          "name": "binary.bin",
+          "kind": "file",
+          "size": 1024,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 31662,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 1024,
+              "packed": 280,
+              "crc": 3070970918,
+              "offset": 31709
+            }
+          ],
+          "expected": "lea128.egg/7.gz"
+        },
+        {
+          "index": 8,
+          "id": 8,
+          "name": "empty.txt",
+          "kind": "file",
+          "size": 0,
+          "encrypted": false,
+          "encryption": null,
+          "encrypt_info_offset": null,
+          "encrypt_info_size": 0,
+          "blocks": [],
+          "expected": "lea128.egg/8.gz"
+        },
+        {
+          "index": 9,
+          "id": 9,
+          "name": "euckr_content.txt",
+          "kind": "file",
+          "size": 71,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 32104,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 71,
+              "packed": 76,
+              "crc": 1044254527,
+              "offset": 32151
+            }
+          ],
+          "expected": "lea128.egg/9.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "lea256.egg",
+      "length": 32303,
+      "files": 10,
+      "bytes": 133486,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "euckr_content.txt",
+          "kind": "file",
+          "size": 71,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 81,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 71,
+              "packed": 76,
+              "crc": 1044254527,
+              "offset": 136
+            }
+          ],
+          "expected": "lea256.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "hello.txt",
+          "kind": "file",
+          "size": 131,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 267,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131,
+              "packed": 126,
+              "crc": 455319225,
+              "offset": 322
+            }
+          ],
+          "expected": "lea256.egg/1.gz"
+        },
+        {
+          "index": 2,
+          "id": 2,
+          "name": "large.txt",
+          "kind": "file",
+          "size": 131364,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 503,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131364,
+              "packed": 30475,
+              "crc": 4267022572,
+              "offset": 558
+            }
+          ],
+          "expected": "lea256.egg/2.gz"
+        },
+        {
+          "index": 3,
+          "id": 3,
+          "name": "repeated.txt",
+          "kind": "file",
+          "size": 720,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 31091,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 720,
+              "packed": 54,
+              "crc": 866846570,
+              "offset": 31146
+            }
+          ],
+          "expected": "lea256.egg/3.gz"
+        },
+        {
+          "index": 4,
+          "id": 4,
+          "name": "뷁테스트.txt",
+          "kind": "file",
+          "size": 72,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 31262,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 72,
+              "packed": 69,
+              "crc": 1679842995,
+              "offset": 31317
+            }
+          ],
+          "expected": "lea256.egg/4.gz"
+        },
+        {
+          "index": 5,
+          "id": 5,
+          "name": "한글파일.txt",
+          "kind": "file",
+          "size": 56,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 31448,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 56,
+              "packed": 61,
+              "crc": 4062435052,
+              "offset": 31503
+            }
+          ],
+          "expected": "lea256.egg/5.gz"
+        },
+        {
+          "index": 6,
+          "id": 6,
+          "name": "subdir/nested/deep.txt",
+          "kind": "file",
+          "size": 20,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 31632,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 20,
+              "packed": 22,
+              "crc": 2864028733,
+              "offset": 31687
+            }
+          ],
+          "expected": "lea256.egg/6.gz"
+        },
+        {
+          "index": 7,
+          "id": 7,
+          "name": "subdir/inner.txt",
+          "kind": "file",
+          "size": 28,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 31771,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 28,
+              "packed": 30,
+              "crc": 3666292504,
+              "offset": 31826
+            }
+          ],
+          "expected": "lea256.egg/7.gz"
+        },
+        {
+          "index": 8,
+          "id": 8,
+          "name": "binary.bin",
+          "kind": "file",
+          "size": 1024,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 31912,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 1024,
+              "packed": 280,
+              "crc": 3070970918,
+              "offset": 31967
+            }
+          ],
+          "expected": "lea256.egg/8.gz"
+        },
+        {
+          "index": 9,
+          "id": 9,
+          "name": "empty.txt",
+          "kind": "file",
+          "size": 0,
+          "encrypted": false,
+          "encryption": null,
+          "encrypt_info_offset": null,
+          "encrypt_info_size": 0,
+          "blocks": [],
+          "expected": "lea256.egg/9.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "enc_zip20_bzip2.egg",
+      "length": 264,
+      "files": 1,
+      "bytes": 9000,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "text.txt",
+          "kind": "file",
+          "size": 9000,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 72,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 2,
+              "expanded": 9000,
+              "packed": 145,
+              "crc": 408536580,
+              "offset": 115
+            }
+          ],
+          "expected": "enc_zip20_bzip2.egg/0.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "enc_aes256_bzip2.egg",
+      "length": 276,
+      "files": 1,
+      "bytes": 9000,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "text.txt",
+          "kind": "file",
+          "size": 9000,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 72,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 2,
+              "expanded": 9000,
+              "packed": 145,
+              "crc": 408536580,
+              "offset": 127
+            }
+          ],
+          "expected": "enc_aes256_bzip2.egg/0.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "enc_lea_bzip2.egg",
+      "length": 266,
+      "files": 1,
+      "bytes": 3600,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "text.txt",
+          "kind": "file",
+          "size": 3600,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 72,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 2,
+              "expanded": 3600,
+              "packed": 135,
+              "crc": 739880640,
+              "offset": 127
+            }
+          ],
+          "expected": "enc_lea_bzip2.egg/0.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "zip20.egg",
+      "length": 32195,
+      "files": 10,
+      "bytes": 133486,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "hello.txt",
+          "kind": "file",
+          "size": 131,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 73,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131,
+              "packed": 126,
+              "crc": 455319225,
+              "offset": 116
+            }
+          ],
+          "expected": "zip20.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "large.txt",
+          "kind": "file",
+          "size": 131364,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 297,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131364,
+              "packed": 30475,
+              "crc": 4267022572,
+              "offset": 340
+            }
+          ],
+          "expected": "zip20.egg/1.gz"
+        },
+        {
+          "index": 2,
+          "id": 2,
+          "name": "repeated.txt",
+          "kind": "file",
+          "size": 720,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 30873,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 720,
+              "packed": 54,
+              "crc": 866846570,
+              "offset": 30916
+            }
+          ],
+          "expected": "zip20.egg/2.gz"
+        },
+        {
+          "index": 3,
+          "id": 3,
+          "name": "뷁테스트.txt",
+          "kind": "file",
+          "size": 72,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 31032,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 72,
+              "packed": 69,
+              "crc": 1679842995,
+              "offset": 31075
+            }
+          ],
+          "expected": "zip20.egg/3.gz"
+        },
+        {
+          "index": 4,
+          "id": 4,
+          "name": "한글파일.txt",
+          "kind": "file",
+          "size": 56,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 31206,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 56,
+              "packed": 61,
+              "crc": 4062435052,
+              "offset": 31249
+            }
+          ],
+          "expected": "zip20.egg/4.gz"
+        },
+        {
+          "index": 5,
+          "id": 5,
+          "name": "subdir/nested/deep.txt",
+          "kind": "file",
+          "size": 20,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 31378,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 20,
+              "packed": 22,
+              "crc": 2864028733,
+              "offset": 31421
+            }
+          ],
+          "expected": "zip20.egg/5.gz"
+        },
+        {
+          "index": 6,
+          "id": 6,
+          "name": "subdir/inner.txt",
+          "kind": "file",
+          "size": 28,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 31505,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 28,
+              "packed": 30,
+              "crc": 3666292504,
+              "offset": 31548
+            }
+          ],
+          "expected": "zip20.egg/6.gz"
+        },
+        {
+          "index": 7,
+          "id": 7,
+          "name": "binary.bin",
+          "kind": "file",
+          "size": 1024,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 31634,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 1024,
+              "packed": 280,
+              "crc": 3070970918,
+              "offset": 31677
+            }
+          ],
+          "expected": "zip20.egg/7.gz"
+        },
+        {
+          "index": 8,
+          "id": 8,
+          "name": "empty.txt",
+          "kind": "file",
+          "size": 0,
+          "encrypted": false,
+          "encryption": null,
+          "encrypt_info_offset": null,
+          "encrypt_info_size": 0,
+          "blocks": [],
+          "expected": "zip20.egg/8.gz"
+        },
+        {
+          "index": 9,
+          "id": 9,
+          "name": "euckr_content.txt",
+          "kind": "file",
+          "size": 71,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 32072,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 71,
+              "packed": 76,
+              "crc": 1044254527,
+              "offset": 32115
+            }
+          ],
+          "expected": "zip20.egg/9.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "aes128.egg",
+      "length": 32231,
+      "files": 10,
+      "bytes": 133486,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "hello.txt",
+          "kind": "file",
+          "size": 131,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 73,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131,
+              "packed": 126,
+              "crc": 455319225,
+              "offset": 120
+            }
+          ],
+          "expected": "aes128.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "large.txt",
+          "kind": "file",
+          "size": 131364,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 301,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131364,
+              "packed": 30475,
+              "crc": 4267022572,
+              "offset": 348
+            }
+          ],
+          "expected": "aes128.egg/1.gz"
+        },
+        {
+          "index": 2,
+          "id": 2,
+          "name": "repeated.txt",
+          "kind": "file",
+          "size": 720,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 30881,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 720,
+              "packed": 54,
+              "crc": 866846570,
+              "offset": 30928
+            }
+          ],
+          "expected": "aes128.egg/2.gz"
+        },
+        {
+          "index": 3,
+          "id": 3,
+          "name": "뷁테스트.txt",
+          "kind": "file",
+          "size": 72,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 31044,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 72,
+              "packed": 69,
+              "crc": 1679842995,
+              "offset": 31091
+            }
+          ],
+          "expected": "aes128.egg/3.gz"
+        },
+        {
+          "index": 4,
+          "id": 4,
+          "name": "한글파일.txt",
+          "kind": "file",
+          "size": 56,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 31222,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 56,
+              "packed": 61,
+              "crc": 4062435052,
+              "offset": 31269
+            }
+          ],
+          "expected": "aes128.egg/4.gz"
+        },
+        {
+          "index": 5,
+          "id": 5,
+          "name": "subdir/nested/deep.txt",
+          "kind": "file",
+          "size": 20,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 31398,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 20,
+              "packed": 22,
+              "crc": 2864028733,
+              "offset": 31445
+            }
+          ],
+          "expected": "aes128.egg/5.gz"
+        },
+        {
+          "index": 6,
+          "id": 6,
+          "name": "subdir/inner.txt",
+          "kind": "file",
+          "size": 28,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 31529,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 28,
+              "packed": 30,
+              "crc": 3666292504,
+              "offset": 31576
+            }
+          ],
+          "expected": "aes128.egg/6.gz"
+        },
+        {
+          "index": 7,
+          "id": 7,
+          "name": "binary.bin",
+          "kind": "file",
+          "size": 1024,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 31662,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 1024,
+              "packed": 280,
+              "crc": 3070970918,
+              "offset": 31709
+            }
+          ],
+          "expected": "aes128.egg/7.gz"
+        },
+        {
+          "index": 8,
+          "id": 8,
+          "name": "empty.txt",
+          "kind": "file",
+          "size": 0,
+          "encrypted": false,
+          "encryption": null,
+          "encrypt_info_offset": null,
+          "encrypt_info_size": 0,
+          "blocks": [],
+          "expected": "aes128.egg/8.gz"
+        },
+        {
+          "index": 9,
+          "id": 9,
+          "name": "euckr_content.txt",
+          "kind": "file",
+          "size": 71,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 32104,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 71,
+              "packed": 76,
+              "crc": 1044254527,
+              "offset": 32151
+            }
+          ],
+          "expected": "aes128.egg/9.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "aes256.egg",
+      "length": 32303,
+      "files": 10,
+      "bytes": 133486,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "hello.txt",
+          "kind": "file",
+          "size": 131,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 73,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131,
+              "packed": 126,
+              "crc": 455319225,
+              "offset": 128
+            }
+          ],
+          "expected": "aes256.egg/0.gz"
+        },
+        {
+          "index": 1,
+          "id": 1,
+          "name": "large.txt",
+          "kind": "file",
+          "size": 131364,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 309,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 131364,
+              "packed": 30475,
+              "crc": 4267022572,
+              "offset": 364
+            }
+          ],
+          "expected": "aes256.egg/1.gz"
+        },
+        {
+          "index": 2,
+          "id": 2,
+          "name": "repeated.txt",
+          "kind": "file",
+          "size": 720,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 30897,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 720,
+              "packed": 54,
+              "crc": 866846570,
+              "offset": 30952
+            }
+          ],
+          "expected": "aes256.egg/2.gz"
+        },
+        {
+          "index": 3,
+          "id": 3,
+          "name": "뷁테스트.txt",
+          "kind": "file",
+          "size": 72,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 31068,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 72,
+              "packed": 69,
+              "crc": 1679842995,
+              "offset": 31123
+            }
+          ],
+          "expected": "aes256.egg/3.gz"
+        },
+        {
+          "index": 4,
+          "id": 4,
+          "name": "한글파일.txt",
+          "kind": "file",
+          "size": 56,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 31254,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 56,
+              "packed": 61,
+              "crc": 4062435052,
+              "offset": 31309
+            }
+          ],
+          "expected": "aes256.egg/4.gz"
+        },
+        {
+          "index": 5,
+          "id": 5,
+          "name": "subdir/nested/deep.txt",
+          "kind": "file",
+          "size": 20,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 31438,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 20,
+              "packed": 22,
+              "crc": 2864028733,
+              "offset": 31493
+            }
+          ],
+          "expected": "aes256.egg/5.gz"
+        },
+        {
+          "index": 6,
+          "id": 6,
+          "name": "subdir/inner.txt",
+          "kind": "file",
+          "size": 28,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 31577,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 28,
+              "packed": 30,
+              "crc": 3666292504,
+              "offset": 31632
+            }
+          ],
+          "expected": "aes256.egg/6.gz"
+        },
+        {
+          "index": 7,
+          "id": 7,
+          "name": "binary.bin",
+          "kind": "file",
+          "size": 1024,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 31718,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 1024,
+              "packed": 280,
+              "crc": 3070970918,
+              "offset": 31773
+            }
+          ],
+          "expected": "aes256.egg/7.gz"
+        },
+        {
+          "index": 8,
+          "id": 8,
+          "name": "empty.txt",
+          "kind": "file",
+          "size": 0,
+          "encrypted": false,
+          "encryption": null,
+          "encrypt_info_offset": null,
+          "encrypt_info_size": 0,
+          "blocks": [],
+          "expected": "aes256.egg/8.gz"
+        },
+        {
+          "index": 9,
+          "id": 9,
+          "name": "euckr_content.txt",
+          "kind": "file",
+          "size": 71,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 32168,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 71,
+              "packed": 76,
+              "crc": 1044254527,
+              "offset": 32223
+            }
+          ],
+          "expected": "aes256.egg/9.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "oversized_encrypt_zip20.egg",
+      "length": 164,
+      "files": 1,
+      "bytes": 44,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "fix.txt",
+          "kind": "file",
+          "size": 44,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 71,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 44,
+              "packed": 46,
+              "crc": 1912453235,
+              "offset": 114
+            }
+          ],
+          "expected": "oversized_encrypt_zip20.egg/0.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "oversized_encrypt_aes128.egg",
+      "length": 168,
+      "files": 1,
+      "bytes": 44,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "fix.txt",
+          "kind": "file",
+          "size": 44,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 71,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 44,
+              "packed": 46,
+              "crc": 1912453235,
+              "offset": 118
+            }
+          ],
+          "expected": "oversized_encrypt_aes128.egg/0.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "oversized_encrypt_aes256.egg",
+      "length": 176,
+      "files": 1,
+      "bytes": 44,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "fix.txt",
+          "kind": "file",
+          "size": 44,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 71,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 44,
+              "packed": 46,
+              "crc": 1912453235,
+              "offset": 126
+            }
+          ],
+          "expected": "oversized_encrypt_aes256.egg/0.gz"
+        }
+      ],
+      "origin": "unchanged alkegi/unegg CC0 sample"
+    },
+    {
+      "fixture": "spec_egg_zipcrypto_two_blocks.egg",
+      "length": 893,
+      "files": 1,
+      "bytes": 214842,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "two-block.bin",
+          "kind": "file",
+          "size": 214842,
+          "encrypted": true,
+          "encryption": 0,
+          "encrypt_info_offset": 77,
+          "encrypt_info_size": 17,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 135000,
+              "packed": 455,
+              "crc": 3151122094,
+              "offset": 120
+            },
+            {
+              "method": 1,
+              "expanded": 79842,
+              "packed": 292,
+              "crc": 2265893862,
+              "offset": 597
+            }
+          ],
+          "expected": "spec_egg_zipcrypto_two_blocks.egg/0.gz",
+          "modified_filetime": 132223104000000000
+        }
+      ],
+      "origin": "project-owned specification fixture with independent decode"
+    },
+    {
+      "fixture": "spec_egg_aes128_two_blocks.egg",
+      "length": 897,
+      "files": 1,
+      "bytes": 214842,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "two-block.bin",
+          "kind": "file",
+          "size": 214842,
+          "encrypted": true,
+          "encryption": 1,
+          "encrypt_info_offset": 77,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 135000,
+              "packed": 455,
+              "crc": 3151122094,
+              "offset": 124
+            },
+            {
+              "method": 1,
+              "expanded": 79842,
+              "packed": 292,
+              "crc": 2265893862,
+              "offset": 601
+            }
+          ],
+          "expected": "spec_egg_aes128_two_blocks.egg/0.gz",
+          "modified_filetime": 132223104000000000
+        }
+      ],
+      "origin": "project-owned specification fixture with independent decode"
+    },
+    {
+      "fixture": "spec_egg_aes256_two_blocks.egg",
+      "length": 905,
+      "files": 1,
+      "bytes": 214842,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "two-block.bin",
+          "kind": "file",
+          "size": 214842,
+          "encrypted": true,
+          "encryption": 2,
+          "encrypt_info_offset": 77,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 135000,
+              "packed": 455,
+              "crc": 3151122094,
+              "offset": 132
+            },
+            {
+              "method": 1,
+              "expanded": 79842,
+              "packed": 292,
+              "crc": 2265893862,
+              "offset": 609
+            }
+          ],
+          "expected": "spec_egg_aes256_two_blocks.egg/0.gz",
+          "modified_filetime": 132223104000000000
+        }
+      ],
+      "origin": "project-owned specification fixture with independent decode"
+    },
+    {
+      "fixture": "spec_egg_lea128_two_blocks.egg",
+      "length": 897,
+      "files": 1,
+      "bytes": 214842,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "two-block.bin",
+          "kind": "file",
+          "size": 214842,
+          "encrypted": true,
+          "encryption": 5,
+          "encrypt_info_offset": 77,
+          "encrypt_info_size": 21,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 135000,
+              "packed": 455,
+              "crc": 3151122094,
+              "offset": 124
+            },
+            {
+              "method": 1,
+              "expanded": 79842,
+              "packed": 292,
+              "crc": 2265893862,
+              "offset": 601
+            }
+          ],
+          "expected": "spec_egg_lea128_two_blocks.egg/0.gz",
+          "modified_filetime": 132223104000000000
+        }
+      ],
+      "origin": "project-owned specification fixture with independent decode"
+    },
+    {
+      "fixture": "spec_egg_lea256_two_blocks.egg",
+      "length": 905,
+      "files": 1,
+      "bytes": 214842,
+      "members": [
+        {
+          "index": 0,
+          "id": 0,
+          "name": "two-block.bin",
+          "kind": "file",
+          "size": 214842,
+          "encrypted": true,
+          "encryption": 6,
+          "encrypt_info_offset": 77,
+          "encrypt_info_size": 29,
+          "blocks": [
+            {
+              "method": 1,
+              "expanded": 135000,
+              "packed": 455,
+              "crc": 3151122094,
+              "offset": 132
+            },
+            {
+              "method": 1,
+              "expanded": 79842,
+              "packed": 292,
+              "crc": 2265893862,
+              "offset": 609
+            }
+          ],
+          "expected": "spec_egg_lea256_two_blocks.egg/0.gz",
+          "modified_filetime": 132223104000000000
+        }
+      ],
+      "origin": "project-owned specification fixture with independent decode"
+    }
+  ],
+  "files": 67,
+  "decoded_bytes": 1774358
+}

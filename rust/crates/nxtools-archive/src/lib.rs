@@ -27,6 +27,8 @@ pub mod source_deletion;
 mod tar_edit;
 mod tar_edit_outer;
 pub mod worker;
+#[cfg(feature = "isolated-codecs")]
+mod worker_alzeg;
 pub mod worker_browser;
 mod worker_bulk;
 #[cfg(feature = "isolated-codecs")]
@@ -54,6 +56,7 @@ mod worker_zip_edit;
 mod zip_container;
 pub mod zip_edit;
 mod zip_risk;
+mod zip_sfx;
 
 pub use control::{ArchiveProgress, ArchiveWorkObservation, OperationControl};
 pub use engine::ArchiveEngine;

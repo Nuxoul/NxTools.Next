@@ -347,6 +347,7 @@ pub(crate) async fn mux_dash_tracks(
     audio_path: &Path,
     output_path: &Path,
     control: &DownloadTransferControl,
+    progress: impl Fn(u64, bool) + Send + 'static,
 ) -> Result<MediaProcessOutcome, MediaProcessError> {
     mux_dash_tracks_with_timeout(
         executable,
@@ -355,6 +356,7 @@ pub(crate) async fn mux_dash_tracks(
         output_path,
         control,
         MUX_TIMEOUT,
+        progress,
     )
     .await
 }
@@ -366,16 +368,27 @@ async fn mux_dash_tracks_with_timeout(
     output_path: &Path,
     control: &DownloadTransferControl,
     timeout: Duration,
+    progress: impl Fn(u64, bool) + Send + 'static,
 ) -> Result<MediaProcessOutcome, MediaProcessError> {
     let mut child = Command::new(executable)
-        .args(["-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i"])
+        .args([
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostats",
+            "-progress",
+            "pipe:1",
+            "-y",
+            "-i",
+        ])
         .arg(video_path)
         .arg("-i")
         .arg(audio_path)
         .args(["-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-f", "mp4"])
         .arg(output_path)
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
         .spawn()
@@ -384,55 +397,120 @@ async fn mux_dash_tracks_with_timeout(
         .stderr
         .take()
         .ok_or(MediaProcessError::MissingOutput)?;
-    let output_reader = tokio::spawn(drain_bounded_output(stderr));
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or(MediaProcessError::MissingOutput)?;
+    let error_reader = tokio::spawn(drain_bounded_output(stderr));
+    let progress_reader = tokio::spawn(read_mux_progress(stdout, progress));
     let deadline = Instant::now() + timeout;
-    loop {
+    let outcome = loop {
         if Instant::now() >= deadline {
-            child.kill().await.map_err(MediaProcessError::Wait)?;
-            let _ = child.wait().await;
-            output_reader.abort();
-            return Err(MediaProcessError::Timeout { operation: "mux" });
+            break Err(MediaProcessError::Timeout { operation: "mux" });
         }
         tokio::select! {
             status = child.wait() => {
-                let status = status.map_err(MediaProcessError::Wait)?;
-                let output = output_reader
-                    .await
-                    .map_err(|_| MediaProcessError::OutputReader)?
-                    .map_err(MediaProcessError::Wait)?;
-                if !status.success() {
-                    return Err(MediaProcessError::Exit { operation: "mux", code: status.code() });
-                }
-                return if output.overflowed {
-                    Err(MediaProcessError::OutputTooLarge)
-                } else {
-                    Ok(MediaProcessOutcome::Completed)
+                break match status {
+                    Ok(status) if status.success() => Ok(MediaProcessOutcome::Completed),
+                    Ok(status) => Err(MediaProcessError::Exit { operation: "mux", code: status.code() }),
+                    Err(error) => Err(MediaProcessError::Wait(error)),
                 };
             }
             directive = control.wait_for_stop_or_timeout(Duration::from_millis(50)) => {
                 match directive {
-                    Some(TransferDirective::Pause) => {
-                        child.kill().await.map_err(MediaProcessError::Wait)?;
-                        let _ = child.wait().await;
-                        output_reader.abort();
-                        return Ok(MediaProcessOutcome::Paused);
-                    }
-                    Some(TransferDirective::Cancel) => {
-                        child.kill().await.map_err(MediaProcessError::Wait)?;
-                        let _ = child.wait().await;
-                        output_reader.abort();
-                        return Ok(MediaProcessOutcome::Cancelled);
-                    }
+                    Some(TransferDirective::Pause) => break Ok(MediaProcessOutcome::Paused),
+                    Some(TransferDirective::Cancel) => break Ok(MediaProcessOutcome::Cancelled),
                     Some(TransferDirective::Running) | None => {}
                 }
             }
         }
+    };
+    if !matches!(outcome, Ok(MediaProcessOutcome::Completed)) {
+        let _ = child.kill().await;
+        let _ = child.wait().await;
     }
+    let (error_result, progress_result) = tokio::join!(error_reader, progress_reader);
+    let error_result = error_result.map_err(|_| MediaProcessError::OutputReader)?;
+    let progress_result = progress_result.map_err(|_| MediaProcessError::OutputReader)?;
+    let error_output = error_result.map_err(MediaProcessError::Wait)?;
+    progress_result.map_err(MediaProcessError::Wait)?;
+    match outcome? {
+        MediaProcessOutcome::Completed => {
+            if error_output.overflowed {
+                Err(MediaProcessError::OutputTooLarge)
+            } else {
+                Ok(MediaProcessOutcome::Completed)
+            }
+        }
+        stopped => Ok(stopped),
+    }
+}
+
+async fn read_mux_progress(
+    mut stdout: impl AsyncRead + Unpin,
+    progress: impl Fn(u64, bool),
+) -> std::io::Result<()> {
+    let mut buffer = [0_u8; 4096];
+    let mut line = Vec::with_capacity(64);
+    let mut current = 0;
+    loop {
+        let count = stdout.read(&mut buffer).await?;
+        if count == 0 {
+            break;
+        }
+        for byte in &buffer[..count] {
+            if *byte == b'\n' {
+                let record = line.strip_suffix(b"\r").unwrap_or(&line);
+                if let Some(value) = record.strip_prefix(b"out_time_us=")
+                    && let Ok(text) = std::str::from_utf8(value)
+                    && let Ok(micros) = text.trim().parse::<u64>()
+                {
+                    current = micros;
+                    progress(micros, false);
+                } else if record == b"progress=end" {
+                    progress(current, true);
+                }
+                line.clear();
+            } else if line.len() < 128 {
+                line.push(*byte);
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(all(test, windows))]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn fragmented_mux_progress_preserves_the_windows_terminal_record() {
+        let (mut writer, reader) = tokio::io::duplex(4);
+        let output = tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            for part in [
+                b"out_time_".as_slice(),
+                b"us=125000\r\npro",
+                b"gress=end\r\n",
+            ] {
+                writer.write_all(part).await.expect("write split progress");
+            }
+        });
+        let samples = std::sync::Mutex::new(Vec::new());
+        read_mux_progress(reader, |micros, terminal| {
+            samples
+                .lock()
+                .expect("progress samples")
+                .push((micros, terminal));
+        })
+        .await
+        .expect("read bounded progress records");
+        output.await.expect("progress writer settled");
+        assert_eq!(
+            samples.into_inner().expect("progress samples"),
+            vec![(125000, false), (125000, true)]
+        );
+    }
 
     #[tokio::test]
     async fn mux_timeout_kills_a_real_child_without_publishing_output() {
@@ -460,6 +538,7 @@ goto wait
             &output,
             &DownloadTransferControl::new(),
             Duration::from_millis(100),
+            |_, _| {},
         )
         .await
         .expect_err("bounded FFmpeg process should time out");
@@ -495,6 +574,7 @@ exit /b 7
             &output,
             &DownloadTransferControl::new(),
             Duration::from_secs(5),
+            |_, _| {},
         )
         .await
         .expect_err("nonzero FFmpeg exit should fail");

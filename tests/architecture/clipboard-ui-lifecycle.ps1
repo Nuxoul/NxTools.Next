@@ -238,7 +238,11 @@ if (-not $mainWindowTestsSource.Contains('tool_card_toggles_and_configure_opens_
     -not $clipboardKitTests.Contains('clipboard_hotkey_recorder_is_right_aligned_beside_title')) {
     throw 'Card toggle/Configure isolation and hotkey first-row/right-edge regression missing.'
 }
-foreach ($contract in @('Empty::new()', 'EmptyHeader::new()', 'EmptyTitle::new()',
+$historyFiltersSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\ui\history_filters.rs')
+foreach ($contract in @('Empty::new()', 'EmptyHeader::new()', 'EmptyTitle::new()', 'EmptyContent::new()', '.dropdown_menu(')) {
+    if (-not $historyFiltersSource.Contains($contract)) { throw "Clipboard empty/filter presentation missing: $contract" }
+}
+foreach ($contract in @('self.render_history_empty(&search_query, cx)',
     'Alert::error("clipboard-history-query-alert"', 'entries_empty && !search_loading && query_failed')) {
     if (-not $popupModSource.Contains($contract)) { throw "Clipboard distinct state presentation missing: $contract" }
 }

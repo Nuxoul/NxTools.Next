@@ -4,7 +4,7 @@
 ; deploy themselves on first run via the in-app installer (IndexerServiceInstaller).
 
 #define MyAppName "NxTools"
-#define MyAppVersion "0.7.0"
+#define MyAppVersion "0.7.2"
 #define MyAppPublisher "NxTools"
 #define MyAppExeName "NxTools.exe"
 #define PackageDir "..\artifacts\win-x64"
@@ -14,6 +14,8 @@
 AppId={{8C1E4E9A-52B7-4A0E-9F5D-2A1C3B7D9E10}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppVersion}.0
+VersionInfoProductVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
@@ -99,7 +101,7 @@ var
   UninstallCorrelation: String;
   UpgradeNewManifestPath, UpgradeNewSignaturePath: String;
   BootstrapMigrationDirectory: String;
-  BootstrapRepairMissing: Boolean;
+  BootstrapRepairMissing, BootstrapTrustRotation: Boolean;
   UninstallRemovePersonalData: Boolean;
 
 function PreservePreparationDiagnostics(SourcePath, Correlation: String; Started: Boolean; ResultCode: Integer): String;
@@ -132,28 +134,33 @@ begin
   Result := '';
   BootstrapMigrationDirectory := '';
   BootstrapRepairMissing := False;
+  BootstrapTrustRotation := False;
   DetectionDiagnostic := ExpandConstant('{tmp}\bootstrap-detection-') + UpgradeCorrelation + '.jsonl';
   ExtractTemporaryFile('bootstrap-migration.ps1');
   DetectionPath := ExpandConstant('{tmp}\bootstrap-migration.ps1');
   PowerShellPath := ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe');
   Parameters := '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + DetectionPath +
-    '" -ManifestPath "' + UpgradeNewManifestPath + '" -DiagnosticPath "' + DetectionDiagnostic + '" -CorrelationId "' + UpgradeCorrelation + '"';
+    '" -ManifestPath "' + UpgradeNewManifestPath + '" -DiagnosticPath "' + DetectionDiagnostic + '" -CorrelationId "' + UpgradeCorrelation + '"' +
+    ' -MinimumBootstrapMaintenanceSequence "{#BootstrapMigrationMinimumSequence}"';
   Log('installer.bootstrap_migration.detecting');
   Started := Exec(PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Log('installer.bootstrap_migration.detected started=' + IntToStr(Ord(Started)) + ' exit=' + IntToStr(ResultCode) + ' correlation=' + UpgradeCorrelation);
   DiagnosticDirectory := PreservePreparationDiagnostics(DetectionDiagnostic, UpgradeCorrelation, Started, ResultCode);
   if FileExists(DetectionDiagnostic) then FileCopy(DetectionDiagnostic, DiagnosticDirectory + '\bootstrap-detection.jsonl', False);
   if Started and (ResultCode = 0) then Exit;
-  if (not Started) or ((ResultCode <> 10) and (ResultCode <> 11)) then
+  if (not Started) or ((ResultCode <> 10) and (ResultCode <> 11) and (ResultCode <> 12)) then
   begin
     Result := '无法检查更新组件，尚未替换应用文件。诊断日志：' + DiagnosticDirectory;
     Exit;
   end;
   BootstrapRepairMissing := (ResultCode = 11);
-  if BootstrapRepairMissing then
-    Prompt := '已登记的 NxTools 更新组件文件缺失。安装器需要一次管理员授权来修复更新组件，然后继续安装；不会更换发布公钥或删除已有数据。'
+  BootstrapTrustRotation := (ResultCode = 12);
+  if BootstrapTrustRotation then
+    Prompt := '检测到旧发布身份。安装器将以一次明确授权把更新组件迁移到当前发布身份，然后覆盖安装；不会删除用户数据。'
+  else if BootstrapRepairMissing then
+    Prompt := '已登记的 NxTools 更新组件文件缺失。安装器需要一次管理员授权来修复更新组件，然后继续安装；不会删除已有数据。'
   else
-    Prompt := '此旧版本需要升级更新组件才能继续安装。安装器将请求一次管理员授权，完成后自动继续；不会更换发布公钥或清除数据。';
+    Prompt := '此旧版本需要升级更新组件才能继续安装。安装器将请求一次管理员授权，完成后自动继续。';
   if MsgBox(Prompt, mbConfirmation, MB_OKCANCEL) <> IDOK then
   begin
     Result := '你已取消更新组件升级，尚未替换应用文件。';
@@ -208,6 +215,8 @@ begin
     Parameters := Parameters + ' -BootstrapMigrationPackage "' + BootstrapMigrationDirectory + '"';
   if BootstrapRepairMissing then
     Parameters := Parameters + ' -RepairMissingBootstrap';
+  if BootstrapTrustRotation then
+    Parameters := Parameters + ' -RotateTrustedBootstrap';
   Log('installer.upgrade_close.started correlation=' + Correlation);
   WizardForm.StatusLabel.Caption := '正在恢复上次安装并准备升级，请稍候…';
   if (BootstrapMigrationDirectory <> '') or

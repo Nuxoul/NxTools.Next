@@ -70,8 +70,9 @@ internal static class ArchiveVirtualDragWire
         }
         var locate=value.Action=="locate";
         if(value.Action is not ("start" or "locate")||value.SourceWindowHandle<=0||value.Items is not {Length:>=1})throw new InvalidDataException();
-        // Destination location carries one descriptor-only wrapper and no member/unlock authority.
-        if(locate&&(value.Items.Length!=1||value.Items[0] is not {Directory:true,Name:{} wrapper}||wrapper.Contains('/')||
+        // Destination location carries one descriptor; directories use a wrapper folder, while
+        // file descriptors use a temporary marker file so the receiver's parent is the target.
+        if(locate&&(value.Items.Length!=1||value.Items[0] is not {Name:{} name}||name.Contains('/')||
             value.AuthorizationId is not null||value.Source is {ValueKind:not JsonValueKind.Null}))throw new InvalidDataException();
         Source? frozen=null;
         if(value.Source is {ValueKind:not JsonValueKind.Null} shared) {

@@ -44,6 +44,63 @@ fn snapshot(names: impl IntoIterator<Item = (String, EntryKind)>) -> ArchiveSnap
     }
 }
 
+#[test]
+fn selected_output_prefix_preserves_source_ids_and_maps_empty_directories() {
+    let snapshot = snapshot([
+        ("folder/".into(), EntryKind::Directory),
+        ("folder/empty/".into(), EntryKind::Directory),
+        ("folder/sub/a.txt".into(), EntryKind::File),
+        ("elsewhere.txt".into(), EntryKind::File),
+    ]);
+    let mut plan = ExtractionPlan::build(
+        &snapshot,
+        ExtractionSelection::Entries(vec![snapshot.entries[0].id]),
+        TargetStrategy::Here,
+    )
+    .expect("selected folder");
+    plan.strip_output_prefix("folder/")
+        .expect("receiver owns root");
+    assert_eq!(plan.files()[0].id(), snapshot.entries[2].id);
+    assert_eq!(plan.files()[0].relative_path(), "sub/a.txt");
+    assert_eq!(plan.directories(), ["empty", "sub"]);
+    assert_eq!(
+        plan.directory_output_path(&snapshot.entries[0])
+            .expect("root"),
+        None
+    );
+    assert_eq!(
+        plan.directory_output_path(&snapshot.entries[1])
+            .expect("empty"),
+        Some("empty".into())
+    );
+    let mut outside = ExtractionPlan::build(
+        &snapshot,
+        ExtractionSelection::Entries(vec![snapshot.entries[3].id]),
+        TargetStrategy::Here,
+    )
+    .expect("other selection");
+    assert!(matches!(
+        outside.strip_output_prefix("folder/"),
+        Err(ArchiveError::SourceChanged)
+    ));
+    let mut empty = ExtractionPlan::build(
+        &snapshot,
+        ExtractionSelection::Entries(vec![snapshot.entries[1].id]),
+        TargetStrategy::Here,
+    )
+    .expect("empty folder");
+    empty
+        .strip_output_prefix("folder/empty/")
+        .expect("empty receiver");
+    assert!(empty.files().is_empty() && empty.directories().is_empty());
+    assert_eq!(
+        empty
+            .directory_output_path(&snapshot.entries[1])
+            .expect("empty root"),
+        None
+    );
+}
+
 // 128 component-ended roots, 32 nested directory IDs each, 480 files per chain.
 // Maximum member depth is 33, and the identical input is reused for all completed trials.
 fn large() -> (ArchiveSnapshot, Vec<EntryId>) {
@@ -460,4 +517,60 @@ fn opt05_selection_working_limit_bounds_extraction_scratch() {
         .err(),
         Some(ArchiveError::ResourceLimit)
     );
+}
+
+#[test]
+fn selected_output_collision_is_scoped_to_selected_original_records() {
+    let mut snapshot = snapshot([
+        ("folder/same.txt".into(), EntryKind::File),
+        ("folder/same.txt".into(), EntryKind::File),
+    ]);
+    crate::path_policy::annotate(
+        Arc::make_mut(&mut snapshot.entries),
+        &OperationControl::with_operation_id(snapshot.session),
+        0,
+        1 << 20,
+    )
+    .expect("archive collision annotation");
+    assert!(
+        snapshot
+            .entries
+            .iter()
+            .all(|entry| entry.warnings.contains(&EntryWarning::OutputCollision))
+    );
+    for ordinal in [0usize, 1] {
+        let mut plan = ExtractionPlan::build(
+            &snapshot,
+            ExtractionSelection::Entries(vec![snapshot.entries[ordinal].id]),
+            TargetStrategy::Here,
+        )
+        .expect("one selected member owns an independent output namespace");
+        plan.strip_output_prefix("folder/")
+            .expect("selected output prefix");
+        assert_eq!(plan.files()[0].id(), snapshot.entries[ordinal].id);
+        assert_eq!(plan.files()[0].relative_path(), "same.txt");
+        #[cfg(feature = "isolated-codecs")]
+        {
+            assert!(crate::worker_codecs::codec_member_wanted(
+                Some(&plan),
+                &snapshot.entries[ordinal]
+            ));
+            assert!(!crate::worker_codecs::codec_member_wanted(
+                Some(&plan),
+                &snapshot.entries[1 - ordinal]
+            ));
+        }
+    }
+    assert!(matches!(
+        ExtractionPlan::build(
+            &snapshot,
+            ExtractionSelection::Entries(snapshot.entries.iter().map(|entry| entry.id).collect()),
+            TargetStrategy::Here
+        ),
+        Err(ArchiveError::OutputCollision)
+    ));
+    assert!(matches!(
+        ExtractionPlan::build(&snapshot, ExtractionSelection::All, TargetStrategy::Here),
+        Err(ArchiveError::OutputCollision)
+    ));
 }

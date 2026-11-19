@@ -1,0 +1,5 @@
+{"file":"docs/reference-code/mister-download-manager.md","reason":"Verified completion reference and original native presentation chain"}
+{"file":".trellis/tasks/11-13-download-grouped-completion/design.md","reason":"Runtime membership, unchanged B5 authority and temporary suppression"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Existing official notification components and public actions"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Entity callback/lifecycle and notification action ownership"}
+{"file":"rust/apps/nxtools-desktop/src/completion_actions.rs","reason":"Original terminal batch and independent B5 countdown coordinator"}

@@ -78,8 +78,9 @@ use crate::ui::metrics::{
 };
 use crate::ui::typography::{
     LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, TEXT_LABEL, TEXT_META, TEXT_PAGE_TITLE,
-    UI_FONT_FAMILY, UI_MONO_FONT_FAMILY,
+    UI_MONO_FONT_FAMILY,
 };
+mod about;
 mod archive_page;
 #[cfg(test)]
 mod archive_page_tests;
@@ -88,6 +89,7 @@ mod download_page;
 mod extensions_page;
 #[cfg(test)]
 mod hotkey_reset_tests;
+mod integration_setup;
 mod notifications;
 mod quick_launch_page;
 mod shell;
@@ -96,7 +98,7 @@ mod tools_page;
 pub(crate) mod visual_preview;
 
 use self::clipboard_page::*;
-pub(crate) use self::download_page::format_duration;
+pub(crate) use self::download_page::{download_failure_summary, format_duration};
 #[cfg(test)]
 pub(crate) use self::download_page::projection_tests;
 use self::download_page::*;
@@ -181,6 +183,9 @@ pub(crate) struct MainWindow {
     clipboard_overview_loading: bool,
     clipboard_overview_dirty: bool,
     _subscriptions: Vec<Subscription>,
+    integration_setup_offered: bool,
+    integration_setup_window: Option<AnyWindowHandle>,
+    about_window: Option<AnyWindowHandle>,
 }
 
 pub(crate) struct MainWindowShellContext {
@@ -462,6 +467,13 @@ impl MainWindow {
             application.update(cx, |application, cx| {
                 application.bind_ui(clipboard.clone(), notifications.clone(), cx)
             });
+            subscriptions.push(cx.subscribe_in(
+                &application,
+                window,
+                |main, _, request: &crate::extensions::SettingsRequested, window, cx| {
+                    main.defer_extension_settings(request.clone(), window, cx);
+                },
+            ));
             application
         });
         let archive_settings = quick_launch.upgrade().map(|application| {
@@ -481,6 +493,9 @@ impl MainWindow {
             platform: shell_context.platform,
             native_window_handle: crate::ui::native_window_handle(window).unwrap_or_default(),
             system_settings: shell_context.system_settings,
+            integration_setup_offered: false,
+            integration_setup_window: None,
+            about_window: None,
             notifications,
             download_search_input,
             custom_command_keyword,
@@ -557,12 +572,11 @@ impl Render for MainWindow {
                     this.handle_hotkey_recording(event, cx);
                 }
             }))
-            .font_family(UI_FONT_FAMILY)
             .bg(self.theme.canvas)
             .text_color(self.theme.text)
             .flex()
             .flex_col()
-            .child(self.render_titlebar(window))
+            .child(self.render_titlebar(window, cx))
             .child(
                 div()
                     .flex_1()

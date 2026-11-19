@@ -1475,6 +1475,33 @@ impl OperationForm {
             });
         }).detach();
     }
+    fn self_extracting(&mut self, value: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy() {
+            return;
+        }
+        self.sync_inputs(cx);
+        let Draft::Create(draft) = &mut self.draft else {
+            return;
+        };
+        if draft.format != ArchiveCreateFormat::Zip {
+            return;
+        }
+        draft.set_self_extracting(value);
+        tracing::info!(event="archive.form.sfx_choice_changed", correlation_id=%self.id, enabled=value, "archive self-extracting choice changed");
+        cx.notify();
+        cx.defer_in(window, |this, window, cx| {
+            if this.retired {
+                return;
+            }
+            let Draft::Create(draft) = &this.draft else {
+                return;
+            };
+            let name = draft.name.clone();
+            this.name
+                .update(cx, |state, cx| state.set_value(name, window, cx));
+            this.revalidate(cx);
+        });
+    }
     fn flag(&mut self, flag: Flag, value: bool, cx: &mut Context<Self>) {
         if self.busy() {
             return;

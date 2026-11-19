@@ -21,7 +21,7 @@ internal sealed partial class ArchiveWorkerOutputBridge
     }
     internal void ConfigureVolumeOutput(ArchiveWorkerRequest request)
     {
-        if(editing || request.VolumeBytes is null || volumeRequest is not null || files!=0 || overwrites.Count!=0)throw new ArchiveOutputException("invalid_output_request");
+        if(editing || request.VolumeBytes is null && request.ZipOptions?.SelfExtracting!=true || volumeRequest is not null || files!=0 || overwrites.Count!=0)throw new ArchiveOutputException("invalid_output_request");
         volumeRequest=request;
     }
     private bool AllowedOutputName(string relative)
@@ -36,11 +36,15 @@ internal sealed partial class ArchiveWorkerOutputBridge
         if(volumeRequest is null || createName is null)return null;
         if(volumeRequest.Operation=="create_zip")
         {
-            if(name==createName)return 1024; // Last ZIP coordinate is validated by ordered set below.
-            var stem=Path.GetFileNameWithoutExtension(createName);var prefix=stem+".z";
+            var sfx=volumeRequest.ZipOptions?.SelfExtracting==true;
+            if(sfx && name==createName)return 1;
+            if(sfx && volumeRequest.VolumeBytes is null)return null;
+            var stem=Path.GetFileNameWithoutExtension(createName);
+            if(name==(sfx?stem+".zip":createName))return 1024;
+            var prefix=stem+".z";
             if(!name.StartsWith(prefix,StringComparison.Ordinal))return null;
             var number=name[prefix.Length..];
-            return int.TryParse(number,out var ordinal) && ordinal is >=1 and <=1023 && number==ordinal.ToString("D2")?ordinal:null;
+            return int.TryParse(number,out var ordinal) && ordinal >= (sfx?2:1) && ordinal <=1023 && number==ordinal.ToString("D2")?ordinal:null;
         }
         var sevenPrefix=createName+".";
         if(!name.StartsWith(sevenPrefix,StringComparison.Ordinal))return null;
@@ -71,10 +75,14 @@ internal sealed partial class ArchiveWorkerOutputBridge
             if(bytes.Length>65536)throw new ArchiveOutputException("write_limit");
             var tokens=JsonSerializer.Deserialize<Guid[]>(bytes)??throw new ArchiveOutputException("volumes_not_verified");
             if(tokens.Length!=active.Count || tokens.Distinct().Count()!=tokens.Length || tokens.Any(token=>!active.Contains(token)||!flushedVolumes.Contains(token)))throw new ArchiveOutputException("volumes_not_verified");
+            if(volumeRequest.ZipOptions?.SelfExtracting==true && (volumeRequest.VolumeBytes is null?tokens.Length!=1:tokens.Length<2))throw new ArchiveOutputException("volumes_not_verified");
             for(var index=0;index<tokens.Length;index++)
             {
-                var expected=volumeRequest.Operation=="create_zip" && index+1==tokens.Length?createName!:
-                    volumeRequest.Operation=="create_zip"?Path.GetFileNameWithoutExtension(createName)+".z"+(index+1).ToString("D2"):createName+"."+(index+1).ToString("D3");
+                var sfx=volumeRequest.ZipOptions?.SelfExtracting==true;
+                var stem=Path.GetFileNameWithoutExtension(createName);
+                var expected=sfx && index==0?createName!:
+                    volumeRequest.Operation=="create_zip" && index+1==tokens.Length?(sfx?stem+".zip":createName!):
+                    volumeRequest.Operation=="create_zip"?stem+".z"+(index+1).ToString("D2"):createName+"."+(index+1).ToString("D3");
                 if(outputNames[tokens[index]]!=expected)throw new ArchiveOutputException("volumes_not_verified");
                 verifiedVolumeTokens.Add(tokens[index]);
             }

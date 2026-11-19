@@ -1,0 +1,8 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Single Cargo lane, exact LIST/RUN and separate acceptance layers"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Real task/SQLite/writer/publication boundaries and B4 preservation"}
+{"file":".trellis/spec/nxtools-ipc/backend/quality-guidelines.md","reason":"Original pending/generation/result and draining seams"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Missing-field compatibility and symmetric native typed contracts"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Native support/error/effect and resource-lifetime truth"}
+{"file":"csharp/NxTools.PlatformHost.Tests/README.md","reason":"Effects-reviewed exact fixture LIST/RUN, no real power"}
+{"file":".trellis/tasks/11-11-reference-b5-completion-intentions/prd.md","reason":"REF-07/REF-11 lifecycle acceptance and safety requirements"}
+{"file":".trellis/tasks/11-11-reference-b5-completion-intentions/design.md","reason":"Durable intention, current round and ephemeral one-shot invariants"}

@@ -228,7 +228,7 @@ impl FloatingAssistantApplication {
         settings.image_path = None;
         self.change_settings(settings, cx);
     }
-    pub(crate) fn pick_image(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn pick_image_from(&mut self, source_hwnd: i64, cx: &mut Context<Self>) {
         if self.picker.is_some() {
             return;
         }
@@ -236,7 +236,8 @@ impl FloatingAssistantApplication {
         self.picker = Some(id);
         tracing::info!(event="floating_assistant.picker.accepted", correlation_id=%id, session_id=%self.session, generation=self.generation);
         cx.notify();
-        let command = self.command(FloatingAssistantOperation::PickImage, None);
+        let mut command = self.command(FloatingAssistantOperation::PickImage, None);
+        command.source_window_handle = source_hwnd;
         if self
             .platform
             .send_command_with_id(PlatformCommand::FloatingAssistant(command), id)

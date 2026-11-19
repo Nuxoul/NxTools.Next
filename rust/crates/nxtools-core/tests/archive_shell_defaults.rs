@@ -51,3 +51,20 @@ fn archive_polish_explicit_empty_and_custom_choices_remain_authoritative() {
     }
     assert_eq!(ArchiveMenuCommand::Create.wire_name(), "create");
 }
+
+#[test]
+fn archive_shell_settings_labels_match_classic_menu_labels() {
+    for (command, expected) in [
+        (ArchiveMenuCommand::Open, "使用 NxTools 打开"),
+        (ArchiveMenuCommand::ExtractSmart, "智能解压"),
+        (ArchiveMenuCommand::ExtractHere, "解压到此处"),
+        (ArchiveMenuCommand::ExtractName, "解压到同名文件夹"),
+        (ArchiveMenuCommand::ExtractDialog, "解压到…"),
+        (ArchiveMenuCommand::Test, "测试压缩包"),
+        (ArchiveMenuCommand::CreateZip, "压缩为同名 .zip"),
+        (ArchiveMenuCommand::CreateSevenZ, "压缩为同名 .7z"),
+        (ArchiveMenuCommand::Create, "新建压缩包…"),
+    ] {
+        assert_eq!(command.label(), expected, "{}", command.wire_name());
+    }
+}

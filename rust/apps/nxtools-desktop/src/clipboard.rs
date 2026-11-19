@@ -364,7 +364,16 @@ async fn load_clipboard_popup_snapshot(
     scope: ClipboardSearchScope,
 ) -> Result<ClipboardPopupSnapshot, ClipboardHistoryError> {
     let page = worker
-        .query_summary_page_async(query, category_id, scope, 0, HISTORY_PAGE_SIZE, None, None)
+        .query_summary_page_async(
+            query,
+            category_id,
+            scope,
+            0,
+            HISTORY_PAGE_SIZE,
+            None,
+            None,
+            Default::default(),
+        )
         .await?;
     let summary_counts = page
         .items
@@ -1285,21 +1294,8 @@ impl ClipboardApplication {
         target: &str,
         target_kind: DetectedLinkKind,
         value_length: usize,
-        ordinary: bool,
         cx: &mut gpui_kit::App,
     ) {
-        let route = if ordinary {
-            if self.config.clipboard.link_panel_copy_only
-                || (target_kind == DetectedLinkKind::Web
-                    && !self.config.clipboard.link_panel_auto_open_browser)
-            {
-                LinkPanelRoute::Copy
-            } else {
-                route
-            }
-        } else {
-            route
-        };
         if route == LinkPanelRoute::Copy {
             let correlation_id = uuid::Uuid::new_v4();
             let started_at = Instant::now();
@@ -1597,6 +1593,7 @@ impl ClipboardApplication {
             hotkey_key: settings.hotkey.key.clone(),
             hotkey_display: settings.hotkey.display.clone(),
             excluded_processes: settings.excluded_processes.clone(),
+            suppress_in_fullscreen: self.config.suppress_panel_in_fullscreen(),
             max_text_bytes: settings.max_text_bytes,
             max_image_bytes: settings.max_image_bytes,
             max_image_pixels: settings.max_image_pixels,
@@ -4311,15 +4308,24 @@ mod asset_tests {
         surface.run_until_parked();
         assert_eq!(
             cx.read_from_clipboard()
-                .expect("copied target")
+                .expect("clipboard remains unchanged")
                 .text()
                 .as_deref(),
-            Some("https://third.invalid")
+            Some("untouched")
         );
-        assert!(
-            endpoint.try_receive_command_for_contract_test().is_err(),
-            "no native open without opt-in"
+        let command = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("row open ignores legacy browser setting");
+        assert_eq!(
+            command.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(
+                OpenShellTargetCommand {
+                    target: "https://third.invalid".into(),
+                    action: ShellOpenAction::Open,
+                }
+            ))
         );
+        assert!(endpoint.try_receive_command_for_contract_test().is_err());
         // Close one actual row, reopen before its deferred owner callback, then
         // let the stale callback run while a replacement panel is live.
         application.update(cx, |app, cx| {
@@ -4372,7 +4378,7 @@ mod asset_tests {
                 .text()
                 .as_deref(),
             Some("before-stale"),
-            "stale ordinary copy cannot overwrite clipboard"
+            "stale row action cannot overwrite clipboard"
         );
         assert!(endpoint.try_receive_command_for_contract_test().is_err());
         current

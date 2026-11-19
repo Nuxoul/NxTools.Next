@@ -19,6 +19,9 @@ internal static class ArchiveTypeIconTests
         var extension = ShellIconExtractor.ResolveIconTarget("nxtools-file-type:.lnk");
         Assert(extension is { UseFileAttributes: true, FileAttributes: 0x80, IconIndex: null, Path: ".lnk" },
             "Existing extension-only requests stay types, never shortcut resolution.");
+        var generic = ShellIconExtractor.ResolveIconTarget("nxtools-file-type:generic");
+        Assert(generic is { UseFileAttributes: true, FileAttributes: 0x80, IconIndex: null, Path: "nxtools-file" },
+            "Extensionless completed files fall back to a generic attribute-only file type.");
         foreach (var invalid in new[]
         {
             "nxtools-folder-type:directory/member.lnk",
@@ -127,7 +130,9 @@ internal static class ArchiveTypeIconTests
             });
             var results = await Task.WhenAll(tasks);
             Assert(results.All(result => result.Success && result.Data is not null),
-                $"Every actual parallel Shell query must retain its own image-list interface; failures={results.Count(result => !result.Success)}.");
+                $"Every actual parallel Shell query must retain its own image-list interface; failures={string.Join(",", results.Where(result => !result.Success).Select(result => $"{result.Error}:{result.NativeErrorCode}"))}.");
+            Assert(ShellIconExtractor.ShellImageListInitialized,
+                "Parallel extraction must pass through the one-time Shell image-list initialization boundary.");
         }
         finally
         {
@@ -195,6 +200,74 @@ internal static class ArchiveTypeIconTests
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+        return Task.CompletedTask;
+    }
+
+    internal static Task SmallArtworkOnJumboCanvasUsesExtraLarge()
+    {
+        var pixels = new byte[256 * 256 * 4];
+        for (var y = 3; y < 43; y++)
+            for (var x = 4; x < 44; x++) pixels[(y * 256 + x) * 4 + 3] = 255;
+        var bitmap = System.Windows.Media.Imaging.BitmapSource.Create(256, 256, 96, 96,
+            System.Windows.Media.PixelFormats.Bgra32, null, pixels, 256 * 4);
+        Assert(ShellIconExtractor.HasSmallArtworkOnJumboCanvas(bitmap),
+            "256px icon with only 40px artwork must select the 48px image list.");
+        pixels[(200 * 256 + 200) * 4 + 3] = 255;
+        var full = System.Windows.Media.Imaging.BitmapSource.Create(256, 256, 96, 96,
+            System.Windows.Media.PixelFormats.Bgra32, null, pixels, 256 * 4);
+        Assert(!ShellIconExtractor.HasSmallArtworkOnJumboCanvas(full),
+            "Artwork spanning more than 48px must retain the jumbo icon.");
+        Assert(ShellIconExtractor.ImageListSizeFor(48) == 2,
+            "48px requests must use SHIL_EXTRALARGE rather than SHIL_JUMBO.");
+        Assert(ShellIconExtractor.ImageListSizeFor(96) == 4,
+            "Larger requests still start with SHIL_JUMBO.");
+        var requestedLists = new List<int>();
+        var destroyed = new List<IntPtr>();
+        IntPtr Extract(int _, int list) { requestedLists.Add(list); return new IntPtr(list); }
+        var selected = ShellIconExtractor.SelectImageListIcon(7, 96, Extract,
+            _ => ShellIconExtractor.HasSmallArtworkOnJumboCanvas(bitmap), destroyed.Add);
+        Assert(selected == new IntPtr(2) && requestedLists.SequenceEqual([4, 2])
+            && destroyed.SequenceEqual([new IntPtr(4)]),
+            "Small artwork must fetch the 48px icon and release the superseded jumbo handle.");
+        requestedLists.Clear();
+        destroyed.Clear();
+        selected = ShellIconExtractor.SelectImageListIcon(7, 96, Extract,
+            _ => ShellIconExtractor.HasSmallArtworkOnJumboCanvas(full), destroyed.Add);
+        Assert(selected == new IntPtr(4) && requestedLists.SequenceEqual([4]) && destroyed.Count == 0,
+            "Full artwork remains jumbo without a second query.");
+        requestedLists.Clear();
+        selected = ShellIconExtractor.SelectImageListIcon(7, 48, Extract, _ => throw new InvalidOperationException(), destroyed.Add);
+        Assert(selected == new IntPtr(2) && requestedLists.SequenceEqual([2]),
+            "48px icon must query only SHIL_EXTRALARGE.");
+        return Task.CompletedTask;
+    }
+
+    internal static Task CacheHitRefreshesDiskRecency()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"nxtools-icon-recency-{Guid.NewGuid():N}");
+        try
+        {
+            var cache = new IconCache(root);
+            var key = IconCacheKey.Create(".zip", null, 48, 0, "file-type/image-list-v2");
+            Assert(cache.TryGetOrCreate(key, path => { File.WriteAllBytes(path, [1]); return true; }, out var path),
+                "Owned cache creates one image.");
+            var old = DateTime.UtcNow.AddDays(-4);
+            File.SetLastWriteTimeUtc(path, old);
+            Assert(cache.TryGetOrCreate(key, _ => throw new InvalidOperationException("unexpected regeneration"), out _),
+                "Hot cache entry remains reusable.");
+            Assert(File.GetLastWriteTimeUtc(path) > old.AddDays(1),
+                "Memory hit must refresh disk trim recency without regenerating.");
+            File.SetLastWriteTimeUtc(path, old);
+            Assert(new IconCache(root).TryGetOrCreate(key,
+                _ => throw new InvalidOperationException("unexpected disk regeneration"), out _),
+                "Disk cache hit remains reusable across instances.");
+            Assert(File.GetLastWriteTimeUtc(path) > old.AddDays(1),
+                "Disk hit must also refresh trim recency without regenerating.");
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
         }
         return Task.CompletedTask;
     }

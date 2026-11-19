@@ -253,46 +253,7 @@ impl PlatformEventDispatcher {
                 );
                 match request.action {
                     TrayAction::Open if self.main_window_handle != 0 => {
-                        if self.pending_tray_restore.is_some() {
-                            warn!(
-                                event = "product.shell.tray_action_failed",
-                                correlation_id = %request.correlation_id,
-                                action = "open",
-                                failure_kind = "operation_in_progress",
-                                elapsed_ms = started_at.elapsed().as_millis(),
-                                "a notification-area restore is already pending"
-                            );
-                            self.forward_to_applications(notification, cx);
-                            return;
-                        }
-                        match enqueue_tray_restore(
-                            &self.platform,
-                            self.main_window_handle,
-                            request.correlation_id,
-                            started_at,
-                        ) {
-                            Ok(pending) => {
-                                self.pending_tray_restore = Some(pending);
-                                let operation_id = request.correlation_id;
-                                cx.spawn(async move |this, cx| {
-                                    cx.background_executor()
-                                        .timer(std::time::Duration::from_secs(5))
-                                        .await;
-                                    let _ = this.update(cx, |dispatcher, _| {
-                                        dispatcher.tray_restore_timed_out(operation_id);
-                                    });
-                                })
-                                .detach();
-                            }
-                            Err(_) => warn!(
-                                event = "product.shell.tray_action_failed",
-                                correlation_id = %request.correlation_id,
-                                action = "open",
-                                failure_kind = "platform_enqueue",
-                                elapsed_ms = started_at.elapsed().as_millis(),
-                                "notification-area restore commands could not be queued"
-                            ),
-                        }
+                        self.begin_main_window_restore(request.correlation_id, started_at, cx);
                     }
                     action if tray_action_exits(action) => {
                         info!(
@@ -332,6 +293,44 @@ impl PlatformEventDispatcher {
             "silent startup could not reach the Windows shell adapter"
         );
         cx.quit();
+    }
+
+    fn begin_main_window_restore(
+        &mut self,
+        correlation_id: Uuid,
+        started_at: Instant,
+        cx: &mut Context<Self>,
+    ) {
+        if self.pending_tray_restore.is_some() {
+            warn!(event = "product.shell.tray_action_failed", %correlation_id, action = "open",
+                failure_kind = "operation_in_progress", elapsed_ms = started_at.elapsed().as_millis(),
+                "a main window restore is already pending");
+            return;
+        }
+        match enqueue_tray_restore(
+            &self.platform,
+            self.main_window_handle,
+            correlation_id,
+            started_at,
+        ) {
+            Ok(pending) => {
+                self.pending_tray_restore = Some(pending);
+                cx.spawn(async move |this, cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(5))
+                        .await;
+                    let _ = this.update(cx, |dispatcher, _| {
+                        dispatcher.tray_restore_timed_out(correlation_id)
+                    });
+                })
+                .detach();
+            }
+            Err(_) => {
+                warn!(event = "product.shell.tray_action_failed", %correlation_id, action = "open",
+                failure_kind = "platform_enqueue", elapsed_ms = started_at.elapsed().as_millis(),
+                "main window restore commands could not be queued")
+            }
+        }
     }
 
     fn handle_tray_restore_result(
@@ -461,6 +460,7 @@ impl PlatformEventDispatcher {
     }
 
     fn forward_to_applications(&self, notification: PlatformNotification, cx: &mut Context<Self>) {
+        crate::tools::markdown_reader::platform_notification(&notification, cx);
         crate::ui::components::native_context_menu::handle_notification(&notification, cx);
         let extension = cx
             .try_global::<crate::extensions::ExtensionApplicationGlobal>()
@@ -584,6 +584,17 @@ impl PlatformEventDispatcherGlobal {
 }
 
 impl Global for PlatformEventDispatcherGlobal {}
+
+pub(crate) fn restore_main_window(correlation_id: Uuid, started: Instant, cx: &mut gpui_kit::App) {
+    if let Some(dispatcher) = cx
+        .try_global::<PlatformEventDispatcherGlobal>()
+        .map(|global| global._dispatcher.clone())
+    {
+        dispatcher.update(cx, |dispatcher, cx| {
+            dispatcher.begin_main_window_restore(correlation_id, started, cx)
+        });
+    }
+}
 
 #[cfg(test)]
 mod tray_tests {

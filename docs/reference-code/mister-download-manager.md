@@ -38,6 +38,15 @@ NxTools retains its limiter: `rate_limit.rs:54-123` resets state and wakes waite
 
 `queue.rs:14-64,151-188` persists queue completion actions, including opening a file. Queue complete includes exhausted failed tasks. `dialogs.rs:1990-2146` gives power actions a cancellable30s countdown; Enter cancels. NxTools keeps its existing400ms terminal coalescing, deduplicated folder actions, one30s power coordinator and cancellation when new work arrives (`completion_actions.rs:46-193`). Sleep/Hibernate/Exit and queue-level actions are separate potential additions, not part of the Server slice.
 
+Reverified2026-11-11 after ABDM/legacy comparison: `queue.rs::finished` also returns
+true for an empty queue (`all`) and exhausted failures; neither grants B5 success authority.
+`app.rs::when_done` replaces a transient power countdown and otherwise requests Exit;
+it does not arbitrate concurrent queues. B5 extends the original NxTools.Next task/queue
+and SQLite owners, retains one CompletionActionCoordinator/max3 directory feedback,
+persists intention independently of windows, and never restores old countdown authority
+from terminal records. Exact current owner chains, merge rule and native/normal-exit
+acceptance boundaries are in `.trellis/tasks/11-11-reference-b5-completion-intentions/design.md`.
+
 ## Browser integration
 
 ABDM baseline: `desktop/app/.../nativemessaging/host/DefinedHandlers.kt:8-23` → single-instance IPC → `IntegrationHandlerImp.kt:29-45,93-116` → ordinary HTTP/HLS add owner. `NativeMessagingHost.kt:36-100` owns stdio/EOF. Local ABDM checkout does not contain its independent browser-extension repository.
@@ -67,11 +76,11 @@ NxTools already has one-shot manual prefill (`downloads/clipboard_prefill.rs:10-
 
 | Candidate | Source-backed value | Decision |
 | --- | --- | --- |
-| Mister host ceiling learning | `engine/src/hosts.rs:1-88`: repeated connection refusal learns successful host width,10min decay | Consider after actual host-refusal evidence; not a scheduler replacement. |
-| Mister slow connection retirement | `download.rs:43-50,3096-3110`:≥2s connection, below quarter of best, sufficient remaining work; disabled when limited | Useful bounded heuristic; benchmark against Nx adaptive shrink first. |
+| Mister host ceiling learning | `engine/src/hosts.rs:1-88`: repeated refusal learns the largest receiving width, two observations, ten-minute expiry | Adopt for HTTP segmented fault recovery; host plus Nx route/policy/TLS/System-client scope. |
+| Mister slow connection retirement | `download.rs:43-50,3096-3110`: response age ≥2s, below quarter of best, >2s remaining; disabled by any limiter | Adopt with live claim-bounded tail splitting in `11-12-download-fault-recovery`. |
 | Mister retained first GET | `download.rs:732-831,1450-1489`: retained probe response≤15min reused as transfer | Useful for single-use URLs; requires lifecycle/resource study. |
 | Mister multi-IP racing | `dns.rs:672-739`: bounded TCP race/cache | Extra connections and routing semantics are a tradeoff; not part of Server UI. |
-| Nx adaptive scheduling | `engine.rs:180-334`, `segmented_runner.rs:2050-2092` | Keep stable sampling/growth rollback/shrink and durable stop-sync-checkpoint-before-split. |
+| Nx adaptive scheduling | Original sampled growth/shrink and stop-sync-checkpoint split | Superseded for HTTP segments by the fault-recovery planner; persisted settings and media owners remain unchanged. |
 | Ghost HTTP adaptation | `features/http_pack/task.py:184-261`: slowest-range splitting, five stable samples, five-second benefit check | Behavioral reference; Nx already has comparable adaptation. |
 | Ghost task UX | paused URL replacement, URL templates, range coverage graph and feature packs | Useful independent product additions; no automatic protocol expansion. |
 
@@ -97,3 +106,147 @@ Next implements `DownloadProbe.server_observation` in `rust/crates/nxtools-downl
 `bg/request-context.js` / `bg/handoff.js` preserve originating download/request/tab store identity and query `cookies.getAll({url,storeId})` without URL-only or alternate-store fallback. Privacy filters candidates but does not identify an ordinary tab/container. A unique referrer tab is fed back into snapshot/Cookie resolution; ambiguous sources do not borrow credentials. Same-URL container/private, redirect, closed/replaced-tab, unsupported-API and disabled-gate fixtures observe exact Cookie queries and Native Messaging payloads. No extra Rust store field, permission or credential store is introduced. [B1 extension results](../../.trellis/tasks/11-09-reference-b1-existing-correctness/extension-outcomes.md).
 
 BrowserHost accepts only an identity-matched durable engine receipt. A created confirmation window returns `accepted=false` with `awaiting_confirmation/confirmation_pending`; QueueOnly persistence remains distinct from channel enqueue and download completion. The popup explains fixed policy/failure reasons without request payload. The cross-language extension/host fixture checks named-store Cookies, confirmation ownership, actual pipe/engine cancellation after browser-cancel failure, stable replay and refusal; the stored result remains one Cancelled task. [B1 host results](../../.trellis/tasks/11-09-reference-b1-existing-correctness/host-outcomes.md).
+
+## B6 verified connection boundaries — 2026-11-11
+
+Actual source was reviewed after ABDM and legacy compatibility: Mister `hosts.rs:1,29` uses two extra-refusal observations/ten-minute learning; `download.rs:725,1450` retains an already issued byte-zero response; `download.rs:2543,2718,2933,3085` owns admission/peer evidence/stop-join/slow retirement; `dns.rs:567,617,703` creates additional TCP race sockets and a winner preference. These are behavioral inputs, not adopted code or product constants.
+
+The [B6 review](../../.trellis/tasks/11-11-reference-b6-connection-experiments/reference-review.md) also verifies Next's fallback-only full GET opportunity and default no-op receipt boundary, original adaptive writer/checkpoint seam, and locked300ms cross-family Happy Eyeballs. The [experiment design](../../.trellis/tasks/11-11-reference-b6-connection-experiments/design.md) keeps host+route evidence, explicit response retirement, limiter exclusions and proxy/TLS ownership. No reference program or timed B6 workload has run; A native lifecycle/memory verification is the timing prerequisite.
+
+## HTTP segmented fault recovery
+
+Approved mapping: [fault-recovery solution](../../.trellis/tasks/11-12-download-fault-recovery/solution.md).
+ABDM `PartSplitSupport::{howMuchCanRead,splitPart}` and `HttpPartDownloader::connectAndVerify`
+were checked first; legacy `Services/DownloadManagerService.cs::{DownloadSegmentWithRetryAsync,
+DownloadSegmentAsync,CopyToTargetAtOffsetAsync}` confirms offset resume and Range validation.
+The approved scheduler behavior follows Mister, not the legacy pressure-mode implementation.
+
+Verified Mister entries: `planner.rs:22-38,182-283` owns contiguous half-open ranges, written cursor,
+reserved cursor, timed pending takeover and largest-unclaimed-tail splitting; `download.rs:2543-2620`
+supervises per-connection workers; `download.rs:2638-2775` releases assignments before classifying
+fatal/refused/dead-link/progress-aware retry outcomes. `download.rs:2933-3131` claims received bytes
+before buffering writes, commits only written bytes, flushes on body errors and cancellation, and
+drops the response on reaching a shortened end. `download.rs:2667-2677,2966-2975` verifies up to64
+already-written bytes on a resumed request; mismatch is fatal. `download.rs:398-409,3231-3242`
+handles immediate first retry, subsequent1/2/4/8/16second delays and Retry-After seconds/HTTP-date
+capped at300seconds. `hosts.rs:29-75` learns from429/503/403/connect refusals with other assigned
+workers, using max(receiving,1), raises proven width on later payload and expires after600seconds.
+
+Nx mapping preserves original task/plan/artifact identity, strict persisted If-Range validation,
+single-stream fallback, limiter and final publication owners. A pure planner gains a synced cursor;
+only synced prefixes enter SQLite. Split mutation occurs under its short lock, persistence outside
+that lock, and the new assignment cannot request until its new plan is committed. Claims protect
+in-flight disk writes while the original connection continues. Pause/cancel/fatal completion drains
+all actual writers before the final checkpoint and state transition. Progress/range maps update in
+their established order outside IO. HTTP adaptive settings remain serialized but no longer drive
+segmented scheduling. No native window/placement/focus behavior changes in this backend slice.
+Behavioral reference only; no GPL implementation, comments, tests or assets are incorporated.
+
+## Unexpected web-page response — 2026-11-13
+
+Local current Mister `crates/engine/src/download.rs::expects_other_file`3974,
+`never_a_page`4031, `not_a_page`4085 and request3703 distinguish a waiting/login
+page from a requested binary by declared type and a finite byte-zero prefix.
+Intentional HTML and old Office HTML exports remain valid. Resumed full-page
+answers fail without replacing the saved artifact. `crates/app/src/progress.rs`
+offers an explicit browser action; it does not solve the site's challenge.
+
+ABDM was checked first: `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/HttpPartDownloader.kt::connectAndVerify`
+and `downloaditem/http/HttpDownloadJob.kt::fetchDownloadInfoAndValidate`631 keep
+validation before writes, reject a resumed file becoming a declared web page,
+and publish only after writer drain. Legacy
+`Services/DownloadManagerService.cs::BuildProbeResult`1139 and
+`DownloadSegmentAsync`2124 preserve server filename priority and Range checks.
+Neither is replaced by content sniffing. The approved slice is
+`.trellis/tasks/11-13-download-web-page/`: bounded prefix only, no extra request,
+typed nonretryable failure, original keyed failure window and deferred native
+browser action. Existing checkpoints, no-replace publication, placement/focus
+and close-as-presentation remain authoritative. Behavioral reference only.
+
+## Disk pressure and network clocks — 2026-11-13
+
+ABDM `downloader/core/src/commonMain/kotlin/ir/amirab/downloader/part/PartDownloader.kt::copyDataSync`251-303
+reads, writes synchronously and advances the part cursor after the write;
+`destination/DestWriter.kt::write`49-63 owns the sink and cursor. It has no
+relative-speed connection retirement policy. Legacy NxTools
+`Services/DownloadManagerService.cs::CopyToTargetAtOffsetAsync`2661-2732 puts
+`ReadWithStallTimeoutAsync` around reads only; disk writes and throttling
+remain outside that timeout.
+
+Mister `crates/engine/src/download.rs::Pace`4620-4663 accumulates actual disk
+wait time. `yardstick`4677-4690 uses total elapsed, avoiding an inflated peer
+benchmark after buffered bursts; `should_shed`4696-4721 uses network elapsed
+and excludes recent disk pressure and rate limits. `DISK_HELD`54 is50ms and
+the retirement grace is2s. Only these timing semantics are adopted, not its
+large per-task buffer or checkpoint-deferral policy.
+
+Next maps the clocks at the original `http/segmented.rs::ClaimedWriter` and
+`SegmentReceiveState` boundaries. Claim/commit/mark_synced, bounded batches,
+written-byte progress, checkpoint cadence, Range overlap and pause/cancel
+writer drain retain their owners. Body-stall deadlines exclude actual local
+waits, not periodic empty flushes. No UI/native lifecycle changes. The
+approved slice is `.trellis/tasks/11-13-download-disk-backpressure/`.
+Behavioral reference only; no GPL code, tests, comments or assets are reused.
+
+## Finishing stages — 2026-11-13
+
+ABDM `downloaditem/hls/HLSDownloadJob.kt:44-63` writes through
+`SegmentedDownloadDestination`; no separate merge percentage is available.
+Legacy `Services/DownloadManagerService.cs::{MergeHlsAndVerifyAsync:3557-3592,
+MergeDashAndVerifyAsync:3595-3682}` enters Merging, uses cancellation-aware
+copies and FFmpeg, and publishes only after preparation. Its
+`ViewModels/DownloadTaskViewModel.cs:142-233` labels merging explicitly and
+uses indeterminate progress. Existing verification is not introduced here.
+Mister `crates/tools/src/video.rs:779-782,934-939,1022` consumes child stdout
+and avoids treating received bytes as completed media; unknown totals do not
+produce a percentage. Behavioral reference only.
+
+Next owners are `engine/{hls_runner,dash_runner}` for bounded fragment copy,
+`media.rs::{mux_dash_tracks,mux_dash_tracks_with_timeout}` for child start,
+stop, timeout and pipe drain, and `engine.rs::{publish_transfer_progress,publish_finishing_progress}`
+for rate-limited events. `DownloadEngine::{pause,cancel_correlated}` forwards
+Finalizing HLS/DASH stops through their existing transfer control; the runner
+closes its writer/process before retaining paused fragments or deleting cancelled
+artifacts. `downloads::handle_engine_event` projects into the
+existing generation-scoped task window through `task_windows_impl`; its
+hidden/native-placement/show/focus lifecycle is unchanged. Finishing progress
+uses separate byte or media-time units, never transfer-byte counters.
+Concatenation uses actual fragment lengths, muxing uses child out_time_us and
+known media duration, publication remains indeterminate. HLS must check stop
+inside the same bounded copy loop before no-replace publication. The approved
+slice is `.trellis/tasks/11-13-download-finishing-progress/`.
+
+## Completion grouping and source-page facts — 2026-11-13
+
+ABDM `AppComponent.kt:637-679` reports each job; `BaseSingleDownloadComponent.kt:57-61,103-133`
+has a memory-only per-item completion-dialog override. Legacy
+`ViewModels/MainWindowViewModel.cs::HandleDownloadCompleted:4317-4335` is
+per-task. Mister `crates/app/src/{progress.rs:750-863,queue.rs:14-64,151-188}`
+supplies completion/power behavior only, not trustworthy all-success batch
+authority. Next keeps `completion_shutdown_impl -> CompletionActionCoordinator`
+as the original400ms terminal/feedback owner, and B5 remains the only power
+authority. Runtime membership may use the existing intake correlation through
+the nonserialized completion snapshot; no durable batch protocol is added.
+NotificationCenter and `notifications/screen.rs::open_surface` remain the sole
+bounded stack and passive hidden/place/show HWND owners. Grouped members must
+not create new individual fallback windows; existing task windows retain keyed
+terminal transitions. Completion notices display result text without task-location
+or temporary-mute actions; configured sound and directory feedback remain unchanged.
+
+ABDM has no persisted source-page concept in the inspected downloader/shared
+trees. Legacy `browser_extension/nxtools-interceptor/background.js::sendDownloadPayload:2564`
+uses contextUrl for request context but persists no page field. Mister
+`crates/nmhost/src/main.rs:79-80,108-118,528,560-561,598-607` accepts a page
+referrer and optional title; `crates/app/src/app.rs::sent_referrer:1130-1149`
+narrows the actual Referer by origin/security policy. That derived header
+cannot reconstruct the page address. Behavioral reference only.
+
+Next's in-memory capture pageUrl/pageTitle flows from `bg/capture.js`,
+`bg/link-collection.js` and `bg/popup-state.js` into `bg/handoff.js`, then
+`BrowserDownloadPayload -> build_browser_download_request` for single, batch
+and controlled prepare. Optional source_page on DownloadRequest passes through
+StoredResolvedRequest and existing SQLite request_json into TaskDetail.
+Download URL, final URL and frozen Referer retain separate roles. Absent
+metadata skips serialization to preserve old request receipts; provenance is
+excluded from resolution_resource_fingerprint. User name edits and paused URL
+replacement preserve the page metadata. No page fetch or page-value logging.

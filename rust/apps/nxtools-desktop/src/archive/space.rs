@@ -411,6 +411,7 @@ mod tests {
                 selection: selection.map(|ordinals| ArchiveJobSelection {
                     browser: data.browser.clone(),
                     ordinals,
+                    strip_prefix: None,
                 }),
                 reclamation: None,
             }),

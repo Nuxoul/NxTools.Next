@@ -10,6 +10,8 @@ pub struct SegmentedArtifact {
     path: PathBuf,
     total_bytes: u64,
     allocation: ArtifactAllocation,
+    #[cfg(test)]
+    pub(crate) write_delay: std::time::Duration,
 }
 
 impl SegmentedArtifact {
@@ -28,6 +30,8 @@ impl SegmentedArtifact {
             path,
             total_bytes,
             allocation,
+            #[cfg(test)]
+            write_delay: std::time::Duration::ZERO,
         })
     }
 
@@ -47,6 +51,8 @@ impl SegmentedArtifact {
             allocation: artifact_allocation(&path),
             path,
             total_bytes,
+            #[cfg(test)]
+            write_delay: std::time::Duration::ZERO,
         })
     }
 
@@ -75,7 +81,19 @@ impl SegmentedArtifact {
             file,
             segment_index: segment.index(),
             remaining_bytes: segment.len() - segment.downloaded_bytes(),
+            #[cfg(test)]
+            fail_write_after: None,
+            #[cfg(test)]
+            write_delay: self.write_delay,
         })
+    }
+
+    pub(crate) async fn sync_data(&self) -> Result<(), SegmentedArtifactError> {
+        let path = self.path.clone();
+        tokio::task::spawn_blocking(move || open_segment_file(&path)?.sync_data())
+            .await
+            .map_err(|error| SegmentedArtifactError::BackgroundTask(error.to_string()))??;
+        Ok(())
     }
 
     pub fn path(&self) -> &Path {
@@ -211,9 +229,18 @@ pub struct SegmentWriter {
     file: tokio::fs::File,
     segment_index: u32,
     remaining_bytes: u64,
+    #[cfg(test)]
+    fail_write_after: Option<usize>,
+    #[cfg(test)]
+    write_delay: std::time::Duration,
 }
 
 impl SegmentWriter {
+    #[cfg(test)]
+    pub(crate) fn fail_next_write_after(&mut self, prefix: usize) {
+        self.fail_write_after = Some(prefix);
+    }
+
     pub async fn write_all(&mut self, bytes: &[u8]) -> Result<(), SegmentedArtifactError> {
         let attempted_bytes =
             u64::try_from(bytes.len()).map_err(|_| SegmentedArtifactError::PositionOverflow)?;
@@ -224,8 +251,23 @@ impl SegmentWriter {
                 attempted_bytes,
             });
         }
+        #[cfg(test)]
+        tokio::time::sleep(self.write_delay).await;
+        #[cfg(test)]
+        if let Some(prefix) = self.fail_write_after.take() {
+            self.file
+                .write_all(&bytes[..prefix.min(bytes.len())])
+                .await?;
+            self.file.flush().await?;
+            return Err(std::io::Error::other("injected partial write failure").into());
+        }
         self.file.write_all(bytes).await?;
         self.remaining_bytes -= attempted_bytes;
+        Ok(())
+    }
+
+    pub(crate) async fn flush(&mut self) -> Result<(), SegmentedArtifactError> {
+        self.file.flush().await?;
         Ok(())
     }
 

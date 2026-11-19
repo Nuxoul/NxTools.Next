@@ -123,6 +123,8 @@ impl AssetSource for NxToolsAssets {
             "caption/restore.svg" => Some(include_bytes!("../assets/caption/restore.svg")),
             "caption/close.svg" => Some(include_bytes!("../assets/caption/close.svg")),
             "brand/nxtools.png" => Some(include_bytes!("../assets/brand/nxtools-32.png")),
+            "brand/nxtools-128.png" => Some(include_bytes!("../assets/brand/nxtools-128.png")),
+            "brand/about-emblem.svg" => Some(include_bytes!("../assets/brand/about-emblem.svg")),
             "brand/archive.png" => Some(include_bytes!("../assets/brand/nxtools-archive-32.png")),
             //20DIP caption/tree canvases need40source pixels at200%; reuse existing derivatives.
             "brand/nxtools-40.png" => Some(include_bytes!("../assets/brand/nxtools-40.png")),
@@ -155,6 +157,8 @@ impl AssetSource for NxToolsAssets {
             .chain(
                 [
                     "brand/nxtools.png",
+                    "brand/nxtools-128.png",
+                    "brand/about-emblem.svg",
                     "brand/archive.png",
                     "brand/nxtools-40.png",
                     "brand/archive-40.png",

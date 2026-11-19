@@ -110,6 +110,15 @@ internal static class BrowserExtensionSigningTests
         input.Write(Encoding.ASCII.GetBytes("CRX3 SignedData\0"));
         input.Write(BitConverter.GetBytes((uint)signed.Length)); input.Write(signed); input.Write(crx.AsSpan(12 + headerLength));
         Require(rsa.VerifyData(input.ToArray(), proof[2], HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1), "Actual CRX signature verifies.");
+        using (var payload = new MemoryStream(crx.AsSpan(12 + headerLength).ToArray()))
+        using (var archive = new System.IO.Compression.ZipArchive(payload, System.IO.Compression.ZipArchiveMode.Read))
+        {
+            var entry = archive.GetEntry("manifest.json") ?? throw new InvalidOperationException("CRX manifest missing.");
+            using var reader = new StreamReader(entry.Open());
+            var exported = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!.AsObject();
+            Require(exported["version"]!.GetValue<string>() == FixtureVersion, "CRX preserves the source release version.");
+            Require(exported["permissions"]!.ToJsonString() == System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(Path.Combine(fixture.Source, "manifest.json")))!["permissions"]!.ToJsonString(), "Local CRX keeps the shared Chromium permission list without Firefox blocking authority.");
+        }
         var origins = BrowserNativeMessagingRegistrar.ChromiumAllowedOrigins("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", fixture.Source, fixture.KeyPath);
         Require(origins.Contains($"chrome-extension://{BrowserExtensionSigningIdentity.ChromiumId(proof[1])}/"), "Registrar trusts actual exported identity.");
         BrowserExtensionPackageService.ExportWithSigningKey("chrome", Path.Combine(fixture.Root, "second.crx"), fixture.Source, fixture.KeyPath);
@@ -137,6 +146,7 @@ internal static class BrowserExtensionSigningTests
             using var manifestReader = new StreamReader(manifestEntry.Open());
             var storeManifest = System.Text.Json.Nodes.JsonNode.Parse(manifestReader.ReadToEnd())!.AsObject();
             Require(!storeManifest.ContainsKey("key"), "Chrome Web Store manifest must omit key.");
+            Require(storeManifest["version"]!.GetValue<string>() == FixtureVersion, "Store ZIP preserves the source release version.");
             Require(storeManifest["permissions"]!.ToJsonString() == System.Text.Json.Nodes.JsonNode.Parse(Encoding.UTF8.GetString(storeSourceManifest))!["permissions"]!.ToJsonString(), "Store export must preserve permissions and behavior.");
         }
         Require(File.ReadAllBytes(Path.Combine(fixture.Source, "manifest.json")).SequenceEqual(storeSourceManifest), "Store export must not change local-load manifest identity.");
@@ -148,10 +158,14 @@ internal static class BrowserExtensionSigningTests
             var entry = archive.GetEntry("manifest.json") ?? throw new InvalidOperationException("XPI manifest missing.");
             using var reader = new StreamReader(entry.Open());
             var exported = System.Text.Json.Nodes.JsonNode.Parse(reader.ReadToEnd())!.AsObject();
+            Require(exported["version"]!.GetValue<string>() == FixtureVersion, "Firefox XPI preserves the source release version.");
             var background = exported["background"]!.AsObject();
             var scripts = background["scripts"]!.AsArray().Select(node => node!.GetValue<string>()).ToArray();
             Require(scripts.SequenceEqual(FixtureBackgroundScripts), "Firefox XPI keeps the complete ordered background script list.");
             Require(!background.ContainsKey("service_worker"), "Firefox XPI does not declare an unsupported service worker.");
+            var permissions = exported["permissions"]!.AsArray().Select(node => node!.GetValue<string>()).ToArray();
+            Require(permissions.SequenceEqual(new[] { "storage", "webRequestBlocking" }), "Firefox alone replaces DNR with blocking response authority, preserving other permissions and order.");
+            Require(File.ReadAllBytes(Path.Combine(fixture.Source, "manifest.json")).SequenceEqual(storeSourceManifest), "Firefox export must not change the shared local/store manifest.");
         }
         File.WriteAllText(fixture.KeyPath, "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----");
         var corrupt = File.ReadAllBytes(fixture.KeyPath);
@@ -197,6 +211,7 @@ internal static class BrowserExtensionSigningTests
         throw new InvalidOperationException("Malformed key must preserve original failure category.");
     }
     private static readonly string[] FixtureBackgroundScripts = { "handoff-policy.js", "batch-handoff-policy.js", "background.js" };
+    private const string FixtureVersion = "0.7.1";
     private sealed class SigningFixture : IDisposable
     {
         internal string Root { get; } = Path.Combine(Path.GetTempPath(), "nxtools-signing-fixture-" + Guid.NewGuid().ToString("N"));
@@ -209,7 +224,7 @@ internal static class BrowserExtensionSigningTests
             {
                 ["manifest_version"] = 3,
                 ["name"] = "fixture",
-                ["version"] = "0.0.1",
+                ["version"] = FixtureVersion,
                 ["key"] = key,
                 ["permissions"] = new System.Text.Json.Nodes.JsonArray("declarativeNetRequest", "storage"),
                 ["background"] = new System.Text.Json.Nodes.JsonObject

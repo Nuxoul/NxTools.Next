@@ -16,8 +16,8 @@ internal interface IElevatedDirectoryNavigationChannel : IDisposable
     WindowsCommandResult Navigate(NavigateDirectoryCommand command);
 }
 
-internal sealed class ElevatedDirectoryNavigationClient :
-    IElevatedDirectoryNavigationChannel
+internal sealed partial class ElevatedDirectoryNavigationClient :
+    IElevatedDirectoryNavigationChannel, IElevatedInputChannel
 {
     internal const string ContextPrefix = "elevated:";
     private static readonly TimeSpan CaptureTimeout =
@@ -39,10 +39,12 @@ internal sealed class ElevatedDirectoryNavigationClient :
 
     public ElevatedDirectoryNavigationClient(
         Action<ElevatedDirectoryHelperRequestedEvent> requestHelper,
-        IPlatformLog log)
+        IPlatformLog log, IElevatedInputClientPlatform? inputPlatform = null, Func<long>? inputClock = null)
     {
         _requestHelper = requestHelper;
         _log = log;
+        _inputPlatform = inputPlatform ?? new ElevatedInputClientPlatform();
+        _inputClock = inputClock ?? (() => Environment.TickCount64);
         TryBeginRendezvous();
     }
 
@@ -88,9 +90,14 @@ internal sealed class ElevatedDirectoryNavigationClient :
             StringComparison.Ordinal) == true;
 
     private ElevatedDirectoryHelperResponse? SendRequest(
+        ElevatedDirectoryHelperRequest request, TimeSpan timeout) =>
+        SendRequest(request, timeout, out _);
+
+    private ElevatedDirectoryHelperResponse? SendRequest(
         ElevatedDirectoryHelperRequest request,
-        TimeSpan timeout)
+        TimeSpan timeout, out bool dispatched)
     {
+        dispatched = false;
         lock (_requestGate)
         {
             HelperConnection? connection;
@@ -105,6 +112,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
             }
             try
             {
+                dispatched = true;
                 connection.Writer.WriteLine(
                     JsonSerializer.Serialize(request, JsonDefaults.Options));
                 var responseTask = BoundedTextFrameReader.ReadLineAsync(
@@ -260,7 +268,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
                     Encoding.ASCII.GetBytes(hello.AuthenticationToken),
                     Encoding.ASCII.GetBytes(authenticationToken)) ||
                 !hello.Elevated ||
-                !ElevatedDirectoryHelperPeerVerifier.IsPackagedHelper(
+                !_inputPlatform.VerifyHelper(
                     server,
                     hello.ProcessId))
             {
@@ -280,6 +288,8 @@ internal sealed class ElevatedDirectoryNavigationClient :
                 _rendezvousInProgress = false;
                 _rendezvousFailures = 0;
             }
+            ObserveHelperExit(connection);
+            StartInputConfiguration();
             _log.Write("info", "elevated_directory_helper.connected", fields:
                 HelperConnectedDiagnosticFields(hello.ProcessId));
         }
@@ -380,8 +390,9 @@ internal sealed class ElevatedDirectoryNavigationClient :
             if (ReferenceEquals(_connection, connection))
             {
                 _connection = null;
-                _rendezvousFailures = 0;
-                restart = !_disposed;
+                ClearInputOwner();
+                restart = !_disposed && ++_automaticReconnects < MaximumRendezvousAttempts;
+                _rendezvousFailures = restart ? 0 : MaximumRendezvousAttempts;
             }
         }
         connection.Dispose();
@@ -405,6 +416,7 @@ internal sealed class ElevatedDirectoryNavigationClient :
         {
             _connection?.Dispose();
             _connection = null;
+            ClearInputOwner();
         }
         _shutdown.Dispose();
     }
@@ -418,17 +430,21 @@ internal sealed class ElevatedDirectoryNavigationClient :
         public int HelperProcessId { get; } = helperProcessId;
         public StreamReader Reader { get; } = reader;
         public StreamWriter Writer { get; } = writer;
+        private int _disposed;
 
         public void Dispose()
         {
-            Writer.Dispose();
-            Reader.Dispose();
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             pipe.Dispose();
+            Reader.Dispose();
+            try { Writer.Dispose(); }
+            catch (IOException) { }
+            catch (ObjectDisposedException) { }
         }
     }
 }
 
-internal sealed class ElevatedDirectoryNavigationSessionRegistry
+internal sealed class ElevatedDirectoryNavigationSessionRegistry : IDisposable
 {
     private const int MaximumSessions = 64;
     private static readonly TimeSpan SessionLifetime =
@@ -556,9 +572,19 @@ internal sealed class ElevatedDirectoryNavigationSessionRegistry
         }
     }
 
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            foreach (var contextId in _sessions.Keys.ToArray()) RemoveSession(contextId);
+        }
+    }
+
     private void RemoveSession(string contextId)
     {
-        _sessions.Remove(contextId);
+        if (_sessions.Remove(contextId, out var session) &&
+            session.Context.Host == DirectoryNavigationAdapter.ThirdPartyFileManagerHost)
+            ThirdPartyFileManagerAdapter.ReleaseContext(session.Context.HostContextId);
         if (_sessionOrderNodes.Remove(contextId, out var node))
         {
             _sessionOrder.Remove(node);
@@ -628,7 +654,7 @@ internal static class BoundedTextFrameReader
 
 internal static class ElevatedDirectoryNavigationHelper
 {
-    public static int Run(string pipeName, string authenticationToken)
+    public static int Run(string pipeName, string authenticationToken, IPlatformLog? log = null)
     {
         if (!ElevatedHelperProcessBroker.IsValidRendezvous(
                 pipeName,
@@ -637,7 +663,8 @@ internal static class ElevatedDirectoryNavigationHelper
         {
             return 2;
         }
-        ThirdPartyFileManagerAdapter.WarmUp();
+        using var directoryLifetime = ThirdPartyFileManagerAdapter.BeginLifetime(
+            log ?? NullPlatformLog.Instance, "elevated_directory_helper");
         try
         {
             using var pipe = new NamedPipeClientStream(
@@ -665,7 +692,11 @@ internal static class ElevatedDirectoryNavigationHelper
                     Environment.ProcessId,
                     true),
                 JsonDefaults.Options));
-            var sessions = new ElevatedDirectoryNavigationSessionRegistry();
+            using var sessions = new ElevatedDirectoryNavigationSessionRegistry();
+            if (!GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var serverProcessId) ||
+                !ElevatedDirectoryHelperPeerVerifier.IsSameSession(serverProcessId, (uint)Environment.ProcessId))
+                return 2;
+            using var input = new ElevatedInputHost(serverProcessId, log ?? NullPlatformLog.Instance);
             var foregroundProvider = new ForegroundContextProvider();
             while (pipe.IsConnected)
             {
@@ -726,6 +757,24 @@ internal static class ElevatedDirectoryNavigationHelper
                         null,
                         result.Error,
                         result.Fatal);
+                }
+                else if (request.Operation == "configure_input" && request.InputConfiguration is not null)
+                {
+                    var result = input.Configure(request.InputConfiguration);
+                    response = new(request.Id, result.Success, null, result.Error,
+                        NativeErrorCode: result.NativeErrorCode);
+                }
+                else if (request.Operation == "paste_input" && request.PasteInput is not null)
+                {
+                    var result = input.Paste(request.PasteInput);
+                    response = new(request.Id, result.Success, null, result.Error,
+                        NativeErrorCode: result.NativeErrorCode);
+                }
+                else if (request.Operation == "activate_window" && request.WindowActivation is not null)
+                {
+                    var result = input.Activate(request.WindowActivation);
+                    response = new(request.Id, result.Success, null, result.Error,
+                        NativeErrorCode: result.NativeErrorCode);
                 }
                 else
                 {
@@ -788,6 +837,10 @@ internal static class ElevatedDirectoryNavigationHelper
         var root = GetAncestor(focus, GetAncestorRoot);
         return focus == target || root == target;
     }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetNamedPipeServerProcessId(IntPtr pipe, out uint processId);
 
     private const uint GetAncestorRoot = 2;
 
@@ -967,11 +1020,15 @@ internal sealed record ElevatedDirectoryHelperRequest(
     Guid Id,
     string Operation,
     ForegroundContext? Foreground,
-    NavigateDirectoryCommand? Command);
+    NavigateDirectoryCommand? Command,
+    ElevatedInputConfiguration? InputConfiguration = null,
+    ElevatedPasteInput? PasteInput = null,
+    ElevatedWindowActivation? WindowActivation = null);
 
 internal sealed record ElevatedDirectoryHelperResponse(
     Guid Id,
     bool Success,
     DirectoryNavigationContext? Context,
     string? Error,
-    bool Fatal = false);
+    bool Fatal = false,
+    int? NativeErrorCode = null);

@@ -346,6 +346,7 @@ mod tests {
             }],
             cookie: Some("private fixture".into()),
             referrer: Some("https://original.test/private".into()),
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,

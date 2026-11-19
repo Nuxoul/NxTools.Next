@@ -82,6 +82,7 @@ async fn naming_plain_header_utf8_once_plus_literal_and_safe_fallback() {
             headers: vec![],
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: Default::default(),
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,

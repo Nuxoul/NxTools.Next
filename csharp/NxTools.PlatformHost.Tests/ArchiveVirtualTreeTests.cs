@@ -179,7 +179,7 @@ internal static class ArchiveVirtualTreeTests
         foreach(var value in data){crc^=value;for(var bit=0;bit<8;bit++)crc=(crc>>1)^((crc&1)==0?0u:0xedb88320u);}
         return ~crc;
     }
-    private static void SevenzOrdinalFixture(string path)
+    internal static void SevenzOrdinalFixture(string path)
     {
         // Raw 7z header, two independent Copy blocks and two zero-stream files. The
         // second block follows an empty entry in FilesInfo; both blocks share a name.

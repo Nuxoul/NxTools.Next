@@ -48,6 +48,7 @@ fn post_test_case(cx: &mut gpui_kit::TestAppContext, check_target: bool, test_cl
                 }
                 .into(),
                 volume_bytes: split.then_some(1_048_576),
+                self_extracting: false,
             });
             let id = owner.update(cx, |app, cx| {
                 app.submit_job(input, completion(), cx)
@@ -205,6 +206,7 @@ fn opt03_post_test_missing_location_cleanup_and_disconnect(cx: &mut gpui_kit::Te
             test_after_create: true,
             name: "request.zip".into(),
             volume_bytes: None,
+            self_extracting: false,
         });
         let id = owner.update(cx, |app, cx| {
             app.submit_job(input, completion(), cx).expect("Create")

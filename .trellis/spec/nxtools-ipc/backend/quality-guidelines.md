@@ -127,8 +127,40 @@ Wrong: Peek/sleep every8ms or retry absent pipe immediately; accept232 returns p
 ## Floating assistant original-connection cleanup
 Evidence: `repo:rust/crates/nxtools-ipc/src/floating_cleanup.rs`, `repo:rust/crates/nxtools-ipc/src/lib.rs#PlatformCommandReceiver`. Capture `floating_assistant_connection` before renderer preparation and pass that origin to `send_floating_assistant`; original generation is checked under the same router lock as pending/enqueue. Ordinary commands retain Busy/rollback. Full cleanup admission stores at most one exact envelope in the original ActiveConnection, not a retry task or unbounded queue. Same-token release coalesces; same-lease retire covers release; other token/session/generation/HWND cannot replace it.
 
-Original command dequeue immediately re-admits the retained envelope through CommandRouter::enqueue after capacity returns, registering pending before visibility. Old consumer cannot flush into a replacement connection; EOF/replacement retires the slot and original C# pipe owner owns physical cleanup. Retire has no ordinary pending deadline and waits for exact terminal/disconnect. Floating Retire keeps PendingCommand timeout=None; ordinary10second and picker120second deadlines plus archive receipt exemptions stay unchanged outside the separate raw-join contract below. Deferred/resumed diagnostics retain original operation correlation without serialized payloads.
+Original command dequeue immediately re-admits the retained envelope through CommandRouter::enqueue after capacity returns, registering pending before visibility. Old consumer cannot flush into a replacement connection; EOF/replacement retires the slot and original C# pipe owner owns physical cleanup. Retire has no ordinary pending deadline and waits for exact terminal/disconnect. Floating Retire and human-driven PickImage keep PendingCommand timeout=None; other floating operations retain the ordinary10second deadline. Archive receipt exemptions stay unchanged outside the separate raw-join contract below. Deferred/resumed diagnostics retain original operation correlation without serialized payloads.
 
 Required tests: capacity1 full/duplicate release/competing token+generation/retire coalescing, consumer progress after bridge destruction, replacement origin refusal/no replay, and original Retire terminal after60second sweep. Retain all ordinary queue/pending/timeout/disconnect and archive fair-cancel tests. This is transport ownership evidence, not actual native or release acceptance.
 
 Ordinary numbered-file joining follows [the physical-operation contract](../../platformhost/raw-numbered-join.md): origin-bound pending-before-send, no ordinary Inspect/Start timeout, exact coalesced reserved Cancel with original fairness, and release only on the original operation terminal or connection retirement. Cancel ACK does not free the operation.
+
+## Scenario: Floating image picker human wait
+### 1. Scope / Trigger
+`FloatingAssistantOperation::PickImage` enters the shared platform command router through the Desktop caller-assigned command ID.
+### 2. Signatures
+`PlatformBridge::send_command_with_id(PlatformCommand::FloatingAssistant(command), id)` -> `CommandRouter::enqueue` -> original-generation `PlatformNotification::CommandResult { correlation_id: id, result }`.
+### 3. Contracts
+Register pending before enqueue with timeout=None. Keep the request until the original native selection/cancel result or connection retirement; do not apply a machine deadline to human wait. Preserve bounded admission, caller ID, generation checks and exactly-once completion. Other floating operations keep their existing timeout policy. Native dialog ownership, placement, focus and cancellation remain unchanged.
+### 4. Validation & Error Matrix
+Waiting beyond ordinary deadline -> pending, no failure notification. Matching delayed selection/cancel -> forward unchanged once. Disconnect -> remove pending and report its ID. Old-generation result -> reject without consuming a replacement request. Ordinary machine command -> original timeout failure.
+### 5. Good/Base/Bad Cases
+Good: image selection after11/121/601seconds still completes. Base: cancel returns successful selected_path=null without changing the configured image. Bad: report a timeout while the chooser is open, then discard its eventual successful result.
+### 6. Tests Required
+`repo:rust/crates/nxtools-ipc/src/floating_cleanup.rs#tests` includes `floating_image_picker_waits_for_selection_or_cancel_without_machine_timeout` and `floating_image_picker_disconnect_retires_pending_and_rejects_late_results`. Exercise the original bridge/enqueue/sweep/result path, exact caller ID and data, duplicate completion, disconnect notification and retired-generation rejection. Retain ordinary timeout and other human-picker tests.
+### 7. Wrong vs Correct
+Wrong: remove native/Desktop wait limits while leaving PickImage on the IPC machine deadline. Correct: exempt this typed operation in CommandRouter while retaining ordinary command deadlines and original-connection retirement.
+
+## Scenario: Human-driven Shell, authorization and native drag
+### 1. Scope / Trigger
+Platform requests whose native completion waits for a person's choice, elevation authorization or held drag gesture.
+### 2. Signatures
+`PlatformBridge::send_command_with_id` and ordinary generated-ID sends share `CommandRouter::enqueue`; terminals use the original connection generation and `PlatformNotification::CommandResult { correlation_id, result }`.
+### 3. Contracts
+`OpenShellTarget` exempts only OpenWith and RunElevated; `LaunchProcess` exempts only run_as_admin=true. InvokeShellAction, EnsureIndexerService and BeginFileDrag also retain timeout=None until real terminal or original connection retirement. Preserve pending-before-enqueue, bounded admission, exact caller ID, duplicate rejection and once-only results. Ordinary Open/Reveal, non-elevated launch and Shell menu/submenu queries retain their10-second IPC deadline. Native Shell query/startup and authorized installer execution keep their separate finite machine budgets. No wire fields, workers, queues or retry policies are added.
+### 4. Validation & Error Matrix
+Human wait after11/121/601/3601seconds -> no synthetic timeout. Matching success/cancel/failure -> original result forwarded once. Disconnect -> clear pending and publish its ID; old-generation result -> cannot consume same-ID replacement. Ordinary machine wait -> original correlated timeout failure.
+### 5. Good/Base/Bad Cases
+Good: UAC or Open With returns after the former deadline and completes the same request. Base: long file drag retains one native operation until release/Escape. Bad: report failure while native interaction continues, discard its later success, or exempt every Shell operation indiscriminately.
+### 6. Tests Required
+`repo:rust/crates/nxtools-ipc/src/lib.rs#tests`: `human_shell_commands_outlive_machine_deadlines_and_route_terminal_once`, `human_shell_commands_retire_on_disconnect_without_consuming_replacement_results`, `machine_shell_commands_keep_their_original_timeout`. Exercise every typed exemption, caller ID, delayed terminal data, duplicate completion, disconnect and same-ID replacement. Keep picker, cleanup, queue pressure and ordinary timeout tests.
+### 7. Wrong vs Correct
+Wrong: a single short completion deadline for both human dialogs and machine requests. Correct: typed human-operation exemptions in the original router, finite machine-stage limits in their owning adapters, original connection-scoped terminal handling.

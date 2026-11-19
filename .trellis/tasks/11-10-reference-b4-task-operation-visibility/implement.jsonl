@@ -1,0 +1,10 @@
+{"file":".trellis/spec/shared/engineering.md","reason":"Original ownership, durable transactions and diagnostics"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official compound components and exact released APIs"}
+{"file":".trellis/spec/nxtools-core/backend/database-guidelines.md","reason":"Defaults, normalization and locked changed-leaf persistence"}
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Original request, writer, plan and projection contracts"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Deferred production window/input/lifecycle regressions"}
+{"file":"docs/reference-code/download.md","reason":"ABDM first, legacy compatibility and verified call chains"}
+{"file":".trellis/tasks/11-10-reference-b4-task-operation-visibility/design.md","reason":"B4 scope, default-header addition, invariants and vertical slices"}
+{"file":".trellis/spec/nxtools-download-ipc/backend/quality-guidelines.md","reason":"Original transport version/correlation/draining contract"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Header/relink/template and true coverage production lifecycle contracts"}
+{"file":".trellis/tasks/11-10-reference-b4-task-operation-visibility/acceptance-repair.md","reason":"Authorized B4-01/B4-02/B4-E1/B4-E2 repair boundaries and results"}

@@ -120,9 +120,9 @@ async function sendBlobResourceViaContentScript(resource) {
   }
 }
 
-async function addDownloadToNxTools(payload, correlationId) {
+async function addDownloadToNxTools(payload, correlationId, controlled = false) {
   const settings = await getSettings();
-  return sendDesktopRequest("create_task", {
+  return sendDesktopRequest(controlled ? "prepare_browser_handoff" : "create_task", {
     payload: {
       source: "browser_extension",
       openDialog: settings.openDialog,
@@ -133,7 +133,7 @@ async function addDownloadToNxTools(payload, correlationId) {
   }, 15000, correlationId);
 }
 
-async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}, size = 0, supportsRange = false, contextUrl = "", cookieSource = {} }) {
+async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}, size = 0, supportsRange = false, contextUrl = "", sourcePageUrl = "", sourcePageTitle = "", cookieSource = {}, controlled = false }) {
   const startedAt = Date.now();
   const effectiveHandoffId = handoffId || nextRequestId();
   const invalidGoogleVideoReason = googleVideoInvalidReason(url);
@@ -176,10 +176,12 @@ async function sendDownloadPayload({ handoffId = "", url, fileName, headers = {}
       handoffId: effectiveHandoffId,
       url,
       fileName: resolvedFileName,
+      ...(sourcePageUrl ? { sourcePageUrl, ...(sourcePageTitle ? { sourcePageTitle } : {}) } : {}),
       ...headerPayload,
       size: resolvedSize,
       supportsRange
-    }, effectiveHandoffId);
+    }, effectiveHandoffId, controlled);
+    if (controlled) return result;
     const outcome = NxToolsHandoffPolicy.handoffOutcome(result, effectiveHandoffId);
     const queued = Boolean(result?.data?.queued);
     sendExtensionLog(result?.ok === false || queued ? "warn" : "info", "handoff_result", result?.ok === false
@@ -228,7 +230,7 @@ async function resolveDownloadRequestContext(downloadItem) {
   return { headerSnapshot, downloadTabId, method };
 }
 
-async function sendDownloadItem(downloadItem, existingHandoffId = "", requestContext = null) {
+async function sendDownloadItem(downloadItem, existingHandoffId = "", requestContext = null, controlled = false) {
   const url = downloadItem.finalUrl || downloadItem.url;
   if (!isHttpUrl(url)) {
     return { ok: false, skipped: true, message: "不是 HTTP 下载链接" };
@@ -237,6 +239,9 @@ async function sendDownloadItem(downloadItem, existingHandoffId = "", requestCon
   const resource = downloadTabId > 0
     ? resourcesById.get(`${downloadTabId}:${normalizeResourceUrlKey(url)}`) || null
     : null;
+  const pageResource = resource?.pageUrl ? resource : (downloadTabId > 0
+    ? resourcesById.get(`${downloadTabId}:${normalizeResourceUrlKey(downloadItem.url)}`) || null
+    : null);
   const headers = { ...(headerSnapshot?.headers || {}) };
   if (downloadItem.referrer && !headers.referer) {
     headers.referer = downloadItem.referrer;
@@ -245,12 +250,15 @@ async function sendDownloadItem(downloadItem, existingHandoffId = "", requestCon
   const handoffId = existingHandoffId || await browserDownloadHandoffId(downloadItem);
   const response = await sendDownloadPayload({
     handoffId,
+    controlled,
     url,
     fileName: getFileNameFromPath(downloadItem.filename) || resource?.filename || getFileNameFromUrl(url),
     headers,
     size: downloadItem.totalBytes > 0 ? downloadItem.totalBytes : resource?.size || 0,
     supportsRange: Boolean(downloadItem.canResume || headerSnapshot?.supportsRange || resource?.supportsRange),
     contextUrl: downloadItem.referrer || resource?.pageUrl || "",
+    sourcePageUrl: pageResource?.pageUrl || "",
+    sourcePageTitle: pageResource?.pageTitle || "",
     cookieSource: { ...cookieSourceDetails(headerSnapshot), ...cookieSourceDetails(downloadItem),
       tabId: downloadTabId > 0 ? downloadTabId : undefined }
   });
@@ -359,6 +367,8 @@ async function sendResource(resourceId, overrides = {}) {
       size: outboundResource.size,
       supportsRange: outboundResource.supportsRange,
       contextUrl: outboundResource.pageUrl || outboundResource.referer || "",
+      sourcePageUrl: outboundResource.pageUrl || "",
+      sourcePageTitle: outboundResource.pageTitle || "",
       cookieSource: { cookieContext: outboundResource.cookieContext ?? null }
     }),
     resolveCurrentResource: (resourceId) => resourcesById.get(resourceId)
@@ -418,6 +428,8 @@ async function sendResourcesBatch(resourceIds) {
       fileName,
       ...headerPayload,
       ...(settings.includeRequestHeaders ? { referrer: resource.referer || resource.pageUrl || "" } : {}),
+      ...(resource.pageUrl ? { sourcePageUrl: resource.pageUrl,
+        ...(resource.pageTitle ? { sourcePageTitle: resource.pageTitle } : {}) } : {}),
       size: Number(resource.size || 0),
       startImmediately: false,
       openDialog: false
@@ -501,9 +513,10 @@ function recordBrowserHandoff(context, outcome, emit = true) {
     correlationId: context.correlationId,
     state: outcome.state,
     reason: outcome.reason,
-    owner: outcome.state === "transferred" ? "desktop" : "browser",
+    owner: outcome.state === "transferred" || outcome.reason === "desktop_activation_pending" ? "desktop" : "browser",
     elapsedMs: Math.max(0, Date.now() - context.startedAt),
     queued: outcome.queued === true,
+    ...(outcome.controlled ? { controlled: true } : {}),
     ...(outcome.boundaryCode ? { boundaryCode: outcome.boundaryCode } : {}),
     ...(outcome.compensation ? { compensation: outcome.compensation } : {})
   };
@@ -531,43 +544,34 @@ async function interceptBrowserDownload(downloadItem, options = {}) {
     const settings = await getSettings();
     const url = downloadItem.finalUrl || downloadItem.url;
     if (!isHttpUrl(url)) return;
+    let requestContext = null;
+    if (!chrome.downloads?.["onDetermining" + "Filename"]?.addListener) {
+      requestContext = await resolveDownloadRequestContext(downloadItem);
+      if (firefoxResponseWasDecided(requestContext, downloadItem)) return;
+    }
     context.correlationId = await browserDownloadHandoffId(downloadItem);
     const excluded = await automaticCaptureDecision(downloadItem, settings);
     if (excluded) {
       recordBrowserHandoff(context, excluded);
       return;
     }
-    const requestContext = await resolveDownloadRequestContext(downloadItem);
+    requestContext ||= await resolveDownloadRequestContext(downloadItem);
     const method = requestContext.method;
     if (method && method !== "GET") {
       recordBrowserHandoff(context, { state: "skipped", reason: "unsupported_request_method" });
       return;
     }
 
-    recordBrowserHandoff(context, { state: "submitting", reason: "handoff_started" }, false);
-    const { response, handoffId } = await sendDownloadItem(downloadItem, context.correlationId, requestContext);
-    const outcome = NxToolsHandoffPolicy.handoffOutcome(response, handoffId);
-    recordBrowserHandoff(context, outcome);
-    if (outcome.state !== "persisted") return;
-    const handoff = await NxToolsHandoffPolicy.completeAcceptedHandoff({
-      response,
-      expectedHandoffId: handoffId,
-      cancelBrowserDownload: () => chrome.downloads.cancel(downloadItem.id),
-      rollbackDesktopTask: (taskId) => sendDesktopRequest("task_action", {
-        taskId,
-        action: "cancel"
-      }, 12000, context.correlationId),
-      eraseBrowserDownload: () => {
-        if (settings.eraseBrowserHistory || options.eraseBrowserHistory) {
-          return chrome.downloads.erase({ id: downloadItem.id });
-        }
-        return Promise.resolve();
-      }
-    });
-    if (!handoff.transferred) return;
-    recordBrowserHandoff(context, { state: "transferred", reason: "browser_transferred", queued: outcome.queued });
-    setBadge("OK", "#138a72");
-    setTimeout(() => setBadge("", "#138a72"), 1600);
+    if (!browserHandoffJournalReady) await restoreBrowserHandoffs();
+    if (browserHandoffOperations.has(downloadItem.id)) return;
+    if (browserHandoffJournal.has(downloadItem.id)) {
+      void restoreBrowserHandoffs();
+      return;
+    }
+    const operation = runControlledBrowserHandoff(downloadItem, context, requestContext, settings,
+      { ...options, yieldToBrowser }).finally(() => browserHandoffOperations.delete(downloadItem.id));
+    browserHandoffOperations.set(downloadItem.id, operation);
+    await operation;
   } catch (error) {
     const reason = ["desktop_unavailable", "desktop_refused", "handoff_timeout", "handoff_disconnected", "browser_cancel_failed", "identity_mismatch"]
       .includes(error?.handoffReason) ? error.handoffReason : "desktop_refused";

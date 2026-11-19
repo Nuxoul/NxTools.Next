@@ -35,6 +35,8 @@ use gpui_kit::component::setting::{SelectIndex, SettingGroup, SettingItem, Setti
 use gpui_kit::component::switch::Switch;
 
 mod blacklist;
+mod data_directory;
+mod font_settings;
 #[cfg(test)]
 #[path = "network_settings/kit_migration_tests.rs"]
 mod kit_migration_tests;
@@ -74,6 +76,8 @@ pub(crate) struct NetworkSettingsApplication {
     pending_apply: Option<PendingGlobalSettingsApply>,
     hidden_startup: bool,
     pending_proxy_snapshot: Option<system_proxy::PendingProxySnapshot>,
+    data_paths: Option<nxtools_core::AppPaths>,
+    pending_data_directory: Option<data_directory::PendingDataPicker>,
 }
 
 struct PendingGlobalSettingsApply {
@@ -130,6 +134,20 @@ impl NetworkSettingsApplication {
         system_settings: Rc<RefCell<SystemSettings>>,
         hidden_startup: bool,
     ) -> Self {
+        let data_paths = nxtools_core::AppPaths::default_locations()
+            .ok()
+            .map(|defaults| {
+                if config_path.parent() == Some(defaults.config_dir.as_path()) {
+                    defaults
+                } else {
+                    defaults.at_root(
+                        config_path
+                            .parent()
+                            .and_then(|path| path.parent())
+                            .unwrap_or(&defaults.config_dir),
+                    )
+                }
+            });
         Self {
             policy,
             config,
@@ -146,6 +164,8 @@ impl NetworkSettingsApplication {
             pending_apply: None,
             pending_proxy_snapshot: None,
             hidden_startup,
+            data_paths,
+            pending_data_directory: None,
         }
     }
 
@@ -394,6 +414,7 @@ impl NetworkSettingsApplication {
                 );
             }
         };
+        let font_changed = self.config.system.ui_font_family != system.ui_font_family;
         info!(event = "global.settings.persisted", %correlation_id, rule_count = next_config.process_blacklist.entries().len(), elapsed_ms = started_at.elapsed().as_millis(), "global settings durably saved");
         let shell_changed = self.config.system.start_on_login_silently
             != system.start_on_login_silently
@@ -403,6 +424,12 @@ impl NetworkSettingsApplication {
             || self.system_settings.borrow().close_to_tray != system.close_to_tray;
         let next_theme = system.theme;
         cx.defer(move |cx| crate::theme::set_theme_preference(next_theme, cx));
+        let next_font = system.ui_font_family.clone();
+        cx.defer(move |cx| {
+            let font_available = crate::theme::set_ui_font_family(&next_font, cx);
+            info!(event = "global.settings.presentation.applied", %correlation_id, font_changed, font_available,
+                elapsed_ms = started_at.elapsed().as_millis(), "saved appearance applied to existing windows");
+        });
         let notification_center = self.notifications.clone();
         let notification_position = system.notification_position;
         let notification_duration = system.notification_duration_seconds;
@@ -509,6 +536,9 @@ impl NetworkSettingsApplication {
         notification: PlatformNotification,
         cx: &mut Context<Self>,
     ) {
+        if self.handle_data_directory_notification(&notification, cx) {
+            return;
+        }
         match &notification {
             PlatformNotification::CommandResult {
                 correlation_id,
@@ -794,6 +824,7 @@ struct NetworkSettingsView {
     start_on_login_silently: bool,
     close_to_tray: bool,
     theme_preference: nxtools_core::ThemePreference,
+    ui_font: font_settings::FontSettingsDraft,
     notification_position: nxtools_core::NotificationPosition,
     notification_duration: Entity<InputState>,
     _duration_step: gpui_kit::Subscription,
@@ -806,6 +837,7 @@ struct NetworkSettingsView {
     proxy_read_failed: bool,
     tab: GlobalSettingsTab,
     rules: Vec<ProcessBlacklistRule>,
+    suppress_in_fullscreen: bool,
     process_input: Entity<InputState>,
     editing_rule: Option<usize>,
     new_disable_clipboard: bool,
@@ -879,6 +911,7 @@ impl NetworkSettingsView {
                 application.update(cx, |owner, cx| owner.request_system_proxy(view, 0, cx))
             });
         }
+        let ui_font = font_settings::FontSettingsDraft::new(&system.ui_font_family, window, cx);
         Self {
             theme: Theme::zed_dark(),
             application,
@@ -886,6 +919,7 @@ impl NetworkSettingsView {
             start_on_login_silently: system.start_on_login_silently,
             close_to_tray: system.close_to_tray,
             theme_preference: system.theme,
+            ui_font,
             notification_position: system.notification_position,
             notification_duration,
             _duration_step: duration_step,
@@ -898,6 +932,7 @@ impl NetworkSettingsView {
             proxy_read_failed: false,
             tab: GlobalSettingsTab::General,
             rules: blacklist.entries(),
+            suppress_in_fullscreen: blacklist.suppress_in_fullscreen.unwrap_or(true),
             process_input,
             editing_rule: None,
             new_disable_clipboard: true,
@@ -929,6 +964,14 @@ impl NetworkSettingsView {
             cx.notify();
             return;
         }
+        let ui_font_family = match self.ui_font.validated_family(cx) {
+            Ok(family) => family,
+            Err(message) => {
+                self.error = Some(message);
+                cx.notify();
+                return;
+            }
+        };
         let correlation_id = uuid::Uuid::new_v4();
         let started_at = Instant::now();
         let settings = match parse_network_settings(
@@ -958,7 +1001,8 @@ impl NetworkSettingsView {
                 return;
             }
         };
-        let blacklist = ProcessBlacklistSettings::from_entries(self.rules.clone());
+        let mut blacklist = ProcessBlacklistSettings::from_entries(self.rules.clone());
+        blacklist.suppress_in_fullscreen = Some(self.suppress_in_fullscreen);
         self.saving = true;
         self.draft_busy.set(true);
         self.error = None;
@@ -967,6 +1011,7 @@ impl NetworkSettingsView {
             start_on_login_silently: self.start_on_login_silently,
             close_to_tray: self.close_to_tray,
             theme: self.theme_preference,
+            ui_font_family,
             notification_position: self.notification_position,
             notification_duration_seconds,
         };
@@ -1172,6 +1217,8 @@ impl NetworkSettingsView {
                         .disabled(self.saving),
                 )
                 .into_any_element(),
+            9 => self.render_data_directory(cx),
+            10 => self.ui_font.render(self.saving),
             _ => div().into_any_element(),
         }
     }
@@ -1234,10 +1281,14 @@ impl Render for NetworkSettingsView {
             ])),
             SettingPage::new("应用黑名单").resettable(false).group(SettingGroup::new().items([
                 complex(5, "添加应用 编辑应用 进程名 更新"),
-                complex(4, "应用黑名单 进程 禁用剪贴板 禁用速启 应用规则"),
+                complex(4, "应用黑名单 进程 禁用剪贴板 禁用速启 应用规则 全屏 独占全屏 无边框全屏 呼出"),
             ])),
             SettingPage::new("外观").resettable(false).group(SettingGroup::new().items([
                 complex(6, "主题 浅色 深色 Latte Frappe Catppuccin Gruvbox Solarized 跟随系统"),
+                ordinary(10, "界面字体", "搜索并选择已安装的中文或英文字体；应用后生效。不支持的字形使用系统回退，等宽诊断字体不变。"),
+            ])),
+            SettingPage::new("数据").resettable(false).group(SettingGroup::new().items([
+                complex(9, "软件数据目录 存储位置 迁移 重启"),
             ])),
         ];
         let application = self.application.clone();
@@ -1414,6 +1465,7 @@ mod tests {
                         start_on_login_silently: false,
                         close_to_tray: false,
                         theme: nxtools_core::ThemePreference::Dark,
+                        ui_font_family: nxtools_core::default_ui_font_family(),
                         notification_position: Default::default(),
                         notification_duration_seconds: nxtools_core::default_notification_duration(
                         ),
@@ -1487,6 +1539,29 @@ mod tests {
             })
         });
         window.refresh().expect("render add");
+        let fullscreen = window
+            .debug_bounds("global-setting-9")
+            .expect("global fullscreen summon setting row");
+        assert!(fullscreen.size.height >= px(24.0));
+        assert!(window.read(|cx| view.read(cx).suppress_in_fullscreen));
+        let switch = super::kit_migration_tests::control_bounds(
+            &mut window,
+            "global-fullscreen-suppression",
+        );
+        window.simulate_click(switch.center(), Modifiers::default());
+        window.run_until_parked();
+        assert!(!window.read(|cx| view.read(cx).suppress_in_fullscreen));
+        assert_eq!(
+            std::fs::read(&path).expect("fullscreen draft has no save"),
+            before
+        );
+        super::kit_migration_tests::focus_control(&mut window, "global-fullscreen-suppression");
+        window.simulate_keystrokes("space");
+        window.simulate_event(gpui_kit::KeyUpEvent {
+            keystroke: gpui_kit::Keystroke::parse("space").expect("Space"),
+        });
+        window.run_until_parked();
+        assert!(window.read(|cx| view.read(cx).suppress_in_fullscreen));
         let add = window
             .debug_bounds("global-blacklist-add-action")
             .expect("add");
@@ -1678,6 +1753,11 @@ mod tests {
         window.run_until_parked();
         window.update(|window, cx| {
             view.update(cx, |view, cx| {
+                assert!(
+                    view.suppress_in_fullscreen,
+                    "cancel retained durable fullscreen policy"
+                );
+                view.suppress_in_fullscreen = false;
                 view.rules.clear();
                 view.save(window, cx);
                 view.save(window, cx);
@@ -1690,6 +1770,11 @@ mod tests {
                 .process_blacklist
                 .entries()
                 .is_empty()
+        );
+        assert!(
+            !AppConfig::load_from(&path)
+                .expect("saved fullscreen policy")
+                .suppress_panel_in_fullscreen()
         );
         assert!(cx.read(|cx| application.read(cx).window.is_none()));
         let _ = std::fs::remove_dir_all(directory);
@@ -1747,10 +1832,11 @@ mod tests {
             })
         });
         let correlation_id = uuid::Uuid::new_v4();
-        let rules = ProcessBlacklistSettings::from_entries(vec![
+        let mut rules = ProcessBlacklistSettings::from_entries(vec![
             ProcessBlacklistRule::new("Editor.EXE", true, false).expect("editor"),
             ProcessBlacklistRule::new("Game.EXE", false, true).expect("game"),
         ]);
+        rules.suppress_in_fullscreen = Some(false);
         cx.update(|cx| {
             application.update(cx, |owner, cx| {
                 owner.bind_clipboard(clipboard.downgrade());
@@ -1795,7 +1881,18 @@ mod tests {
         else {
             panic!("clipboard command")
         };
-        assert_eq!(command.excluded_processes, ["editor"]);
+        assert!(!command.suppress_in_fullscreen);
+        let envelope = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one native quick-launch configuration");
+        assert_eq!(envelope.correlation_id, Some(correlation_id));
+        let nxtools_protocol::Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(
+            command,
+        )) = envelope.message
+        else {
+            panic!("quick-launch command")
+        };
+        assert!(!command.suppress_in_exclusive_fullscreen);
         assert!(
             endpoint.try_receive_command_for_contract_test().is_err(),
             "no duplicate save/native dispatch"
@@ -2166,6 +2263,7 @@ mod tests {
             start_on_login_silently: true,
             close_to_tray: true,
             theme: nxtools_core::ThemePreference::Dark,
+            ui_font_family: nxtools_core::default_ui_font_family(),
             notification_position: Default::default(),
             notification_duration_seconds: nxtools_core::default_notification_duration(),
         };
@@ -2227,6 +2325,7 @@ mod tests {
                         start_on_login_silently: true,
                         close_to_tray: true,
                         theme: nxtools_core::ThemePreference::Dark,
+                        ui_font_family: nxtools_core::default_ui_font_family(),
                         notification_position: Default::default(),
                         notification_duration_seconds: nxtools_core::default_notification_duration(
                         ),
@@ -2265,6 +2364,7 @@ mod tests {
             start_on_login_silently: true,
             close_to_tray: true,
             theme: nxtools_core::ThemePreference::Dark,
+            ui_font_family: nxtools_core::default_ui_font_family(),
             notification_position: Default::default(),
             notification_duration_seconds: nxtools_core::default_notification_duration(),
         };
@@ -2355,6 +2455,7 @@ mod tests {
                         start_on_login_silently: true,
                         close_to_tray: true,
                         theme: nxtools_core::ThemePreference::Dark,
+                        ui_font_family: nxtools_core::default_ui_font_family(),
                         notification_position: Default::default(),
                         notification_duration_seconds: nxtools_core::default_notification_duration(
                         ),

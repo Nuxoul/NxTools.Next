@@ -273,6 +273,7 @@ pub(super) fn execute(
     control: &OperationControl,
     output: Option<&mut (dyn CodecOutput + Send)>,
     expected: Option<&[ArchiveEntry]>,
+    job_plan: Option<&crate::planning::ExtractionPlan>,
 ) -> Result<Decoded> {
     let limits = crate::worker_browser::decode_limits(request);
     let decoding = request.operation == "test" || output.is_some();
@@ -450,6 +451,7 @@ pub(super) fn execute(
                     .browser_entry
                     .as_ref()
                     .is_none_or(|selection| selection.ordinal == ordinal)
+                    && super::codec_member_wanted(job_plan, entries.last().expect("current header"))
             }) {
                 let relative = entries
                     .last()

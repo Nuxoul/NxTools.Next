@@ -59,11 +59,25 @@ internal sealed class WindowsArchiveIntegrationStore : IArchiveIntegrationStore
         }
     }
 
+    private const int ShcneAssocChanged = 0x08000000;
+    private const uint ShcnfIdList = 0x0000;
+    private const uint ShcnfFlush = 0x1000;
+
     [DllImport("shell32.dll")]
     private static extern void SHChangeNotify(int eventId, uint flags, IntPtr item1, IntPtr item2);
 
-    /// <summary>SHCNE_ASSOCCHANGED with SHCNF_IDLIST: an advisory Shell refresh hint only.</summary>
-    internal static void NotifyAssociationsChanged() => SHChangeNotify(0x08000000, 0, IntPtr.Zero, IntPtr.Zero);
+    /// <summary>Flushes the association notification before returning so current Shell clients can rebuild their view.</summary>
+    internal static void NotifyAssociationsChanged() => NotifyAssociationsChanged(SHChangeNotify);
+
+    internal static void NotifyAssociationsChanged(Action<int, uint, IntPtr, IntPtr> notify)
+    {
+        ArgumentNullException.ThrowIfNull(notify);
+        notify(ShcneAssocChanged, ShcnfIdList | ShcnfFlush, IntPtr.Zero, IntPtr.Zero);
+    }
+
+    internal static bool IsPlainExtension(string extension) =>
+        extension.Length is >= 2 and <= 32 && extension[0] == '.' &&
+        extension.Skip(1).All(character => char.IsAsciiLetterOrDigit(character) || character is '.' or '_' or '-');
 
     internal static void Validate(ArchiveRegistryValueTarget target)
     {

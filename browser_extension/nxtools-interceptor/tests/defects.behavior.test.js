@@ -6,31 +6,31 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { loadBackground } = require("./harness/load-background.cjs");
+const { loadBackground, browserHandoffReply, createControlledHandoffResponder } = require("./harness/load-background.cjs");
 
 const DOWNLOAD_URL = "https://files.example.test/archive.zip";
 
 function acceptingDesktop() {
-  return {
-    respond(message) {
-      if (message.type === "create_task") {
-        return { ok: true, accepted: true, handoffId: message.payload.handoffId, taskId: "task-1" };
-      }
-      if (message.type === "task_action") return { ok: true };
-      return { ok: true, data: {} };
+  const controlled = createControlledHandoffResponder({ fallback(message) {
+    if (message.type === "create_task") {
+      return { ok: true, accepted: true, handoffId: message.payload.handoffId, taskId: "task-1" };
     }
-  };
+    if (message.type === "task_action") return { ok: true };
+    return { ok: true, data: {} };
+  } });
+  return { respond: controlled.respond };
 }
 
 function rejectingDesktop() {
-  return {
-    respond(message) {
-      if (message.type === "create_task") {
-        return { ok: true, accepted: false, handoffId: message.payload.handoffId, message: "disk full" };
-      }
-      return { ok: true, data: {} };
+  const controlled = createControlledHandoffResponder({ onRequest(message) {
+    if (message.type === "prepare_browser_handoff") return browserHandoffReply(message.payload.handoffId, "aborted");
+  }, fallback(message) {
+    if (message.type === "create_task") {
+      return { ok: true, accepted: false, handoffId: message.payload.handoffId, message: "disk full" };
     }
-  };
+    return { ok: true, data: {} };
+  } });
+  return { respond: controlled.respond };
 }
 
 function downloadItem(overrides = {}) {
@@ -56,9 +56,9 @@ test("R1.1 onDeterminingFilename keeps suggest pending by returning true", async
   const [returned] = bg.chrome.api.downloads.onDeterminingFilename.fire(downloadItem(), () => { suggestCalls += 1; });
   assert.equal(returned, true, "async suggest requires the listener to return true (Chrome API contract)");
   assert.equal(suggestCalls, 0, "suggest must not resolve before the handoff settles");
-  await bg.waitFor(() => suggestCalls === 1, "accepted filename suggestion");
-  assert.equal(suggestCalls, 1, "suggest is resolved exactly once after the handoff");
-  assert.equal(bg.chrome.callsNamed("downloads.cancel").length, 1, "accepted handoff cancels the browser item");
+  await bg.waitFor(() => bg.chrome.callsNamed("downloads.cancel").length === 1, "controlled browser cancellation");
+  assert.equal(suggestCalls, 1, "suggest is resolved exactly once after the controlled handoff settles");
+  assert.equal(bg.chrome.callsNamed("downloads.cancel").length, 1, "held handoff cancels the browser item before commit");
 });
 
 test("R1.1 every hand-back path resolves suggest exactly once", async () => {
@@ -204,8 +204,8 @@ test("R1.5 browser download does not borrow a resource from the last active tab"
   bg.chrome.api.tabs.onActivated.fire({ tabId: 3 });
   await bg.settle();
   bg.chrome.api.downloads.onDeterminingFilename.fire(downloadItem({ filename: "" }), () => {});
-  await bg.waitFor(() => bg.desktop.requestsOfType("create_task").length === 1, "download handoff sent");
-  const request = bg.desktop.requestsOfType("create_task")[0];
+  await bg.waitFor(() => bg.desktop.requestsOfType("prepare_browser_handoff").length === 1, "download handoff sent");
+  const request = bg.desktop.requestsOfType("prepare_browser_handoff")[0];
   assert.ok(request, "handoff sent");
   assert.notEqual(request.message.payload.fileName, "wrong-name-from-other-tab.zip",
     "resource metadata must come from the download's own context");
@@ -236,7 +236,7 @@ test("R1.6 Content-Disposition filename survives a worker restart without persis
   const second = loadBackground({ desktop: acceptingDesktop(), chrome: { sessionStorage: JSON.parse(serialized) } });
   await second.settle();
   second.chrome.api.downloads.onDeterminingFilename.fire(downloadItem({ filename: "" }), () => {});
-  await second.waitFor(() => second.desktop.requestsOfType("create_task").length === 1, "restored worker native handoff");
-  const request = second.desktop.requestsOfType("create_task")[0];
+  await second.waitFor(() => second.desktop.requestsOfType("prepare_browser_handoff").length === 1, "restored worker native handoff");
+  const request = second.desktop.requestsOfType("prepare_browser_handoff")[0];
   assert.equal(request?.message.payload.fileName, "real-name.zip", "restored worker keeps authoritative filename");
 });

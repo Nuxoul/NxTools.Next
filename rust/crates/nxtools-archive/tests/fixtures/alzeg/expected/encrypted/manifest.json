@@ -1,0 +1,199 @@
+{
+  "oracle": "CPython struct/zipfile._ZipDecrypter/zlib",
+  "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+  "password": "synthetic CC0 fixture password from upstream README",
+  "fixtures": [
+    {
+      "fixture": "enc_store.alz",
+      "members": [
+        {
+          "name": "text.txt",
+          "method": 0,
+          "flags": 33,
+          "size": 3600,
+          "packed": 3600,
+          "crc32": "2c19aec0",
+          "header_offset": 39,
+          "payload_offset": 51,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "enc_store-0.gz"
+        }
+      ],
+      "files": 1,
+      "bytes": 3600
+    },
+    {
+      "fixture": "enc_deflate.alz",
+      "members": [
+        {
+          "name": "a.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 3150,
+          "packed": 82,
+          "crc32": "7a553a9d",
+          "header_offset": 36,
+          "payload_offset": 48,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "enc_deflate-0.gz"
+        },
+        {
+          "name": "b.bin",
+          "method": 2,
+          "flags": 33,
+          "size": 512,
+          "packed": 517,
+          "crc32": "7735137b",
+          "header_offset": 158,
+          "payload_offset": 170,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "enc_deflate-1.gz"
+        }
+      ],
+      "files": 2,
+      "bytes": 3662
+    },
+    {
+      "fixture": "zip20.alz",
+      "members": [
+        {
+          "name": "empty.txt",
+          "method": 0,
+          "flags": 0,
+          "size": 0,
+          "packed": 0,
+          "crc32": "00000000",
+          "header_offset": 30,
+          "payload_offset": 30,
+          "verifier": "none",
+          "wrong_verifier_rejected": false,
+          "expected": "zip20-0.gz"
+        },
+        {
+          "name": "euckr_content.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 71,
+          "packed": 76,
+          "crc32": "3e3e0f3f",
+          "header_offset": 70,
+          "payload_offset": 82,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-1.gz"
+        },
+        {
+          "name": "hello.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 131,
+          "packed": 126,
+          "crc32": "1b239eb9",
+          "header_offset": 190,
+          "payload_offset": 202,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-2.gz"
+        },
+        {
+          "name": "large.txt",
+          "method": 2,
+          "flags": 65,
+          "size": 131364,
+          "packed": 30475,
+          "crc32": "fe5598ec",
+          "header_offset": 364,
+          "payload_offset": 376,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-3.gz"
+        },
+        {
+          "name": "repeated.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 720,
+          "packed": 54,
+          "crc32": "33ab076a",
+          "header_offset": 30886,
+          "payload_offset": 30898,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-4.gz"
+        },
+        {
+          "name": "뷁테스트.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 72,
+          "packed": 69,
+          "crc32": "64205eb3",
+          "header_offset": 30987,
+          "payload_offset": 30999,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-5.gz"
+        },
+        {
+          "name": "한글파일.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 56,
+          "packed": 61,
+          "crc32": "f223d6ec",
+          "header_offset": 31103,
+          "payload_offset": 31115,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-6.gz"
+        },
+        {
+          "name": "subdir/nested/deep.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 20,
+          "packed": 22,
+          "crc32": "aab59c3d",
+          "header_offset": 31221,
+          "payload_offset": 31233,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-7.gz"
+        },
+        {
+          "name": "subdir/inner.txt",
+          "method": 2,
+          "flags": 33,
+          "size": 28,
+          "packed": 30,
+          "crc32": "da872f18",
+          "header_offset": 31294,
+          "payload_offset": 31306,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-8.gz"
+        },
+        {
+          "name": "binary.bin",
+          "method": 2,
+          "flags": 33,
+          "size": 1024,
+          "packed": 280,
+          "crc32": "b70b4c26",
+          "header_offset": 31369,
+          "payload_offset": 31381,
+          "verifier": "crc",
+          "wrong_verifier_rejected": true,
+          "expected": "zip20-9.gz"
+        }
+      ],
+      "files": 10,
+      "bytes": 133486
+    }
+  ],
+  "files": 13,
+  "decoded_bytes": 140748
+}

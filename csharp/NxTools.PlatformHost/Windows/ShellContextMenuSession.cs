@@ -223,8 +223,10 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
 
     private readonly BlockingCollection<Action> _requests = new();
     private readonly ManualResetEventSlim _started = new(false);
+    private readonly CancellationTokenSource _retirement = new();
     private readonly Thread _thread;
     private readonly string _target;
+    private readonly Action<uint, IntPtr, CancellationToken>? _invokeAction;
     private Exception? _startupError;
     private ShellContextMenuSession? _session;
     private int _disposed;
@@ -330,8 +332,16 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
     }
 
     public ShellContextMenuSessionWorker(string target)
+        : this(target, null)
+    {
+    }
+
+    internal ShellContextMenuSessionWorker(
+        string target,
+        Action<uint, IntPtr, CancellationToken>? invokeAction)
     {
         _target = target;
+        _invokeAction = invokeAction;
         SessionId = Guid.NewGuid();
         _thread = new Thread(Run)
         {
@@ -428,14 +438,21 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         IntPtr owner,
         CancellationToken cancellationToken)
     {
-        if (!TryInvoke(
+        if (!TryInvokeHumanAction(
                 () =>
                 {
-                    if (_session is null)
+                    if (_invokeAction is not null)
                     {
-                        throw new InvalidOperationException("The Shell action session is not initialized.");
+                        _invokeAction(commandId, owner, cancellationToken);
                     }
-                    _session.Invoke(commandId, owner, cancellationToken);
+                    else
+                    {
+                        if (_session is null)
+                        {
+                            throw new InvalidOperationException("The Shell action session is not initialized.");
+                        }
+                        _session.Invoke(commandId, owner, cancellationToken);
+                    }
                     return true;
                 },
                 cancellationToken,
@@ -457,6 +474,31 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         Func<T> operation,
         CancellationToken cancellationToken,
         out T? result,
+        out string? error) =>
+        TryInvokeCore(
+            operation,
+            cancellationToken,
+            RequestTimeoutMilliseconds,
+            out result,
+            out error);
+
+    private bool TryInvokeHumanAction<T>(
+        Func<T> operation,
+        CancellationToken cancellationToken,
+        out T? result,
+        out string? error) =>
+        TryInvokeCore(
+            operation,
+            cancellationToken,
+            Timeout.Infinite,
+            out result,
+            out error);
+
+    private bool TryInvokeCore<T>(
+        Func<T> operation,
+        CancellationToken cancellationToken,
+        int completionTimeoutMilliseconds,
+        out T? result,
         out string? error)
     {
         result = default;
@@ -467,14 +509,29 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
             error = "Shell action operation was cancelled.";
             return false;
         }
+        if (_retirement.IsCancellationRequested)
+        {
+            error = "The Shell action session has been disposed.";
+            return false;
+        }
+        using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            _retirement.Token);
         try
         {
-            _started.Wait(RequestTimeoutMilliseconds, cancellationToken);
+            _started.Wait(RequestTimeoutMilliseconds, waitCancellation.Token);
         }
         catch (OperationCanceledException)
         {
-            Dispose();
-            error = "Shell action operation was cancelled.";
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Dispose();
+                error = "Shell action operation was cancelled.";
+            }
+            else
+            {
+                error = "The Shell action session has been disposed.";
+            }
             return false;
         }
         if (!_started.IsSet)
@@ -500,15 +557,14 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
             CancellationToken.None,
             TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
-        using var cancellationRegistration = cancellationToken.Register(
-            () => completion.TrySetCanceled(cancellationToken));
         try
         {
             _requests.Add(() =>
             {
-                if (cancellationToken.IsCancellationRequested)
+                if (_retirement.IsCancellationRequested ||
+                    Volatile.Read(ref _disposed) != 0 ||
+                    cancellationToken.IsCancellationRequested)
                 {
-                    completion.TrySetCanceled(cancellationToken);
                     return;
                 }
                 try
@@ -530,12 +586,19 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         bool completed;
         try
         {
-            completed = completion.Task.Wait(RequestTimeoutMilliseconds, cancellationToken);
+            completed = completion.Task.Wait(completionTimeoutMilliseconds, waitCancellation.Token);
         }
         catch (OperationCanceledException)
         {
-            Dispose();
-            error = "Shell action operation was cancelled.";
+            if (cancellationToken.IsCancellationRequested)
+            {
+                Dispose();
+                error = "Shell action operation was cancelled.";
+            }
+            else
+            {
+                error = "The Shell action session has been disposed.";
+            }
             return false;
         }
         if (!completed)
@@ -617,6 +680,7 @@ internal sealed class ShellContextMenuSessionWorker : IDisposable
         {
             return;
         }
+        _retirement.Cancel();
         lock (CacheGate)
         {
             if (Cache.Count != 0)

@@ -109,3 +109,50 @@ status still refuse, and live native candidate failures retain their actual code
 CIM-null Host discovery with the real resolver: owned, foreign, exited and query-denied outcomes.
 The report-machine read-only Get-UpgradeUpdaterProcessId replay is distinct from actual install,
 service startup, termination or complete installed-file readback acceptance.
+
+## Scenario: Stable Bootstrap compatibility floor
+
+### 1. Scope / Trigger
+Routine signed releases must reuse an already compatible protected Bootstrap. Increasing the
+package release sequence alone must not request Bootstrap maintenance authorization.
+
+### 2. Signatures
+`scripts/package.ps1` sets `$migrationBootstrapMinimumSequence = 82` and generates
+`BootstrapMigrationMinimumSequence` in the original migration include. Inno passes it to
+`bootstrap-migration.ps1 -MinimumBootstrapMaintenanceSequence <long>`.
+`Get-BootstrapMigrationDecision(..., ExpectedSequence, MinimumBootstrapMaintenanceSequence)`
+compares the protected maintenance marker against that explicit floor when it is positive.
+
+### 3. Contracts
+Floor82 is the first compatible maintenance generation containing the historical-key recovery
+anchor. It remains constant across ordinary product releases and repackaging. Raise it to the
+first release providing newly required Bootstrap behavior when the compatibility requirement
+changes; do not derive it from the current package sequence, binary hash or product version.
+The existing marker remains bound to protocol1 and the registered actual Bootstrap hash.
+No marker/schema/enrollment rewrite or real system mutation occurs during detection.
+Signed application release sequences retain their original downgrade/replay protection.
+
+### 4. Validation & Error Matrix
+| Observation | Detection result |
+| --- | --- |
+| Package999, marker82 or86, floor82, approved Demand registration | compatible / exit0 |
+| Marker81 or absent, floor82 | migration_required / exit10 |
+| Compatible marker plus unfinished maintenance journal | migration_required / exit10 |
+| Marker82, newly required floor83 | migration_required / exit10 |
+| Bootstrap hash or marker identity mismatch | failed / exit1 |
+| Approved registration under another publisher key | trust_rotation_required / exit12 |
+
+### 5. Good/Base/Bad Cases
+Good: ordinary release87 reuses compatible Bootstrap86. Base: an older Bootstrap receives
+explicit maintenance once. Bad: every repackaged sequence is treated as a Bootstrap upgrade.
+
+### 6. Tests Required
+`tests/architecture/installer-bootstrap-migration.ps1` exercises the actual detection entry on
+x86/x64 with package999 and marker82, then old/missing/journal/tampered/rotation controls.
+The original Inno runtime fixture must prove maintenance success, cancellation and failure
+before application file replacement. Fixture success is not actual installed acceptance.
+
+### 7. Wrong vs Correct
+Wrong: compare the maintenance sequence to every new application release sequence.
+Correct: compare it to the explicitly required Bootstrap compatibility floor while retaining
+original publisher, registration, hash, marker, recovery and signed-package verification.

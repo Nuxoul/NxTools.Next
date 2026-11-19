@@ -30,9 +30,9 @@ internal static class Program
         {
             return RunProcessRole(
                 "elevated_directory_helper",
-                () => ElevatedDirectoryNavigationHelper.Run(
+                roleLog => ElevatedDirectoryNavigationHelper.Run(
                     helperPipeName!,
-                    helperAuthenticationToken!));
+                    helperAuthenticationToken!, roleLog));
         }
         if (TryParseElevatedDirectoryHelperBroker(
                 args,
@@ -42,7 +42,7 @@ internal static class Program
         {
             return RunProcessRole(
                 "elevated_directory_helper_broker",
-                () => ElevatedHelperProcessBroker.Launch(
+                _ => ElevatedHelperProcessBroker.Launch(
                     helperSessionId,
                     helperPipeName!,
                     helperAuthenticationToken!));
@@ -56,6 +56,8 @@ internal static class Program
         using var log = PlatformLog.CreateDefault();
         if (args.Length == 1 && args[0] == "--maintain-trusted-bootstrap")
             return TrustedBootstrapMaintenanceWindows.Run(log);
+        if (args.Length == 1 && args[0] == "--rotate-trusted-bootstrap")
+            return TrustedBootstrapMaintenanceWindows.Rotate(log);
         if (args.Length > 0 && args[0] == "--repair-missing-trusted-bootstrap")
             return args.Length == 2 && Guid.TryParseExact(args[1], "D", out var repairCorrelation) && repairCorrelation != Guid.Empty
                 ? TrustedMissingBootstrapRepair.Run(log, repairCorrelation)
@@ -141,7 +143,7 @@ internal static class Program
         }
     }
 
-    private static int RunProcessRole(string processRole, Func<int> run)
+    private static int RunProcessRole(string processRole, Func<IPlatformLog, int> run)
     {
         using var log = PlatformLog.CreateDefault();
         log.Write("info", "process.start", fields: new Dictionary<string, object?>
@@ -151,7 +153,7 @@ internal static class Program
         int? exitCode = null;
         try
         {
-            exitCode = run();
+            exitCode = run(log);
             return exitCode.Value;
         }
         catch (Exception error)

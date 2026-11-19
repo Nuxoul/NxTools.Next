@@ -23,6 +23,7 @@ pub(crate) fn requested(arguments: &[String]) -> anyhow::Result<bool> {
 pub(crate) fn run() {
     if std::env::var_os("NXTOOLS_PREVIEW_FINAL_GALLERY").is_some()
         || std::env::var_os("NXTOOLS_PREVIEW_EXTENSIONS").is_some()
+        || std::env::var_os("NXTOOLS_PREVIEW_COMPLETION_CENTER").is_some()
     {
         let fixture = std::thread::Builder::new()
             .name("isolated-final-gallery".into())
@@ -59,6 +60,17 @@ fn run_isolated() {
                     return;
                 }
                 Err(_) => {}
+            }
+            if let Some(path) = std::env::var_os("NXTOOLS_PREVIEW_MARKDOWN") {
+                let split =
+                    std::env::var("NXTOOLS_PREVIEW_MARKDOWN_MODE").as_deref() == Ok("split");
+                if crate::tools::markdown_reader::open_visual_fixture(path.into(), split, cx)
+                    .is_err()
+                {
+                    eprintln!("ui.preview.failed stage=markdown_reader");
+                    cx.quit();
+                }
+                return;
             }
             if std::env::var_os("NXTOOLS_PREVIEW_ARCHIVE_FLOW").is_some() {
                 if crate::archive::visual_preview::open(cx).is_err() {

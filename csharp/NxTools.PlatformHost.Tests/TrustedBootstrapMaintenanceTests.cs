@@ -134,6 +134,13 @@ internal static class TrustedBootstrapMaintenanceTests
         public IDisposable EnterDeploymentGate() { Events.Add("gate"); return new EmptyLease(); }
         private sealed class EmptyLease : IDisposable { public void Dispose() { } }
         public void SetBootstrapHash(string value) { Events.Add("set"); Hash = value; }
+        public void SetTrustIdentity(string expectedBootstrapHash, string expectedPublicKeyHash, string newBootstrapHash, string newPublicKeyHash)
+        {
+            Require(string.Equals(Hash, expectedBootstrapHash, StringComparison.OrdinalIgnoreCase) && string.Equals(keyHash, expectedPublicKeyHash, StringComparison.OrdinalIgnoreCase), "registered original identity");
+            Hash = newBootstrapHash; keyHash = newPublicKeyHash;
+            Events.Add("set-trust");
+        }
+        public void SetTrustKeyHash(string value) { keyHash = value; Events.Add("set-key"); }
         public void Start() { Events.Add("start"); Running = true; }
         public void ConfirmReady()
         {

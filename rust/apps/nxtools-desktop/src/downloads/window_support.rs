@@ -135,6 +135,28 @@ pub(crate) fn apply_progress_to_task_detail(
 ) {
     detail.task.downloaded_bytes = progress.downloaded_bytes;
     detail.task.total_bytes = progress.total_bytes;
+    let live_segments = progress
+        .segments
+        .iter()
+        .map(|segment| {
+            let start = segment.start_byte?;
+            let length = segment.total_bytes?;
+            let end = start.checked_add(length.checked_sub(1)?)?;
+            let written = segment.downloaded_bytes.min(length);
+            let state = if written == length {
+                DownloadSegmentState::Completed
+            } else if written > 0 {
+                DownloadSegmentState::Active
+            } else {
+                DownloadSegmentState::Waiting
+            };
+            DownloadSegment::new(segment.segment_index, start, end, written, state).ok()
+        })
+        .collect::<Option<Vec<_>>>();
+    if let Some(segments) = live_segments.filter(|segments| !segments.is_empty()) {
+        detail.segments = segments;
+        return;
+    }
     for segment_progress in &progress.segments {
         let Some(position) = detail
             .segments
@@ -299,12 +321,31 @@ pub(crate) fn download_task_status(
         DownloadStatus::Waiting => ("等待下载", theme.accent),
         DownloadStatus::Downloading => ("正在下载", theme.accent),
         DownloadStatus::Paused => ("已暂停", theme.text_secondary),
-        DownloadStatus::Finalizing => ("正在落盘", theme.accent),
+        DownloadStatus::Finalizing => ("正在完成", theme.accent),
         DownloadStatus::Verifying => ("正在校验", theme.accent),
         DownloadStatus::Completed => ("下载完成", theme.success),
         DownloadStatus::Failed => ("下载失败", theme.danger),
         DownloadStatus::Cancelled => ("已取消", theme.text_muted),
     }
+}
+
+pub(crate) fn finishing_stage_label(
+    progress: &nxtools_download::DownloadFinishingProgress,
+) -> &'static str {
+    match progress.stage {
+        nxtools_download::DownloadFinishingStage::Concatenating => "正在拼接",
+        nxtools_download::DownloadFinishingStage::Muxing => "正在合成",
+        nxtools_download::DownloadFinishingStage::Publishing => "正在发布",
+    }
+}
+
+pub(crate) fn finishing_ratio(
+    progress: &nxtools_download::DownloadFinishingProgress,
+) -> Option<f32> {
+    progress
+        .total
+        .filter(|total| *total > 0)
+        .map(|total| (progress.completed as f32 / total as f32).clamp(0.0, 0.99))
 }
 
 pub(crate) fn format_download_eta(seconds: u64) -> String {
@@ -325,11 +366,23 @@ pub(crate) fn taskbar_progress_command(
     task: &DownloadEngineTask,
     progress: Option<&DownloadProgress>,
 ) -> SetTaskbarProgressCommand {
-    let downloaded = progress.map_or(task.downloaded_bytes, |progress| progress.downloaded_bytes);
-    let total = progress
-        .and_then(|progress| progress.total_bytes)
-        .or(task.total_bytes);
     let status = task.task.status();
+    let finishing = if status == DownloadStatus::Finalizing {
+        progress.and_then(|progress| progress.finishing.as_ref())
+    } else {
+        None
+    };
+    let downloaded = finishing.map_or_else(
+        || progress.map_or(task.downloaded_bytes, |progress| progress.downloaded_bytes),
+        |phase| phase.completed,
+    );
+    let total = if status == DownloadStatus::Finalizing {
+        finishing.and_then(|phase| phase.total)
+    } else {
+        progress
+            .and_then(|progress| progress.total_bytes)
+            .or(task.total_bytes)
+    };
     let state = match status {
         DownloadStatus::Created | DownloadStatus::Probing | DownloadStatus::Waiting
             if total.is_none() =>
@@ -353,13 +406,22 @@ pub(crate) fn taskbar_progress_command(
         DownloadStatus::Created => TaskbarProgressState::Indeterminate,
     };
     let (completed, total) = match state {
-        TaskbarProgressState::Normal | TaskbarProgressState::Paused => {
+        TaskbarProgressState::Normal
+        | TaskbarProgressState::Paused
+        | TaskbarProgressState::Error => {
             let total = total.unwrap_or(1).max(1);
-            (downloaded.min(total), total)
-        }
-        TaskbarProgressState::Error => {
-            let total = total.unwrap_or(1).max(1);
-            (downloaded.min(total).max(1), total)
+            if status == DownloadStatus::Finalizing {
+                (downloaded.min(total.saturating_sub(1)), total)
+            } else {
+                (
+                    if state == TaskbarProgressState::Error {
+                        downloaded.min(total).max(1)
+                    } else {
+                        downloaded.min(total)
+                    },
+                    total,
+                )
+            }
         }
         TaskbarProgressState::None | TaskbarProgressState::Indeterminate => (0, 0),
     };

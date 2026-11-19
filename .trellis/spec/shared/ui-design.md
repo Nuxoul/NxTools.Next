@@ -270,6 +270,9 @@ User rejects the extension-feedback gallery's long prose package rows and unfram
 ### Authorized source implementation checkpoint
 The preceding documentation-only/unimplemented wording describes the earlier checkpoint, not the current source. The later authorized correction implements catalog cells, state-driven explicit next steps, outlined header Buttons through released Toolbar.content, and fixed manual-feedback actions. Real render-bound layout red/green, Light/Dark border paint, official toolbar keyboard roving and trust/usage side-effect regressions pass; final Desktop754/754/strict/workspace/fmt/source gates are recorded in [redesign outcomes](../../tasks/10-15-extension-action-feedback/redesign-outcomes.md). Ten new isolated GPUI captures are generated/nonblank-checked, **not directly visually inspected** because viewer tools failed. No user visual, installed/native or Release acceptance implied; the earlier user rejection remains authoritative.
 
+### Approved Extensions workspace redesign
+The [approved design](../../../docs/ui/extensions-workspace-redesign.md) keeps responsive catalog cells but gives each one a single detail activation. Installed, Needs attention and Activity are workspace tabs; Import is the primary action, and the outlined Management menu collects environment, chains, directory and retained data. Details use the original Root's right Sheet with its focus restoration; settings drafts, independent trust/enabling and the import/trust/removal dialogs keep their current owners. Activity combines pending and terminal metadata without adding persistence or retry. The original Clipboard context surface is unchanged.
+
 ## Contextual Clipboard/plugin UX amendment (2026-10-15)
 User rejects sequence9's modal chooser/report inside300x440 Clipboard, forced252px catalog cells, fixed360px feedback and repetitive Accordion. New authorized target: direct extension submenu leaf -> compact same-panel progress/outcome/actions, explicit details only; content-driven cells/details with bounded maximum rather than filler height. Downloads ordinary commands precede extension submenu and destructive commands follow. Clipboard context menu must genuinely exceed its HWND, not merely a list clip. Locked Kit NativeMenu source documents OS popup capability; C# native adapter owns HMENU/TrackPopupMenuEx via typed session, Rust original callbacks/state and GPUI original panel; this is system-native menu presentation, not styledPopupMenu adoption. Downloads uses official PopupMenu. Disconnected window-local fixture fallback is not production overflow policy. Preserve original trust, pending/cancel/late host evidence/exact-origin result navigation. Owned native popup/provider cascade/cancel passed, Desktop759/Protocol47/C#252 and compiled gates pass;10newGPUIcaptures generated but unviewed due tool failure. [Current outcomes and limitations](../../tasks/10-15-extension-action-feedback/ux-outcomes.md); not installed/physical/DPI/user visual acceptance.
 
@@ -333,9 +336,10 @@ the last original menu action. Exact behavior and regressions:
 No framework/dependency, palette or native placement owner changes.
 
 ## Current-result and Clipboard input correction (2026-10-30)
-Quick Launch publishes and enables nonempty current local/index/extension results before all
-providers finish; retained prior-query rows stay disabled. Completion and usable availability are
-distinct. [Current result contract](../nxtools-desktop/backend/ui-experience-contracts.md#scenario-current-quick-launch-result-availability).
+Ordinary Quick Launch starts changed-input searches on the next application turn without a fixed
+debounce, accumulates current index/extension batches privately, and replaces results only after
+all selected current providers complete. Retained previous rows remain inert. Attached search
+keeps its separate cadence. [Current result contract](../nxtools-desktop/backend/ui-experience-contracts.md#scenario-current-quick-launch-result-availability).
 Clipboard summon retains original native activation then search focus. Only Ctrl+digit is indexed
 paste; plain digits enter search even when empty. Initial-focus tests may not repair fixture focus.
 [Shortcut contract](../nxtools-desktop/backend/quality-guidelines.md#scenario-clipboard-usable-shortcuts-and-one-capture-toggle).
@@ -347,9 +351,10 @@ file/parent-path hierarchy. Official Label middle ellipsis retains full accessib
 text. Keep620DIP width/42DIP header and4-or0external gap; content grows to470DIP list viewport then
 scrolls, with compact96DIP pending/empty state and reserved36DIP error footer. This supersedes the
 earlier standalone40DIP/fixed410 restrictions, not compact attached search/action rows or theme APIs.
-Current-result early publication, default-first versus explicit selection, normal retained-row paint
-with stale execution blocked, original focus/preview/window owners remain. Native content sizing uses
-existing coalesced C# SetWindowBounds/SwpNoActivate; no new IPC or framework patch.
+One complete ranked replacement establishes the ordinary launcher's default; partial batches do
+not publish or append. Explicit selection, normal retained-row paint with stale execution blocked,
+original focus/preview/window owners remain. Native content sizing uses existing coalesced C# SetWindowBounds/SwpNoActivate;
+no new IPC or framework patch.
 [Executable contract](../nxtools-desktop/backend/ui-experience-contracts.md#scenario-quick-launch-continuous-refresh-and-default-selection),
 [reference](../../../docs/reference-code/quick-launch-listary-results.md),
 [task](../../tasks/11-04-quick-launch-listary-alignment/prd.md).

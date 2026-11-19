@@ -22,7 +22,7 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
         "msconfig.exe", "taskmgr.exe", "services.msc", "devmgmt.msc", "diskmgmt.msc",
         "eventvwr.msc", "compmgmt.msc", "gpedit.msc", "secpol.msc", "optionalfeatures.exe",
         "cleanmgr.exe", "dxdiag.exe", "winver.exe", "resmon.exe", "perfmon.exe", "mrt.exe",
-        "cmd.exe", "powershell.exe", "regedit.exe", "control.exe"
+        "cmd.exe", "powershell.exe", "regedit.exe", "control.exe", "notepad.exe"
     };
 
     private static readonly string[] RegistryRoots =
@@ -69,7 +69,8 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
             error = "The registry key root is unsupported.";
             return false;
         }
-        if (kind == ShellTargetKind.SystemTool && !AllowedSystemTools.Contains(value))
+        if (kind == ShellTargetKind.SystemTool && !AllowedSystemTools.Contains(value) &&
+            !value.Equals("ms-settings:", StringComparison.OrdinalIgnoreCase))
         {
             error = "The requested system tool is not allowlisted.";
             return false;

@@ -16,8 +16,19 @@ $quickLaunchSource = (@(
         # The module's production-window regressions live in its test submodule;
         # they are part of the lifecycle contract this gate enforces.
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'tests.rs')),
-        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'refresh_tests.rs'))
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'refresh_tests.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'normal_search_tests.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'provider_completion_tests.rs'))
     )) -join "`n"
+
+if ($quickLaunchSource -match 'SEARCH_INPUT_DEBOUNCE|INDEX_FIRST_PUBLISH_DEADLINE' -or
+    $quickLaunchSource -notmatch '(?s)fn schedule_search.*?cx\.defer\(move \|cx\|' -or
+    $quickLaunchSource -notmatch '(?s)fn refresh_indexed_results.*?if !self\.index_search\.complete\s*\|\| self\.extension_search_in_progress' -or
+    $quickLaunchSource -notmatch 'normal_search_dispatches_without_delay_and_commits_only_complete_results' -or
+    $quickLaunchSource -notmatch 'normal_search_waits_for_every_current_provider_in_either_completion_order') {
+    throw 'Ordinary launcher input must dispatch next turn without fixed timers and publish only after all current providers finish, with production-boundary regressions.'
+}
+Write-Host 'PASS ordinary launcher uses deferred input and complete-provider publication'
 $metricsPath = Join-Path $root 'rust\apps\nxtools-desktop\src\ui\metrics.rs'
 $metricsSource = Get-Content -Raw -LiteralPath $metricsPath
 $mainWindowPath = Join-Path $root 'rust\apps\nxtools-desktop\src\main_window.rs'
@@ -1168,6 +1179,7 @@ $oneCommanderAdapterSource = if (Test-Path -LiteralPath $oneCommanderAdapterPath
 } else {
     ''
 }
+$oneCommanderUiaSessionSource = Get-Content -Raw -LiteralPath (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\OneCommanderUiaSession.cs')
 $boundedStaRunnerPath = Join-Path $root 'csharp\NxTools.PlatformHost\Windows\BoundedStaOperationRunner.cs'
 $boundedStaRunnerSource = if (Test-Path -LiteralPath $boundedStaRunnerPath) {
     Get-Content -Raw -LiteralPath $boundedStaRunnerPath
@@ -1614,7 +1626,7 @@ if ($protocolSource -notmatch 'FileDialog' -or
     $shellIconSource -notmatch 'TryResolveShortcut' -or
     $shellIconSource -notmatch 'ResolveSystemToolPath' -or
     $quickLaunchSource -notmatch 'pending_action_owns_foreground' -or
-    $quickLaunchSource -notmatch 'begin_window_activation\(popup\.native_window_handle\)' -or
+    $quickLaunchSource -notmatch 'begin_window_activation\(popup\.native_window_handle,\s*cx\)' -or
     $fileDialogAdapterSource -notmatch '"#32770"' -or
     $fileDialogAdapterSource -notmatch '"Breadcrumb Parent"' -or
     $fileDialogAdapterSource -notmatch 'FileNameEditId' -or
@@ -1717,12 +1729,16 @@ if ($protocolSource -notmatch '(?s)DirectoryNavigationHost\s*\{.*?ThirdPartyFile
     $totalCommanderAdapterSource -notmatch 'GetRequestWide' -or
     $totalCommanderAdapterSource -notmatch 'ChangeDirectory' -or
     $totalCommanderAdapterSource -notmatch 'SendMessageTimeout' -or
-    $oneCommanderAdapterSource -notmatch '"CurrentPathGet"' -or
-    $oneCommanderAdapterSource -notmatch '"CurrentPathSet"' -or
-    $oneCommanderAdapterSource -notmatch 'focusWindowHandle' -or
-    $oneCommanderAdapterSource -notmatch 'AutomationElement\.FromHandle' -or
-    $oneCommanderAdapterSource -match '(?s)CapturePane\(.*?AutomationElement\.FocusedElement.*?private static OneCommanderNavigationResult' -or
+    $oneCommanderAdapterSource -notmatch 'session\.Capture\(windowHandle, focusWindowHandle, cancellationToken\)' -or
+    $oneCommanderAdapterSource -notmatch 'session\.Navigate\(pane, targetDirectory, cancellationToken\)' -or
     $oneCommanderAdapterSource -notmatch 'BoundedStaOperationRunner\.TryRun' -or
+    $oneCommanderUiaSessionSource -notmatch 'Automation\.ElementFromHandle\(window\)' -or
+    $oneCommanderUiaSessionSource -notmatch 'Automation\.AutomationIdCondition\("CurrentPathGet"\)' -or
+    $oneCommanderUiaSessionSource -notmatch 'Automation\.AutomationIdCondition\("CurrentPathSet"\)' -or
+    $oneCommanderUiaSessionSource -notmatch 'NearestPane\(focused, root, walker,' -or
+    $oneCommanderUiaSessionSource -notmatch 'savedPane\.FindFirst\(setterCondition\)' -or
+    $oneCommanderUiaSessionSource -notmatch 'savedPane\.FindFirst\(getterCondition\)' -or
+    ($oneCommanderAdapterSource + $oneCommanderUiaSessionSource) -match 'System\.Windows\.Automation|AutomationElement\.(FromHandle|FocusedElement)' -or
     $boundedStaRunnerSource -notmatch 'completed\.Wait\(timeout(?:,\s*cancellationToken)?\)' -or
     $boundedStaRunnerSource -notmatch 'cancellation\.Cancel\(\)' -or
     $boundedStaRunnerSource -notmatch 'ActiveOperations' -or
@@ -1808,8 +1824,8 @@ if ($protocolSource -notmatch 'ElevatedDirectoryHelperRequested' -or
     $desktopMainSource -notmatch 'protected_package_matches_release' -or
     $desktopMainSource -notmatch 'NxTools\.Indexer\.exe' -or
     $desktopMainSource -notmatch 'NxTools\.PlatformHost\.exe' -or
-    $oneCommanderAdapterSource -notmatch 'OneCommanderFocusTracker' -or
-    $oneCommanderAdapterSource -notmatch 'AutomationElement\.FocusedElement' -or
+    $oneCommanderUiaSessionSource -notmatch 'OneCommanderFocusTracker' -or
+    $oneCommanderUiaSessionSource -notmatch '(?s)if \(focused is null && OneCommanderNativeWindow\.IsForeground\(window, processId\)\)\s*focused = Automation\.FocusedElement\(\)' -or
     $oneCommanderAdapterSource -notmatch 'Fatal: true' -or
     $elevatedDirectoryNavigationSource -notmatch 'capture\.Failure\?\.Fatal' -or
     $releaseManifestSource -notmatch 'IndexerSha256' -or
@@ -1890,7 +1906,8 @@ if ($protocolSource -notmatch 'QuickLaunchFileDialogSearchHostChanged' -or
     $platformCapabilitiesSource -notmatch 'file_dialog_search' -or
     $fileDialogSearchSource -notmatch 'WindowKind::PopUp' -or
     $fileDialogSearchSource -notmatch 'SetWindowOwner' -or
-    $fileDialogSearchSource -notmatch 'IndexSearchContext' -or
+    $fileDialogSearchSource -notmatch 'IndexSearchSession' -or
+    $fileDialogSearchSource -notmatch 'unified_catalog_results' -or
     $fileDialogSearchSource -notmatch 'preferred_directory' -or
     $fileDialogSearchSource -notmatch 'file_dialog_default_source' -or
     $fileDialogSearchSource -notmatch 'shortcut::key\("ctrl-g"\)' -or
@@ -2074,19 +2091,17 @@ versioned application/cache results blank even though the row is presented.
 
 Write-Host 'PASS stale file paths retain their Windows file-type icon'
 
-if ($quickLaunchSource -notmatch 'SEARCH_INPUT_DEBOUNCE' -or
-    $quickLaunchSource -notmatch 'query_requests_file_index' -or
+if ($quickLaunchSource -notmatch 'query_requests_file_index' -or
     $indexerSource -notmatch 'struct SearchCandidate' -or
     $indexerSource -notmatch 'base_name_mask' -or
     $indexerSource -notmatch 'name_mask_may_match' -or
     $indexerSource -notmatch 'score_name' -or
     $indexerSource -notmatch 'normalized_path_separators') {
     throw @'
-Quick-launch query-efficiency regression: rapid input must be coalesced, every
-non-empty query must retain full indexed-file semantics, normal name searches
-must use the compact mask/name prefilter before materializing cold paths, and
-the scan must retain borrowed candidates instead of allocating owned paths for
-every match.
+Quick-launch query-efficiency regression: every non-empty query must retain full
+indexed-file semantics. Name searches must use the compact mask/name prefilter
+before materializing cold paths, retaining borrowed candidates instead of
+allocating paths for every match.
 '@
 }
 

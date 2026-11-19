@@ -6,6 +6,13 @@ use super::{
     ClipboardKind, ClipboardPageCursor, ClipboardSearchScope, ClipboardSummaryPage, map_item,
 };
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ClipboardHistoryFilter {
+    pub source_process: Option<String>,
+    /// Inclusive start, exclusive end; both refer to capture time, not last use.
+    pub captured_between_unix_ms: Option<(i64, i64)>,
+}
+
 // One filtered/order owner for the original full and bounded summary projections.
 const FILTER: &str = "deleted_at_unix_ms = 0
     AND (?1 IS NULL OR content_type = ?1)
@@ -15,6 +22,9 @@ const FILTER: &str = "deleted_at_unix_ms = 0
         WHERE category_source.category_id = ?3
           AND category_source.process_name = clipboard_items.source_process_name
     ))
+    AND (?6 IS NULL OR source_process_name = ?6 COLLATE NOCASE)
+    AND (?7 IS NULL OR captured_at_unix_ms >= ?7)
+    AND (?8 IS NULL OR captured_at_unix_ms < ?8)
     AND (?4 = '' OR instr(lower(text), lower(?4)) > 0
         OR (?5 = 1 AND (instr(lower(image_path), lower(?4)) > 0
             OR instr(lower(file_paths_json), lower(?4)) > 0
@@ -31,11 +41,11 @@ const SUMMARY_COLUMNS: &str = "id, content_type, nxt_clip_summary(text), image_p
     last_used_at_unix_ms, copy_count, is_favorite, is_pinned, deleted_at_unix_ms, nxt_clip_chars(text)";
 // Keep the SQL projection's scalar limit tied to the public API constant.
 const _: [(); CLIPBOARD_SUMMARY_CHARACTERS] = [(); 400];
-const AFTER_CURSOR: &str = "(is_pinned < ?6
-    OR (is_pinned = ?6 AND last_used_at_unix_ms < ?7)
-    OR (is_pinned = ?6 AND last_used_at_unix_ms = ?7 AND captured_at_unix_ms < ?8)
-    OR (is_pinned = ?6 AND last_used_at_unix_ms = ?7
-        AND captured_at_unix_ms = ?8 AND id < ?9))";
+const AFTER_CURSOR: &str = "(is_pinned < ?9
+    OR (is_pinned = ?9 AND last_used_at_unix_ms < ?10)
+    OR (is_pinned = ?9 AND last_used_at_unix_ms = ?10 AND captured_at_unix_ms < ?11)
+    OR (is_pinned = ?9 AND last_used_at_unix_ms = ?10
+        AND captured_at_unix_ms = ?11 AND id < ?12))";
 
 fn map_summary(row: &Row<'_>) -> rusqlite::Result<ClipboardItemSummary> {
     Ok(ClipboardItemSummary {
@@ -444,7 +454,16 @@ impl ClipboardHistory {
         limit: usize,
         known_total: Option<usize>,
     ) -> Result<ClipboardSummaryPage, ClipboardHistoryError> {
-        self.summary_page(query, category_id, scope, offset, limit, None, known_total)
+        self.filtered_summary_page(
+            query,
+            category_id,
+            scope,
+            offset,
+            limit,
+            None,
+            known_total,
+            &ClipboardHistoryFilter::default(),
+        )
     }
 
     pub fn summary_category_page_after(
@@ -456,7 +475,7 @@ impl ClipboardHistory {
         limit: usize,
         known_total: Option<usize>,
     ) -> Result<ClipboardSummaryPage, ClipboardHistoryError> {
-        self.summary_page(
+        self.filtered_summary_page(
             query,
             category_id,
             scope,
@@ -464,11 +483,12 @@ impl ClipboardHistory {
             limit,
             Some(cursor),
             known_total,
+            &ClipboardHistoryFilter::default(),
         )
     }
 
     #[allow(clippy::too_many_arguments)]
-    fn summary_page(
+    pub fn filtered_summary_page(
         &self,
         query: &str,
         category_id: &str,
@@ -477,6 +497,7 @@ impl ClipboardHistory {
         limit: usize,
         cursor: Option<ClipboardPageCursor>,
         known_total: Option<usize>,
+        filters: &ClipboardHistoryFilter,
     ) -> Result<ClipboardSummaryPage, ClipboardHistoryError> {
         let category = self.category_by_id(category_id)?;
         let (kind, favorite, source) = match category.kind {
@@ -487,7 +508,8 @@ impl ClipboardHistory {
             ClipboardCategoryKind::Files => (Some(ClipboardKind::Files), false, None),
             ClipboardCategoryKind::Custom => (None, false, Some(category_id)),
         };
-        let total = self.filtered_total(query, kind, favorite, source, scope, known_total)?;
+        let total =
+            self.filtered_total(query, kind, favorite, source, scope, known_total, filters)?;
         let page_limit = limit.clamp(1, 500);
         let (mut items, has_more) = if let Some(cursor) = cursor {
             let mut items = self.select_items_after(
@@ -496,6 +518,7 @@ impl ClipboardHistory {
                 favorite,
                 source,
                 scope,
+                filters,
                 cursor,
                 page_limit.saturating_add(1),
                 SUMMARY_COLUMNS,
@@ -511,6 +534,7 @@ impl ClipboardHistory {
                 favorite,
                 source,
                 scope,
+                filters,
                 offset,
                 page_limit,
                 SUMMARY_COLUMNS,
@@ -535,6 +559,7 @@ impl ClipboardHistory {
         source: Option<&str>,
         scope: ClipboardSearchScope,
         known_total: Option<usize>,
+        filters: &ClipboardHistoryFilter,
     ) -> Result<usize, ClipboardHistoryError> {
         if let Some(total) = known_total {
             return Ok(total);
@@ -548,6 +573,9 @@ impl ClipboardHistory {
                 source,
                 query,
                 scope == ClipboardSearchScope::Extended,
+                filters.source_process.as_deref(),
+                filters.captured_between_unix_ms.map(|(start, _)| start),
+                filters.captured_between_unix_ms.map(|(_, end)| end),
             ],
             |row| row.get::<_, i64>(0),
         )? as usize)
@@ -561,13 +589,14 @@ impl ClipboardHistory {
         favorite: bool,
         source: Option<&str>,
         scope: ClipboardSearchScope,
+        filters: &ClipboardHistoryFilter,
         offset: usize,
         limit: usize,
         columns: &str,
         map: fn(&Row<'_>) -> rusqlite::Result<T>,
     ) -> Result<Vec<T>, ClipboardHistoryError> {
         let sql = format!(
-            "SELECT {columns} FROM clipboard_items WHERE {FILTER} ORDER BY {ORDER} LIMIT ?6 OFFSET ?7"
+            "SELECT {columns} FROM clipboard_items WHERE {FILTER} ORDER BY {ORDER} LIMIT ?9 OFFSET ?10"
         );
         let mut statement = self.connection.prepare(&sql)?;
         let rows = statement.query_map(
@@ -577,6 +606,9 @@ impl ClipboardHistory {
                 source,
                 query,
                 scope == ClipboardSearchScope::Extended,
+                filters.source_process.as_deref(),
+                filters.captured_between_unix_ms.map(|(start, _)| start),
+                filters.captured_between_unix_ms.map(|(_, end)| end),
                 limit as i64,
                 offset as i64,
             ],
@@ -593,13 +625,14 @@ impl ClipboardHistory {
         favorite: bool,
         source: Option<&str>,
         scope: ClipboardSearchScope,
+        filters: &ClipboardHistoryFilter,
         cursor: ClipboardPageCursor,
         limit: usize,
         columns: &str,
         map: fn(&Row<'_>) -> rusqlite::Result<T>,
     ) -> Result<Vec<T>, ClipboardHistoryError> {
         let sql = format!(
-            "SELECT {columns} FROM clipboard_items WHERE {FILTER} AND {AFTER_CURSOR} ORDER BY {ORDER} LIMIT ?10"
+            "SELECT {columns} FROM clipboard_items WHERE {FILTER} AND {AFTER_CURSOR} ORDER BY {ORDER} LIMIT ?13"
         );
         let mut statement = self.connection.prepare(&sql)?;
         let rows = statement.query_map(
@@ -609,6 +642,9 @@ impl ClipboardHistory {
                 source,
                 query,
                 scope == ClipboardSearchScope::Extended,
+                filters.source_process.as_deref(),
+                filters.captured_between_unix_ms.map(|(start, _)| start),
+                filters.captured_between_unix_ms.map(|(_, end)| end),
                 i64::from(cursor.is_pinned),
                 cursor.last_used_at_unix_ms,
                 cursor.captured_at_unix_ms,
@@ -660,6 +696,7 @@ impl ClipboardHistory {
             source_category_id,
             search_scope,
             known_total,
+            &ClipboardHistoryFilter::default(),
         )?;
         let page_limit = limit.clamp(1, 500);
         let (mut items, has_more) = if let Some(cursor) = cursor {
@@ -712,6 +749,7 @@ impl ClipboardHistory {
             favorite_only,
             source_category_id,
             search_scope,
+            &ClipboardHistoryFilter::default(),
             offset,
             limit,
             FULL_COLUMNS,
@@ -735,6 +773,7 @@ impl ClipboardHistory {
             favorite_only,
             source_category_id,
             search_scope,
+            &ClipboardHistoryFilter::default(),
             cursor,
             limit,
             FULL_COLUMNS,
@@ -833,6 +872,46 @@ mod summary_seam_tests {
             CaptureOutcome::Inserted(item) => item,
             other => panic!("expected new row: {other:?}"),
         }
+    }
+
+    #[test]
+    fn combined_filter_reuses_the_same_predicate_for_count_offset_and_cursor() {
+        let directory = tempfile::tempdir().expect("history directory");
+        let mut history =
+            ClipboardHistory::open(directory.path().join("history.db")).expect("history");
+        let older = capture(&mut history, "invoice A".into(), "EXCEL.exe", 20, vec![]);
+        let newer = capture(&mut history, "invoice B".into(), "excel.exe", 29, vec![]);
+        capture(&mut history, "invoice C".into(), "excel.exe", 30, vec![]);
+        capture(&mut history, "invoice D".into(), "excel.exe", 19, vec![]);
+        capture(&mut history, "invoice E".into(), "word.exe", 24, vec![]);
+        capture(&mut history, "report F".into(), "excel.exe", 25, vec![]);
+        let filters = ClipboardHistoryFilter {
+            source_process: Some("Excel.exe".into()),
+            captured_between_unix_ms: Some((20, 30)),
+        };
+        let page = |offset, cursor, total| {
+            history
+                .filtered_summary_page(
+                    "invoice",
+                    BUILTIN_TEXT_CATEGORY_ID,
+                    ClipboardSearchScope::Content,
+                    offset,
+                    1,
+                    cursor,
+                    total,
+                    &filters,
+                )
+                .expect("filtered page")
+        };
+        let first = page(0, None, None);
+        assert_eq!(first.total, 2);
+        assert_eq!(first.items[0].item.id, newer.id);
+        assert!(first.has_more);
+        let cursor = ClipboardPageCursor::from(&first.items[0].item);
+        let next = page(0, Some(cursor), Some(first.total));
+        assert_eq!(next, page(1, None, None));
+        assert_eq!(next.items[0].item.id, older.id);
+        assert!(!next.has_more);
     }
 
     #[test]

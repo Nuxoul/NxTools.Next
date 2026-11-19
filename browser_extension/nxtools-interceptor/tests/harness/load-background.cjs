@@ -54,6 +54,53 @@ function createClock() {
   };
 }
 
+function browserHandoffReply(handoffId, state, taskId = "", queued = false) {
+  const accepted = state === "held" || state === "committed";
+  const handoffState = state === "pending" ? "awaiting_confirmation"
+    : state === "held" ? "persisted"
+      : state === "committed" ? "transferred" : "rejected";
+  const reason = state === "pending" ? "confirmation_pending"
+    : state === "held" ? "desktop_accepted"
+      : state === "committed" ? "browser_transferred"
+        : state === "expired" ? "confirmation_timeout"
+          : state === "aborted" ? "confirmation_cancelled" : "desktop_refused";
+  return {
+    ok: true,
+    handoffId,
+    accepted,
+    ...(accepted && taskId ? { taskId } : {}),
+    data: { browserHandoffState: state, handoffState, reason, ...(state === "held" ? { queued } : {}) }
+  };
+}
+
+function createControlledHandoffResponder(options = {}) {
+  const records = new Map();
+  const taskId = options.taskId || "controlled-task";
+  function respond(message) {
+    const overridden = options.onRequest?.(message, records);
+    if (overridden !== undefined) return overridden;
+    if (message.type === "prepare_browser_handoff") {
+      const state = options.prepareState || "held";
+      const record = { state, taskId: state === "held" ? taskId : "", queued: options.queued === true };
+      records.set(message.payload.handoffId, record);
+      return browserHandoffReply(message.payload.handoffId, record.state, record.taskId, record.queued);
+    }
+    if (["get_browser_handoff", "commit_browser_handoff", "abort_browser_handoff"].includes(message.type)) {
+      const handoffId = message.payload.handoffId;
+      const record = records.get(handoffId);
+      if (!record) return browserHandoffReply(handoffId, "missing");
+      if (message.type === "commit_browser_handoff") {
+        if (record.state === "held" && message.payload.taskId === record.taskId) record.state = "committed";
+      } else if (message.type === "abort_browser_handoff" && record.state !== "committed") {
+        record.state = "aborted";
+      }
+      return browserHandoffReply(handoffId, record.state, record.taskId, record.queued);
+    }
+    return options.fallback?.(message);
+  }
+  return { records, respond };
+}
+
 // Fake desktop: answers hello automatically and lets a test decide every request.
 function attachFakeDesktop(chrome, options = {}) {
   const requests = [];
@@ -86,7 +133,12 @@ function attachFakeDesktop(chrome, options = {}) {
 function loadBackground(options = {}) {
   const manifest = readManifest();
   const firefox = options.browser === "firefox";
-  const chrome = createChromeApi({ ...options.chrome, firefox });
+  const chrome = createChromeApi({ ...options.chrome, firefox, manifest: {
+    ...manifest,
+    // The installed Firefox XPI receives this permission from CreateFirefoxManifest.
+    permissions: firefox ? [...manifest.permissions.filter(value => value !== "declarativeNetRequest"), "webRequestBlocking"] : manifest.permissions,
+    ...options.chrome?.manifest
+  } });
   const clock = createClock();
   const desktop = attachFakeDesktop(chrome, options.desktop || {});
   const consoleSink = { warn() {}, error() {}, info() {}, log() {}, debug() {} };
@@ -175,4 +227,4 @@ function loadBackground(options = {}) {
   return { chrome, clock, desktop, context, realm, loaded, settle, waitFor, sendRuntimeMessage, senders, manifest, evaluate };
 }
 
-module.exports = { loadBackground, readManifest, EXTENSION_ROOT };
+module.exports = { loadBackground, readManifest, EXTENSION_ROOT, browserHandoffReply, createControlledHandoffResponder };

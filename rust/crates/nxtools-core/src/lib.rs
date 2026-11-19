@@ -85,6 +85,9 @@ pub struct ProcessBlacklistSettings {
     pub disable_clipboard: bool,
     #[serde(default)]
     pub disable_quick_launch: bool,
+    /// Missing only in legacy files or rule-only updates; normalized by AppConfig.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suppress_in_fullscreen: Option<bool>,
 }
 
 impl Default for ProcessBlacklistSettings {
@@ -103,6 +106,7 @@ impl Default for ProcessBlacklistSettings {
             processes: default_clipboard_excluded_processes(),
             disable_clipboard: true,
             disable_quick_launch: false,
+            suppress_in_fullscreen: Some(true),
         }
     }
 }
@@ -113,6 +117,7 @@ fn legacy_process_blacklist() -> ProcessBlacklistSettings {
         processes: Vec::new(),
         disable_clipboard: true,
         disable_quick_launch: false,
+        suppress_in_fullscreen: None,
     }
 }
 
@@ -131,6 +136,7 @@ impl ProcessBlacklistSettings {
             processes: Vec::new(),
             disable_clipboard: false,
             disable_quick_launch: false,
+            suppress_in_fullscreen: None,
         };
         settings.normalize();
         settings
@@ -223,13 +229,17 @@ pub struct AppConfig {
     #[serde(default)]
     pub archive: ArchiveSettings,
     #[serde(default)]
+    pub markdown_reader: MarkdownReaderSettings,
+    #[serde(default)]
     pub extensions: nxtools_extensions::PackageRegistry,
+    #[serde(default)]
+    pub integration_setup_dismissed: bool,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
-            theme: ThemePreference::Dark,
+            theme: ThemePreference::System,
             platform_pipe_name: "nxtools-next-platform-v1".into(),
             network: NetworkSettings::default(),
             system: SystemSettings::default(),
@@ -240,16 +250,38 @@ impl Default for AppConfig {
             process_blacklist: ProcessBlacklistSettings::default(),
             download: DownloadSettings::default(),
             archive: ArchiveSettings::default(),
+            markdown_reader: MarkdownReaderSettings::default(),
             extensions: Default::default(),
+            integration_setup_dismissed: false,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(default)]
+pub struct MarkdownReaderSettings {
+    pub enabled: bool,
+    pub show_outline: bool,
+    pub font_size: u8,
+    pub wide_body: bool,
+}
+
+impl MarkdownReaderSettings {
+    pub const MIN_FONT_SIZE: u8 = 12;
+    pub const MAX_FONT_SIZE: u8 = 28;
+}
+
+impl Default for MarkdownReaderSettings {
+    fn default() -> Self {
+        Self { enabled: true, show_outline: false, font_size: 20, wide_body: false }
     }
 }
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ThemePreference {
+    #[default]
     System,
     Light,
-    #[default]
     Dark,
     CatppuccinLatte,
     CatppuccinFrappe,
@@ -365,6 +397,8 @@ pub struct SystemSettings {
     pub close_to_tray: bool,
     #[serde(default)]
     pub theme: ThemePreference,
+    #[serde(default = "default_ui_font_family")]
+    pub ui_font_family: String,
     #[serde(default)]
     pub notification_position: NotificationPosition,
     #[serde(
@@ -380,10 +414,24 @@ impl Default for SystemSettings {
             start_on_login_silently: false,
             close_to_tray: default_close_to_tray(),
             theme: ThemePreference::default(),
+            ui_font_family: default_ui_font_family(),
             notification_position: NotificationPosition::default(),
             notification_duration_seconds: default_notification_duration(),
         }
     }
+}
+
+pub const DEFAULT_UI_FONT_FAMILY: &str = "Microsoft YaHei UI";
+
+pub fn default_ui_font_family() -> String {
+    DEFAULT_UI_FONT_FAMILY.into()
+}
+
+pub fn validate_ui_font_family(family: &str) -> std::result::Result<(), String> {
+    if family.trim().is_empty() || family.len() > 256 || family.chars().any(char::is_control) {
+        return Err("请选择有效的界面字体（不超过 256 字节）".into());
+    }
+    Ok(())
 }
 
 pub const fn default_notification_duration() -> u32 {
@@ -478,6 +526,22 @@ fn valid_proxy_host(host: &str) -> bool {
         })
 }
 
+pub const DEFAULT_DOWNLOAD_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 6.1; Trident/7.0; rv:11.0) like Gecko";
+
+pub fn default_download_request_headers() -> String {
+    format!("User-Agent: {DEFAULT_DOWNLOAD_USER_AGENT}")
+}
+
+pub fn effective_download_request_headers(value: &str) -> std::borrow::Cow<'_, str> {
+    let value = value.trim();
+    if value.is_empty() {
+        std::borrow::Cow::Owned(default_download_request_headers())
+    } else {
+        std::borrow::Cow::Borrowed(value)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DownloadSettings {
     #[serde(default)]
@@ -499,7 +563,7 @@ pub struct DownloadSettings {
     pub double_click_action: DownloadRowDoubleClickActionSettings,
     #[serde(default)]
     pub ffmpeg_executable_path: String,
-    #[serde(default)]
+    #[serde(default = "default_download_request_headers")]
     pub default_request_headers: String,
     #[serde(default)]
     pub default_cookie: String,
@@ -642,7 +706,7 @@ impl Default for DownloadSettings {
             task_list_sort: None,
             task_list_sort_descending: None,
             ffmpeg_executable_path: String::new(),
-            default_request_headers: String::new(),
+            default_request_headers: default_download_request_headers(),
             default_cookie: String::new(),
             accept_invalid_certificates: false,
             default_connection_limit: default_download_connection_limit(),
@@ -702,7 +766,8 @@ impl DownloadSettings {
                 normalize_download_category_values(&category.url_patterns, false);
         }
         self.ffmpeg_executable_path = self.ffmpeg_executable_path.trim().to_owned();
-        self.default_request_headers = self.default_request_headers.trim().to_owned();
+        self.default_request_headers =
+            effective_download_request_headers(&self.default_request_headers).into_owned();
         let cookie = self.default_cookie.trim();
         self.default_cookie = if cookie
             .get(.."Cookie:".len())
@@ -1476,6 +1541,7 @@ impl AppConfig {
         self.clipboard_panel =
             ClipboardPanelSize::clamped(self.clipboard_panel.width, self.clipboard_panel.height);
         self.clipboard.normalize();
+        self.process_blacklist.suppress_in_fullscreen = Some(self.suppress_panel_in_fullscreen());
         if self.process_blacklist.entries.is_none() {
             let mut entries = self.process_blacklist.entries();
             for process in &self.clipboard.excluded_processes {
@@ -1485,13 +1551,23 @@ impl AppConfig {
                     entries.push(rule);
                 }
             }
-            self.process_blacklist = ProcessBlacklistSettings::from_entries(entries);
+            self.process_blacklist.entries = Some(entries);
         }
         self.process_blacklist.normalize();
         self.clipboard.excluded_processes = self.process_blacklist.clipboard_processes();
         self.quick_launch.normalize();
         self.floating_assistant.normalize();
+        self.markdown_reader.font_size = self.markdown_reader.font_size.clamp(
+            MarkdownReaderSettings::MIN_FONT_SIZE,
+            MarkdownReaderSettings::MAX_FONT_SIZE,
+        );
         self.download.normalize();
+    }
+
+    pub fn suppress_panel_in_fullscreen(&self) -> bool {
+        self.process_blacklist
+            .suppress_in_fullscreen
+            .unwrap_or(self.quick_launch.suppress_in_exclusive_fullscreen)
     }
 
     pub fn process_is_blacklisted(
@@ -1513,6 +1589,7 @@ impl AppConfig {
             processes,
             disable_clipboard,
             disable_quick_launch,
+            suppress_in_fullscreen: self.process_blacklist.suppress_in_fullscreen,
         };
         self.process_blacklist.normalize();
         self.clipboard.excluded_processes = self.process_blacklist.clipboard_processes();
@@ -1624,6 +1701,59 @@ impl AppConfig {
         Self::update_section(path, |config| config.download = settings)
     }
 
+    /// Applies edited download leaves against the latest file under the config lock.
+    pub fn merge_download_settings(
+        path: &Path,
+        baseline: &DownloadSettings,
+        mut settings: DownloadSettings,
+    ) -> Result<Self> {
+        let mut baseline = baseline.clone();
+        baseline.normalize();
+        settings.normalize();
+        Self::update_section(path, |config| {
+            macro_rules! merge {
+                ($($field:ident).+) => {
+                    if settings.$($field).+ != baseline.$($field).+ {
+                        config.download.$($field).+.clone_from(&settings.$($field).+);
+                    }
+                };
+            }
+            merge!(default_directory);
+            merge!(chrome_web_store_extension_id);
+            merge!(automatic_categories_enabled);
+            merge!(categories);
+            merge!(duplicate_strategy);
+            merge!(task_list_sort);
+            merge!(task_list_sort_descending);
+            merge!(double_click_action);
+            merge!(ffmpeg_executable_path);
+            merge!(default_request_headers);
+            merge!(default_cookie);
+            merge!(accept_invalid_certificates);
+            merge!(default_connection_limit);
+            merge!(show_progress_window);
+            merge!(show_completion_window);
+            merge!(completion_sound_enabled);
+            merge!(open_directory_on_completion);
+            merge!(task_removal_deletes_file);
+            merge!(background_speed_limit.enabled);
+            merge!(background_speed_limit.bytes_per_second);
+            merge!(taskbar_progress_overlay.enabled);
+            merge!(taskbar_progress_overlay.anchor);
+            merge!(taskbar_progress_overlay.offset_x);
+            merge!(taskbar_progress_overlay.offset_y);
+            merge!(taskbar_progress_overlay.width);
+            merge!(taskbar_progress_overlay.height);
+            merge!(taskbar_progress_overlay.progress_mode);
+            merge!(taskbar_progress_overlay.show_progress);
+            merge!(taskbar_progress_overlay.show_speed);
+            merge!(taskbar_progress_overlay.show_remaining_time);
+            merge!(taskbar_progress_overlay.show_active_tasks);
+            merge!(taskbar_progress_overlay.show_active_connections);
+            merge!(taskbar_progress_overlay.show_transferred_bytes);
+        })
+    }
+
     pub fn update_network_settings(path: &Path, mut settings: NetworkSettings) -> Result<Self> {
         settings.normalize();
         settings.validate().map_err(anyhow::Error::msg)?;
@@ -1631,6 +1761,7 @@ impl AppConfig {
     }
 
     pub fn update_system_settings(path: &Path, settings: SystemSettings) -> Result<Self> {
+        validate_ui_font_family(&settings.ui_font_family).map_err(anyhow::Error::msg)?;
         Self::update_section(path, |config| config.system = settings)
     }
 
@@ -1639,6 +1770,7 @@ impl AppConfig {
         mut network: NetworkSettings,
         system: SystemSettings,
     ) -> Result<Self> {
+        validate_ui_font_family(&system.ui_font_family).map_err(anyhow::Error::msg)?;
         network.normalize();
         network.validate().map_err(anyhow::Error::msg)?;
         Self::update_section(path, |config| {
@@ -1653,6 +1785,7 @@ impl AppConfig {
         system: SystemSettings,
         blacklist: ProcessBlacklistSettings,
     ) -> Result<Self> {
+        validate_ui_font_family(&system.ui_font_family).map_err(anyhow::Error::msg)?;
         network.normalize();
         network.validate().map_err(anyhow::Error::msg)?;
         Self::update_section(path, |config| {
@@ -1693,6 +1826,11 @@ impl AppConfig {
     }
 
     pub fn set_process_blacklist_settings(&mut self, mut settings: ProcessBlacklistSettings) {
+        settings.suppress_in_fullscreen = Some(
+            settings
+                .suppress_in_fullscreen
+                .unwrap_or_else(|| self.suppress_panel_in_fullscreen()),
+        );
         settings.normalize();
         self.clipboard.excluded_processes = settings.clipboard_processes();
         self.process_blacklist = settings;
@@ -1970,6 +2108,7 @@ mod tests {
                 start_on_login_silently: true,
                 close_to_tray: false,
                 theme: ThemePreference::Dark,
+                ui_font_family: default_ui_font_family(),
                 notification_position: NotificationPosition::TopCenter,
                 notification_duration_seconds: default_notification_duration(),
             },
@@ -2156,8 +2295,9 @@ mod tests {
             serde_json::from_str(r#"{"enabled":true}"#).expect("legacy settings");
         let default_json = serde_json::to_value(legacy).expect("serialize legacy settings");
         assert_eq!(default_json["result_entrance"], "slide_up");
-        let unknown: QuickLaunchSettings = serde_json::from_str(
-            r#"{"result_entrance":"future_effect"}"#).expect("unknown entrance setting");
+        let unknown: QuickLaunchSettings =
+            serde_json::from_str(r#"{"result_entrance":"future_effect"}"#)
+                .expect("unknown entrance setting");
         assert_eq!(unknown.result_entrance, QuickLaunchResultEntrance::None);
 
         let directory = std::env::temp_dir().join(format!(
@@ -2170,7 +2310,9 @@ mod tests {
         ));
         let path = directory.join("config.json");
         fs::create_dir_all(&directory).expect("create settings directory");
-        AppConfig::default().save_to(&path).expect("write starting settings");
+        AppConfig::default()
+            .save_to(&path)
+            .expect("write starting settings");
         for choice in ["none", "fade", "slide_up", "slide_from_right"] {
             let mut value = serde_json::to_value(QuickLaunchSettings::default())
                 .expect("serialize quick launch settings");
@@ -2181,8 +2323,7 @@ mod tests {
                 .expect("save quick-launch section");
             let reloaded = AppConfig::load_from(&path).expect("reload saved settings");
             assert_eq!(
-                serde_json::to_value(reloaded.quick_launch).expect("serialize saved settings")
-                    ["result_entrance"],
+                serde_json::to_value(reloaded.quick_launch).expect("serialize saved settings")["result_entrance"],
                 choice,
                 "setting must survive section save and reload"
             );
@@ -2480,6 +2621,7 @@ mod tests {
             ],
             disable_clipboard: true,
             disable_quick_launch: true,
+            suppress_in_fullscreen: None,
         };
         settings.normalize();
 
@@ -2918,7 +3060,7 @@ mod installed_feedback_config_tests {
             .expect("download object")
             .remove("background_speed_limit");
         let mut config: AppConfig = serde_json::from_value(value).expect("legacy configuration");
-        assert_eq!(config.system.theme, ThemePreference::Dark);
+        assert_eq!(config.system.theme, ThemePreference::System);
         assert!(!config.download.background_speed_limit.enabled);
         assert_eq!(
             config.download.background_speed_limit.bytes_per_second,
@@ -3177,5 +3319,95 @@ mod chrome_store_identity_tests {
         settings.chrome_web_store_extension_id = "*".into();
         settings.normalize();
         assert!(settings.chrome_web_store_extension_id.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod ui_font_settings_tests {
+    use super::*;
+
+    #[test]
+    fn ui_font_legacy_default_and_english_chinese_roundtrip() {
+        let legacy: SystemSettings = serde_json::from_str("{}").expect("legacy settings");
+        assert_eq!(legacy.ui_font_family, "Microsoft YaHei UI");
+        for family in ["Segoe UI", "思源黑体 CN", "Noto Sans CJK SC"] {
+            let settings = SystemSettings {
+                ui_font_family: family.into(),
+                ..Default::default()
+            };
+            let bytes = serde_json::to_vec(&settings).expect("encode font");
+            assert_eq!(
+                serde_json::from_slice::<SystemSettings>(&bytes).expect("decode font"),
+                settings
+            );
+        }
+        for family in ["", "  ", "Segoe\nUI", &"a".repeat(257)] {
+            assert!(validate_ui_font_family(family).is_err());
+        }
+    }
+
+    #[test]
+    fn ui_font_global_transaction_preserves_other_sections_and_failed_save_bytes() {
+        let directory = std::env::temp_dir().join(format!(
+            "nxtools-ui-font-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&directory).expect("fixture directory");
+        let path = directory.join("config.json");
+        let mut config = AppConfig::default();
+        config.quick_launch.enabled = false;
+        config.clipboard.storage_directory = "owned-root".into();
+        config.save_to(&path).expect("seed");
+        let system = SystemSettings {
+            ui_font_family: "思源黑体 CN".into(),
+            ..Default::default()
+        };
+        let saved = AppConfig::update_global_settings_with_blacklist(
+            &path,
+            config.network.clone(),
+            system,
+            config.process_blacklist.clone(),
+        )
+        .expect("atomic font save");
+        assert!(!saved.quick_launch.enabled);
+        assert_eq!(saved.clipboard.storage_directory, "owned-root");
+        assert_eq!(
+            AppConfig::load_from(&path)
+                .expect("reopen")
+                .system
+                .ui_font_family,
+            "思源黑体 CN"
+        );
+        let original = fs::read(&path).expect("saved bytes");
+        let invalid = SystemSettings {
+            ui_font_family: "".into(),
+            ..saved.system
+        };
+        assert!(AppConfig::update_system_settings(&path, invalid.clone()).is_err());
+        assert!(
+            AppConfig::update_global_settings(&path, saved.network.clone(), invalid.clone())
+                .is_err()
+        );
+        assert!(
+            AppConfig::update_global_settings_with_blacklist(
+                &path,
+                saved.network,
+                invalid,
+                saved.process_blacklist
+            )
+            .is_err()
+        );
+        assert_eq!(fs::read(&path).expect("unchanged bytes"), original);
+        fs::write(&path, b"{broken").expect("corrupt fixture");
+        assert!(AppConfig::update_system_settings(&path, SystemSettings::default()).is_err());
+        assert_eq!(
+            fs::read(&path).expect("failed transaction bytes"),
+            b"{broken"
+        );
+        fs::remove_dir_all(directory).expect("cleanup");
     }
 }

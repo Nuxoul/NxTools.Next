@@ -358,11 +358,30 @@ and one complete grouped `--archive-compress` intent; ZIP/7z use fixed quick act
 Smart/name ProgID commands use `--archive-extract smart-dialog|name-dialog "%1"`; the original
 Desktop intent/form preselects a strategy but does not submit a job or approve risk/output budget.
 Flat means separately owned classic HKCU verbs, not Windows11 top-level menu placement.
-ZIP/7z classic verbs use independent ExplorerCommandHandler identities with SDK IExplorerCommand
-GetTitle/Invoke: first ordered selected file stem or full folder name plus fixed extension, complete
-once-only IShellItemArray forwarding, and the original out-of-process identity/final Release lifetime.
-Create retains Compress/IObjectWithSelection/IExecuteCommand grouping; ExtractDialog retains its
-stable identity. Quick argv correlation becomes the original native Job operation/session ID.
+ZIP/7z classic verbs use independent LocalServer32 identities through `MUIVerb` and
+`command\DelegateExecute`, with fixed labels `压缩为同名 .zip` / `压缩为同名 .7z` shared by
+the settings labels. All commands retain IObjectWithSelection/IExecuteCommand grouping, complete
+once-only IShellItemArray forwarding and original out-of-process identity/final Release lifetime.
+Output uses the first ordered selected file stem or full folder name plus fixed extension;
+the menu label is not a dynamic filename. Apply over an existing applied-facts ledger replaces it:
+after identity/helper/plan gates pass, the original compare-before-restore Uninstall removes the
+earlier revision (including old ExplorerCommandHandler values), the ledger is retired, then the new
+plan is applied; the result carries the replaced removed/restored/preserved counts. A failed
+replacement Uninstall reports `replace_revert_incomplete` and keeps the ledger. ExtractDialog
+retains its stable identity.
+`set_default` claims each selected extension's HKCU `Software\Classes\.<ext>` default value for
+the owned `NxTools.Archive` ProgID (with its DefaultIcon/open command and OpenWithProgids), placed
+before the OpenWithProgids value so reverse restoration empties children first. Explorer resolves
+icons and double-click through `FileExts\.<ext>\UserChoice`, which outranks the class default; with
+no choice and several candidates it shows "Pick an app" and a generic icon. Before saving the
+facts, Apply records each extension's original choice (`PriorUserChoices`, never our own ProgID);
+after they persist, `WindowsArchiveDefaultClaim` writes `ProgId` plus the Explorer proof computed by
+pure `UserChoiceHash` from extension, user SID, ProgID, the key's last-write minute and the
+shell32 experience string, refreshes once, and reads the live association back. Any extension
+that does not resolve keeps the applied state and reports `failure=user_choice_locked`. Revert and
+replacement write the recorded original back only where the choice still names NxTools; a choice
+the user changed meanwhile is kept. Open With alone never claims the class default or a choice.
+Quick argv correlation becomes the original native Job operation/session ID.
 Default-app result success requires `success=true,data="opened"` (Shell accepted only). Rust keeps
 original pending/correlation/timeout/disconnect and deferred publication; native diagnostics record
 accepted/start/terminal, elapsed/native code, never request payloads. Saving/revision/request
@@ -386,7 +405,8 @@ Product's authorized policy -> identity verification then original transaction. 
 typed failure, zero Registry capture/write; bounded cancellation/timeout/occupied slot -> failed reply
 (`cancelled` or `native_operation_unconfirmed`), never applied or an assertion that Windows is unchanged.
 Existing transaction pre-capture, reverse compensation and compare-before-restore remain required;
-no UserChoice writes, shared-tree deletion or grouped-selection fallback to per-file `%1`.
+no UserChoice writes except the explicit `set_default` claim and its recorded restoration, shared-tree deletion
+or grouped-selection fallback to per-file `%1`.
 
 ### 5. Good / Base / Bad Cases
 Good: smart+flat+[test,create] reaches the native plan; double-click smart opens the original
@@ -648,30 +668,60 @@ oversize, throwing logs, copy/write failure, pause/resume/stop and downstream re
 
 ## OneCommander focus-anchor lifetime
 
-Evidence: `repo:csharp/NxTools.PlatformHost/Windows/OneCommanderFocusTracker.cs`,
-`repo:csharp/NxTools.PlatformHost/Windows/OneCommanderFileManagerOperations.cs`,
-`repo:csharp/NxTools.PlatformHost.Tests/OneCommanderFocusTrackerTests.cs`.
+### 1. Scope / Trigger
+OneCommander UIA access and directory lifetimes in ordinary PlatformHost and elevated helper.
+Evidence: `repo:csharp/NxTools.PlatformHost/Windows/NativeUiAutomation.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/OneCommanderUiaSession.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/OneCommanderFocusTracker.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/ThirdPartyFileManagerAdapter.cs`,
+`repo:csharp/NxTools.PlatformHost/Windows/ElevatedDirectoryNavigation.cs`.
 
-The static per-process Lazy tracker is explicitly prewarmed by both ordinary adapter and
-elevated-helper startup. Native/UIA operations are injected only at this owner boundary; the
-production element type remains AutomationElement. Keep process identity before ancestor UIA
-walk, initial focused-element sampling and same-window latest focus. Queries never change
-focus recency, and cache eviction never rewrites request-bound OneCommanderPaneState.
+### 2. Signatures
+`ThirdPartyFileManagerAdapter.BeginLifetime(IPlatformLog,string) -> IDisposable` creates no UIA
+client/thread/subscription. ObserveForeground/RetireWindow reuse EventWindow; Stop closes the scope.
+`OneCommanderFocusTracker<T>.Invoke<TResult>(Func<TResult>,CancellationToken)` admits one physical
+native operation. `OneCommanderPaneState : IDisposable` is an owner/identity/window/PID/expiry lease,
+not an AutomationElement or a pointer created on a retired STA. Helper Run accepts the original log.
 
-Retain strong anchors for at most64most recently focused HWNDs. The original MTA worker waits
-60seconds between sweeps, snapshots at most64entries, then performs native HWND/process checks
-outside the short cache gate. Idle sweeps do not read AutomationElement or walk UIA trees. Dead
-or unavailable windows retire without another query; valid anchors have no TTL. Element
-availability remains on the existing bounded query path. Query/sweep failure removes only the
-exact observed anchor so an asynchronous replacement is not erased.
+### 3. Contracts
+Use native CUIAutomation8/IUIAutomation for events and all affected routine queries/patterns/tree
+access. One existing MTA owns COM initialization, interfaces, cache and request panes. Existing named
+120ms capture/1500ms navigation STA admission survives logical cancellation until native return and
+Dispatcher cleanup. One pending operation and one coalesced focus element; no replacement worker.
+Native AddFocusChangedEventHandler is global, never a per-process API. Enable only for actual target
+demand; cached PID/HWND filter before traversal, HWND0 WPF anchors remain valid. Ordinary background
+capture/observation requires enabled directory features. Explicit helper capture freezes before the
+overlay on the original authenticated channel. Frozen panes need no global focus subscription.
+Keep64focus anchors/64native request panes and original10minute session expiry. Release on replace,
+consume/fatal/admission failure/expiry/capacity/window/disconnect/stop. Existing60second native sweep
+retires unavailable windows; no UIA idle traversal. Registry removal only signals native lease release;
+COM release runs on its MTA. Stop rejects late work before exact unregister/callback drain/reference
+release/COM teardown/thread exit. Actual physical retirement, not500ms wait or ACK, releases ownership.
+Diagnostics onecommander.uia.lifecycle use correlation/role/fixed state/reason/pane-window count,
+elapsed and native code only; no focus text/path or per-event stream.
 
-Stop clears anchors before waiting for the worker and requests wakeup/unsubscription; a500ms
-join is not proof that uncooperative native cleanup ended. Late in-flight callbacks recheck stop
-under the cache gate and cannot repopulate records. No replacement thread, high-frequency poll,
-new global hook, weak-reference anchor, UI/layout/focus change or UIA-budget expansion. Existing
-120ms capture and1500ms navigation STA ownership remains. Pure fixtures use synthetic elements,
-native state and shortened fake-only sweep intervals; no desktop applications or UIA subscription
-is touched. Bounded cache references do not establish the source of the19GiB private-commit event.
+### 4. Validation & Error Matrix
+No target/no demand -> no UIA initialization or desktop-wide subscription. Unavailable pane or
+unsupported ValuePattern -> bounded original failure. Cancel/timeout -> original caller result,
+physical slot retained. Native registration/removal failure -> HRESULT diagnostic and owner teardown,
+never successful re-registration over a failed removal. Late callbacks/old generation -> no mutation.
+
+### 5. Good/Base/Bad Cases
+Good: captured HWND-less pane survives cache replacement, then its lease retires on session consume.
+Base: no OneCommander leaves both startup roles dormant. Bad: ordinary lookup calls managed UIA,
+or timeout frees admission while a native call is still executing.
+
+### 6. Tests Required
+User-owned verification covers actual registration/removal/callback drain, no-target module state,
+split/active/WPF pane reads/writes, timeout slot exclusion, HWND recreation, native leases and actual
+handle/thread/process retirement. Existing synthetic tracker/process/STA cases remain policy-only;
+they do not establish native memory or physical elevation acceptance. No checks were run for this
+implementation at the user's request; memory behavior and full allocation attribution remain unverified.
+
+### 7. Wrong vs Correct
+Wrong: startup WarmUp creates a permanent managed global focus path and dictionary removal drops
+only a wrapper. Correct: dormant lifetime, native target-demand owner and explicit lease retirement
+with unregister/drain/release before owner exit.
 
 ## Native temporary-allocation ownership
 
@@ -743,12 +793,89 @@ File/type icon pixels for the existing download40DIP image slot and other origin
 ### 2. Signatures
 Existing `ExtractShellIconCommand(Target, Size)` accepts16..256; `ExtractOnSta` owns5-second logical wait/max8 real operations; `Extract(..., cancellationToken, IconCache?)` returns the original success/native-error/PNG-path result. No command/schema or GPUI layout change.
 ### 3. Contracts
-For ordinary Shell selectors with Size>32, read SHGFI_SYSICONINDEX then SHGetImageList(SHIL_JUMBO=4)/IImageList.GetIcon on the original STA. Preserve SHGFI_USEFILEATTRIBUTES for reserved type targets, so names never become filesystem/member/shortcut probes. Each query owns the returned native interface pointer, calls GetIcon through its native vtable and releases that exact reference; do not share or FinalRelease a managed image-list RCW across concurrent STAs. Destroy every acquired HICON. Cache the native raster, at most256px, under the original key plus the `/image-list` target-type discriminator; do not reuse old small/large PNG entries. Existing small requests and explicit indexed-resource selectors retain their paths. IconCache remains128memory paths/2048disk entries with original per-key dedup/trim. Validate disk PNGs inside the existing generation owner and regenerate unreadable entries; memory hits retain the cheap existence check. No global clear or new file hashes are added.
+For ordinary Shell selectors with Size>32, read SHGFI_SYSICONINDEX then obtain SHIL_EXTRALARGE=2 for Size<=48 or SHIL_JUMBO=4 for larger requests on the original STA. If a jumbo canvas contains at most48x48 nontransparent artwork, fetch the48px list instead and release the superseded icon. Preserve SHGFI_USEFILEATTRIBUTES for reserved type targets, including a fixed generic file target for extensionless files. Each query owns and releases its exact IImageList native pointer; never share/FinalRelease a managed RCW across concurrent STAs. Destroy every acquired HICON. Cache native raster pixels under `/image-list-v2`, isolating old undersized entries. Existing small/indexed-resource paths remain. IconCache retains128memory paths/2048disk entries, per-key dedup/trim and disk PNG validation; both memory/disk hits refresh write time for recency. No global clear or new file hashes.
+Before the first high-resolution query, one Lazy initialization on the original STA primes the Shell index/image list using a fixed attribute-only generic file. Concurrent callers share only that initialization, never query pointers or HICONs. The max-eight admission, five-second logical wait and actual thread-final cleanup remain unchanged; the parallel fixture starts cold without test prewarming.
 ### 4. Validation & Error Matrix
 Invalid size/reserved target -> original rejection before native query. High-resolution lookup unavailable -> existing Shell-icon fallback. PNG/native failure -> failed result and no successful cache entry. ExtractOnSta preserves the original Win32 code/HRESULT with a fixed `shell_icon_*` failure category; diagnostics never contain target paths or raw exception messages. Cancellation -> original actual-operation/STA lifetime and no late successful publication. Native fallback does not guarantee high-resolution artwork when the Windows association itself supplies none.
 ### 5. Good/Base/Bad Cases
-Good: folder/file-type and GUID-owned completed-file48/96requests obtain native raster pixels at least as large as requested and reuse one corresponding cache entry. Base:32px type query and cancellation remain unchanged. Bad: label a32px SHGetFileInfo bitmap as48/96px, or continue serving it from the old cache key.
+Good:48px file/type/folder requests use the48px list; a256px canvas carrying40px artwork falls back to the48px list even for larger requests. Base:32px type query and cancellation remain unchanged. Bad: shrink a mostly transparent256px canvas to40DIP, or serve it from the old cache key.
 ### 6. Tests Required
-`ArchiveTypeIconTests.FolderPngUsesOwnedCacheAndOriginalSta` asserts PNG pixel bounds, folder/extension/completed-file paths, legacy-key isolation, cache reuse and cancelled work using one owned root. `ParallelPngExtractionKeepsNativeImageListReferences` runs48 cold-cache queries at concurrency8; `CorruptPngRegeneratesThroughOriginalSta`, `NativeFailureRetainsSafeCategoryAndCode` and `CompletedExecutableUsesOwnedCache` cover recovery, HRESULT/Win32 retention and executable files. Preserve fixed-target rejection, original dedicated/bounded STA and all six IconCache lifecycle fixtures. No production cache, Shell open, shortcut COM, registry, service or external file mutation. Installed/mixed-DPI/user visual acceptance is separate.
+`ArchiveTypeIconTests.SmallArtworkOnJumboCanvasUsesExtraLarge` exercises real bitmap content bounds and the production image-list selector/handle release; `CacheHitRefreshesDiskRecency` covers memory/disk hits. `FolderPngUsesOwnedCacheAndOriginalSta`, `ParallelPngExtractionKeepsNativeImageListReferences`, `CorruptPngRegeneratesThroughOriginalSta`, `NativeFailureRetainsSafeCategoryAndCode` and `CompletedExecutableUsesOwnedCache` cover native raster/cache recovery, concurrent references, errors and executable files. Desktop icon regressions cover path-to-type and extensionless generic fallback, STA-busy retries without consuming the failure budget and real failed-image File fallback. Preserve fixed-target rejection, original bounded STA and IconCache lifecycle fixtures. No production cache, Shell open, shortcut COM, registry, service or external file mutation. Installed/mixed-DPI/user visual acceptance is separate.
 ### 7. Wrong vs Correct
 Wrong: choose only SHGFI_LARGEICON for every Size>20 and enlarge its fixed raster in the list. Correct: resolve a high-resolution system image-list icon, retain its native pixels through PNG/cache and let the existing Contain renderer scale down.
+
+## Scenario: Typed completion Sleep and Hibernate
+### 1. Scope / Trigger
+Completion coordinator requests Windows power transitions. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/CompletionSystemActions.cs`, `repo:csharp/NxTools.PlatformHost/Protocol/PlatformPipeClient.cs`.
+### 2. Signatures
+`suspend_system { hibernate:bool }`; SuspendSystemCommand(bool Hibernate); ICompletionSystemActions.RequestSuspend(bool) -> WindowsCommandResult. Rust PlatformCommand::SuspendSystem carries the same boolean. Existing ShutdownSystem remains applicable.
+### 3. Contracts
+Original parser→generic dispatch→WindowsPlatformAdapter→ICompletionSystemActions owns the native boundary. Sleep checks IsPwrSuspendAllowed, Hibernate checks IsPwrHibernateAllowed; unsupported returns50 without substitution. Enable only SeShutdownPrivilege on the original token, preserve actual open/lookup/adjust errors, call SetSuspendState(hibernate,false,false), restore prior privilege state and close the token. Original detached sequence dispatcher keeps shutdown/suspend off the serial reader; drain waits for actual delegates. Correlated action/start/terminal/elapsed/native-code diagnostics contain no payload. Windows acceptance is not a claim that a physical transition completed.
+### 4. Validation & Error Matrix
+Unsupported -> false/code50. Access denied or privilege not held -> false/exact5 or1314. SetSuspendState failure -> false/exact native code. Successful injected request -> typed accepted result only. Failure never substitutes another power action or force-critical/wake policy.
+### 5. Good/Base/Bad Cases
+Good: Sleep/Hibernate reach distinct typed native calls and preserve exact result codes. Base: existing sound/Shutdown routing. Bad: unsupported Sleep schedules Shutdown, reports success before native result, or blocks the serial command reader.
+### 6. Tests Required
+Effects-reviewed exact B5 completion fixtures must LIST nonzero then RUN identical filter. Inject at ICompletionSystemActions through production generic parser/routing/result envelopes; cover Sleep/Hibernate,50/5/1314/87, diagnostic correlation/action/terminal and held operation with later-command responsiveness plus actual dispatcher drain. Ordinary fixtures never call capability/token/power APIs; physical Windows acceptance is separate.
+### 7. Wrong vs Correct
+Wrong: DTO roundtrip or mocked success certifies machine suspension. Correct: typed production route/result lifecycle with injected OS boundary, and separate physical acceptance.
+
+## Scenario: Elevated foreground input
+### 1. Scope / Trigger
+Quick Launch/Clipboard activation and administrator-target paste/outside-click dismissal. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/ElevatedInputHost.cs`, `repo:csharp/NxTools.PlatformHost/Windows/ElevatedInputHost.Pointer.cs`, `repo:csharp/NxTools.PlatformHost/Windows/ElevatedInputHost.Activation.cs`, `repo:csharp/NxTools.PlatformHost/Windows/ElevatedDirectoryNavigationClient.Input.cs`, `repo:csharp/NxTools.PlatformHost/Windows/WindowsPasteCoordinator.cs`; indexed references `repo:docs/reference-code/quick-launch-research.md` and `repo:docs/reference-code/clipboard.md`.
+### 2. Signatures
+The existing authenticated same-session helper private channel owns configure_input(ElevatedInputConfiguration), paste_input(ElevatedPasteInput) and activate_window(ElevatedWindowActivation). Configuration carries ordinary destination HWND, keyboard generation/correlation and DesktopProcessId bound from the connected Rust pipe's actual server PID. Paste carries only target/focus HWND and correlation; activation carries only target root HWND and correlation. Public Rust wire/executable roles remain unchanged.
+### 3. Contracts
+NxTools.exe and ordinary PlatformHost stay unprivileged. Original protected LocalSystem broker/linked-admin token/peer authentication owns helper launch. Cache/coalesce latest configuration and replay after authentication. Claim gesture ownership only for current successful configuration and installed helper hook. Current-generation failure dominates a later ACK; old PID/generation cannot alter ownership. Observe actual process exit without heartbeats; all connected-channel failures share a finite automatic reconnect budget.
+Hook callbacks reuse released double-tap detection and only PostMessage. Foreground/session/elevation checks, destination PID validation and forwarding run on helper message thread. Ordinary and helper sources partition by confirmed ownership. Both hooks carry the same native key timestamp so a queued ordinary message cannot toggle the panel after helper summon changed foreground; do not time-debounce distinct gestures. Recording/configuration resets are generation-scoped. Keep ordinary keyboard-health reporting independent.
+Ordinary coordinator writes clipboard exactly once before input delegation; copy-only and write failure never dispatch. Helper validates live same-session elevated target and focus PID/root. Shared input-only execution creates its thread message queue, performs original bounded activation/modifier release and rechecks foreground before Ctrl+V. WM_PASTE alone remains unconfirmed failure. Helper absent before dispatch permits ordinary behavior; a dispatched unknown outcome returns failure and never replays input. EOF/disposal retires hook, hidden message HWND and directory contexts.
+Helper activation admits only a live same-session root owned by the configured Desktop peer, then uses the original native activation/focus readback. Desktop disconnect clears that binding; detached activate_window dispatch does not block the serial reader. An undispatched unavailable helper permits the original ordinary path; a dispatched unknown result is a failure without native fallback replay.
+The helper's existing message thread owns one40ms primary/secondary state monitor, stopped before its HWND is destroyed; no added hook/thread. Only press transitions on same-session administrator roots are forwarded, not movement/hold/release streams. The message retains root HWND, authenticated helper PID and native tick sample. Ordinary client admits only the current successful configuration/helper, rejects pre-configuration, duplicate, future or older-than1second samples, converts sample time to UTC and assigns the original platform event sequence. Original Rust pin/menu/paste/session/preview guards decide hiding. No per-poll diagnostics.
+Normalize the32-bit native sample against the current64-bit uptime before comparing configuration/last-press baselines; a resident session or long idle must not reject fresh clicks after signed-delta overflow or native tick wrap. The controlled-clock original-channel regression covers both while retaining the1second stale-sample limit.
+### 4. Validation & Error Matrix
+Wrong target owner/root/session/destination -> no activation or input. Stale config/helper/click sample -> ignored; current helper click -> original GlobalPointerPressedEvent. Recording disables keyboard gestures, not outside-click observation. Native activation readback failure -> real failure, never success from topmost. Hook/thread/process failure -> clear ownership, finite recovery. Dispatched timeout -> unknown failure, no input/activation replay. Diagnostics carry correlation, role, state, elapsed/native error metadata, never clipboard data or key/pointer streams.
+### 5. Good/Base/Bad Cases
+Good: elevated helper forwards one administrator-foreground gesture and sends input after a single ordinary clipboard write. Base: ordinary windows and RegisterHotKey retain their original owners. Bad: elevate the whole app, send clipboard payloads to the helper, re-enable a dead hook from a late ACK, or replay timed-out paste.
+### 6. Tests Required
+Effects-reviewed ElevatedInputTests, ElevatedInputChannelTests and ElevatedInputHostTests exercise original coordinator, self-owned pipes/hidden HWNDs, fake native identity/input/timer boundaries, activation owner/root/readback, current/old/duplicate click routing and real cleanup. Retain keyboard ownership/injected/repeat/recording, original paste failure/correlation and directory authentication/session regressions. LIST before execution. Original installed administrator outside-click/activation failures have owned-window traces; updated protected binaries still require separate post-package native/physical/linked-token acceptance. Safe fixture success is not installed acceptance.
+### 7. Wrong vs Correct
+Wrong: successful compilation or synthetic HWND proves administrator-window interaction. Correct: native-safe production-boundary regressions plus explicitly separate installed/native acceptance.
+
+## Scenario: Shell action invocation waits for human completion
+### 1. Scope / Trigger
+Quick Launch invokes a command from the live Windows Shell context-menu session.
+### 2. Signatures
+`ShellContextMenuSessionManager.InvokeAction` -> `ShellContextMenuSessionWorker.Invoke` ->
+`ShellContextMenuSession.Invoke` -> `IContextMenu.InvokeCommand`; the existing session
+`CancellationToken` remains the logical cancellation owner.
+### 3. Contracts
+STA startup, QueryActions and QuerySubmenu remain machine phases with the existing five-second
+logical wait. The queued Invoke completion wait has no elapsed-time deadline: `InvokeCommand` may
+synchronously open a system or extension window and return only after the user finishes. Cancellation
+returns the logical caller promptly and retires the worker, but never claims to interrupt native code.
+Retirement also wakes every queued logical waiter, and a dequeued request checks retirement before
+entering its operation; an Invoke queued behind a machine phase cannot run after that machine phase
+times out and retires the session. The already-active worker thread, COM session and cleanup remain
+owned until the active operation actually returns. Do not create a replacement thread, parallel
+invocation queue, feature switch or late successful result.
+### 4. Validation & Error Matrix
+Invoke running beyond five seconds -> still pending. Invoke returns -> original success/failure.
+Cancellation while native code is running -> prompt cancelled result; old worker is disposed and not
+reused, while physical invocation and cleanup continue to actual exit. Query/submenu/startup timeout ->
+original five-second machine-stage failure; queued requests fail promptly without execution, while the
+timed-out active native operation remains owned until actual exit.
+### 5. Good/Base/Bad Cases
+Good: a Shell verb waits for user input and succeeds after more than five seconds on the original STA.
+Base: a short verb completes normally. Bad: report five-second failure while the native verb remains
+live, force-stop COM/native code, or cache/reuse the worker before actual return.
+### 6. Tests Required
+Effects-reviewed fixtures enter the real worker Invoke method with an injected STA action, hold it
+beyond the old five-second deadline, and then release it to success. Cancellation proves prompt logical
+return, no worker reuse before actual exit and bounded watchdog cleanup. A held machine `TryInvoke`
+queues a real worker Invoke, reaches the original five-second timeout, proves the queued wait fails
+promptly without executing, then releases and observes the active operation's actual exit. No fixture
+opens a real Shell window or touches user files, Registry, services or `IContextMenu.InvokeCommand`.
+### 7. Wrong vs Correct
+Wrong: every queued Shell operation waits at most five seconds. Correct: machine setup/query waits are
+finite; the user-owned Invoke completion waits until return or logical cancellation while the original
+physical owner continues to cleanup.

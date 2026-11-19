@@ -103,6 +103,7 @@ internal sealed class IconCache
         {
             if (TryGetMemoryPath(fingerprint, path, out var memoryPath))
             {
+                Touch(memoryPath);
                 path = memoryPath;
                 return true;
             }
@@ -123,6 +124,7 @@ internal sealed class IconCache
                 TryDelete(path);
                 return false;
             }
+            Touch(path);
             lock (_gate)
             {
                 Remember(fingerprint, path);
@@ -163,6 +165,13 @@ internal sealed class IconCache
             throw;
         }
     }
+    private static void Touch(string path)
+    {
+        try { File.SetLastWriteTimeUtc(path, DateTime.UtcNow); }
+        catch (IOException) { /* Cache recency is best effort. */ }
+        catch (UnauthorizedAccessException) { }
+    }
+
     private bool TryGetMemoryPath(string fingerprint, string expectedPath, out string path)
     {
         if (_memory.TryGetValue(fingerprint, out var cached))

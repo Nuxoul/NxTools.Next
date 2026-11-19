@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/11-13-download-finishing-progress/prd.md","reason":"Acceptance and sequential scope"}
+{"file":"rust/crates/nxtools-download/tests/engine_contract.rs","reason":"Real child output to engine events and exact artifact lifecycle"}
+{"file":"rust/crates/nxtools-download/tests/finishing_contract.rs","reason":"Real HTTP HLS finishing stops, retained fragments and exact resume"}
+{"file":"rust/apps/nxtools-desktop/src/downloads/task_window_layout_tests.rs","reason":"Production GPUI and taskbar phase projection"}
+{"file":"tests/architecture/download-ui-lifecycle.ps1","reason":"Original deferred entity and window lifecycle boundary"}

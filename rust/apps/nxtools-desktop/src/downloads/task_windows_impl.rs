@@ -33,6 +33,23 @@ impl DownloadApplication {
         directive: DownloadWindowDirective,
         cx: &mut Context<Self>,
     ) {
+        if let DownloadWindowDirective::Open(phase) = directive
+            && phase != DownloadWindowPhase::Progress
+        {
+            let attempt = self.engine.completion_snapshot().ok().and_then(|snapshot| {
+                snapshot
+                    .tasks
+                    .into_iter()
+                    .find(|task| task.task_id == task_id)
+                    .map(|task| task.attempt)
+            });
+            if attempt
+                .is_some_and(|attempt| self.completion_actions.is_grouped_attempt(task_id, attempt))
+            {
+                self.task_window_lifecycle.window_closed(task_id);
+                return;
+            }
+        }
         match directive {
             DownloadWindowDirective::None => {}
             DownloadWindowDirective::Open(phase) => {
@@ -132,6 +149,7 @@ impl DownloadApplication {
         if entry.window != closing_window {
             return;
         }
+        entry.view.read(cx).cancel_source_draft();
         info!(
             event = "download.task_window.native_close_accepted",
             task_id = %task_id.as_uuid(),
@@ -147,6 +165,7 @@ impl DownloadApplication {
     /// and the recovery path produces a visible remove/re-create flash.
     pub(crate) fn close_task_window(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
         if let Some(entry) = self.clear_task_window_registration(task_id) {
+            entry.view.read(cx).cancel_source_draft();
             let _ = entry
                 .window
                 .update(cx, |_, window, _| window.remove_window());
@@ -176,6 +195,7 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) {
         let application = cx.entity();
+        let detail = load_download_task_detail(&self.engine, task_id).ok();
         let snapshot = self
             .engine
             .task(task_id)
@@ -184,8 +204,9 @@ impl DownloadApplication {
             .or_else(|| self.task(task_id).cloned())
             .map(|mut snapshot| {
                 if snapshot.has_final_artifact {
-                    load_download_task_detail(&self.engine, task_id)
-                        .map(|detail| detail.task)
+                    detail
+                        .as_ref()
+                        .map(|detail| detail.task.clone())
                         .unwrap_or(snapshot)
                 } else {
                     if snapshot.probe.is_none() {
@@ -195,7 +216,14 @@ impl DownloadApplication {
                 }
             });
         let progress = self.progress(task_id).cloned();
+        let persisted_ranges = detail
+            .as_ref()
+            .map(|detail| super::range_coverage::persisted_range_progress(&detail.segments))
+            .unwrap_or_default();
         let shutdown_armed = self.is_shutdown_armed(task_id);
+        let completion_intention = snapshot
+            .as_ref()
+            .map_or(Default::default(), |task| task.task.completion_intention());
         let effective_global_speed_limit = self.engine.effective_global_speed_limit();
         let window_size = download_task_window_size(phase);
         let window_bounds = WindowBounds::centered(window_size, cx);
@@ -235,24 +263,6 @@ impl DownloadApplication {
                 let resolved_native_handle = native_window_handle(window).unwrap_or_default();
                 *opened_native_slot.borrow_mut() = resolved_native_handle;
                 *opened_scale_slot.borrow_mut() = window.scale_factor();
-                // A native close (title bar X, Alt+F4, taskbar close) must release the keyed
-                // lifecycle registration in the same turn, or a later task event targets a
-                // destroyed window and produces a visible remove/re-create flash.
-                let close_application = application.clone();
-                let closing_window = window.window_handle();
-                window.on_window_should_close(cx, move |_, cx| {
-                    let application = close_application.clone();
-                    cx.defer(move |cx| {
-                        application.update(cx, |application, cx| {
-                            application.handle_task_window_native_close(
-                                task_id,
-                                closing_window,
-                                cx,
-                            );
-                        });
-                    });
-                    true
-                });
                 let view = cx.new(|_| {
                     let mut view = DownloadTaskWindowView::new(
                         application,
@@ -267,7 +277,26 @@ impl DownloadApplication {
                         shutdown_armed,
                     );
                     view.effective_global_speed_limit = effective_global_speed_limit;
+                    view.completion_intention = completion_intention;
+                    view.persisted_range_progress = persisted_ranges;
                     view
+                });
+                let close_application = view.read(cx).application.clone();
+                let close_lifetime = view.read(cx).source_window_lifetime.clone();
+                let closing_window = window.window_handle();
+                window.on_window_should_close(cx, move |_, cx| {
+                    close_lifetime.send_replace(true);
+                    let application = close_application.clone();
+                    cx.defer(move |cx| {
+                        application.update(cx, |application, cx| {
+                            application.handle_task_window_native_close(
+                                task_id,
+                                closing_window,
+                                cx,
+                            );
+                        });
+                    });
+                    true
                 });
                 *opened_view_slot.borrow_mut() = Some(view.clone());
                 cx.new(|cx| Root::new(view, window, cx))
@@ -361,6 +390,9 @@ impl DownloadApplication {
         }
         let progress = self.progress(task_id).cloned();
         let shutdown_armed = self.is_shutdown_armed(task_id);
+        let completion_intention = authoritative
+            .as_ref()
+            .map_or(Default::default(), |task| task.task.completion_intention());
         let effective_global_speed_limit = self.engine.effective_global_speed_limit();
         let native_window_handle = entry.native_window_handle;
         let window_identity = TaskWindowIdentity {
@@ -369,6 +401,17 @@ impl DownloadApplication {
         };
         let window_handle = entry.window;
         let view = entry.view.clone();
+        let changed_status = view
+            .read(cx)
+            .snapshot
+            .as_ref()
+            .map(|task| task.task.status())
+            != snapshot.as_ref().map(|task| task.task.status());
+        let persisted_ranges = changed_status.then(|| {
+            load_download_task_detail(&self.engine, task_id)
+                .map(|detail| super::range_coverage::persisted_range_progress(&detail.segments))
+                .unwrap_or_default()
+        });
         let platform = Rc::clone(&self.platform);
         let taskbar_progress = snapshot
             .as_ref()
@@ -383,6 +426,10 @@ impl DownloadApplication {
                 )
             });
             view.replace_snapshot(snapshot, progress, shutdown_armed, cx);
+            view.completion_intention = completion_intention;
+            if let Some(ranges) = persisted_ranges {
+                view.persisted_range_progress = ranges;
+            }
             if let Some(limit) = applied_task_limit {
                 view.speed_limit_edit.applied = limit;
             }
@@ -390,7 +437,7 @@ impl DownloadApplication {
             if reset_details_expanded {
                 view.reset_details_expanded();
             }
-            if let Some(phase) = resize_for {
+            if let Some(phase) = resize_for.filter(|_| view.source_draft.is_none()) {
                 let next_size = download_task_window_size_for_details(phase, view.details_expanded);
                 if previous_size != Some(next_size) {
                     resize_size = Some(next_size);

@@ -91,3 +91,38 @@ The original one-panel reuse, focus, placement, timer, close-before-deferred-dis
 explicit Copy and echo suppression remain. `link_panel_shell_command` still maps Web to
 HTTP(S) Shell Open, LocalFile to SelectInExplorer and LocalDirectory to Open. There is no
 legacy Link equivalent. Source/worker boundary tests do not certify native or visual use.
+
+## Compact link-row actions
+
+The current `LinkPanelView::render` uses the original official ListItem as the ordinary
+pointer/keyboard action surface, with direct XSmall ghost Copy and optional Download
+Buttons. No separate Open button is needed. `ClipboardApplication::dispatch_link_panel_route`
+retains the current ordinary-action settings: copy-only selects Copy, and Web without
+automatic browser opening also selects Copy. An eligible open still maps Web to Shell
+Open, LocalFile to SelectInExplorer and LocalDirectory to Open.
+
+The unchanged chain is capture -> one keyed panel -> row/Copy/Download -> remove the
+owning window -> deferred current-window identity check -> original Clipboard or Shell
+owner. Preserve 420px width, 28px rows, expansion, passive native placement, timer
+retirement and Copy echo suppression. Exact Kit0.8.0 ListItem public children/on_click
+and Button XSmall ghost retain their own dispatch; no Toolbar parent adaptation or
+replacement controller is introduced. Production regressions cover absence of duplicate
+Open, ordinary routes, independent Copy and Download, and close-before-dispatch.
+
+## Environment-variable local paths
+
+`tools/link_detector.rs::detect_links_with_path_kind` owns whole-line and wrapped local
+candidate boundaries; `is_candidate`, `scan_prose`, `closing_wrapper` and `classify`
+share local-path recognition. `DetectedLink.display` feeds the existing Label, while
+`copy_value` feeds explicit Copy and deferred typed Shell routing in `tools/link_panel.rs`.
+There is no legacy Link detector equivalent.
+
+Percent-delimited environment-variable roots, such as
+`%LOCALAPPDATA%\NxTools\NxTools.Next\logs`, belong to the local-path branch. Expand
+variables once from the Desktop process environment before metadata checks, require
+an absolute drive/UNC result and retain the existing file/directory distinction.
+Show the original target and use the resolved path for Copy/Open. Whole paths retain
+spaces and never fall back to a shorter existing prefix; undefined variables and
+missing targets produce no match. HTTP(S) percent escapes remain URL data.
+Preserve the existing background detection, budgets, generation retirement, diagnostics,
+one-panel identity, passive placement, focus, timer and deferred action boundaries.

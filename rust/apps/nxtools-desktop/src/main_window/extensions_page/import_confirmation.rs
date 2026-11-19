@@ -44,7 +44,10 @@ impl ExtensionManagerView {
             .packages
             .iter()
             .find(|p| p.manifest.id == preview.manifest.id)
-            .map(|p| p.content_hash.clone());
+            .cloned();
+        let identical = previous
+            .as_ref()
+            .is_some_and(|p| p.content_hash == preview.content_hash);
         cx.defer(move |cx| {
             let _ = source.update(cx, |_, window, cx| {
                 let current = view
@@ -69,7 +72,7 @@ impl ExtensionManagerView {
                     let replace = previous.is_some();
                     let confirm_owner = owner.clone();
                     let confirm_id = identity.clone();
-                    let expected = previous.clone();
+                    let expected = previous.as_ref().map(|p| p.content_hash.clone());
                     let latch = submitted.clone();
                     let cancel_owner = owner.clone();
                     let cancel_id = identity.clone();
@@ -91,16 +94,37 @@ impl ExtensionManagerView {
                     let cancel = DialogClose::new().trigger(move |button| {
                         button
                             .debug_selector(|| "extension-cancel-import".into())
-                            .label("取消")
+                            .label(if identical { "关闭" } else { "取消" })
                             .disabled(cancel_disabled)
                     });
-                    let mut body =
-                        confirmation_body(&preview, &source_path, replace, details.clone());
+                    let mut body = if identical {
+                        div()
+                            .debug_selector(|| "extension-import-already-installed".into())
+                            .child(
+                                Alert::new(
+                                    "extension-import-identical",
+                                    format!(
+                                        "{} {} 已安装，内容相同，无需替换。现有配置保持不变。",
+                                        preview.manifest.name, preview.manifest.version
+                                    ),
+                                )
+                                .small(),
+                            )
+                    } else {
+                        confirmation_body(
+                            &preview,
+                            &source_path,
+                            previous.as_ref(),
+                            details.clone(),
+                        )
+                    };
                     if let Some(message) = status {
                         body = body.child(Alert::error("extension-import-error", message).small());
                     }
                     dialog
-                        .title(if replace {
+                        .title(if identical {
+                            "扩展已安装"
+                        } else if replace {
                             "替换扩展"
                         } else {
                             "导入扩展"
@@ -115,28 +139,32 @@ impl ExtensionManagerView {
                                 .flex()
                                 .flex_col()
                                 .gap_3()
-                                .child(
-                                    div()
-                                        .debug_selector(|| {
-                                            "extension-import-permission-warning".into()
-                                        })
-                                        .child(
-                                            Alert::warning(
-                                                "extension-import-authority",
-                                                TRUST_WARNING.replace("。以下", "。\n以下"),
-                                            )
-                                            .whitespace_normal()
-                                            .small(),
-                                        ),
-                                )
+                                .when(!identical, |footer| {
+                                    footer.child(
+                                        div()
+                                            .debug_selector(|| {
+                                                "extension-import-permission-warning".into()
+                                            })
+                                            .child(
+                                                Alert::warning(
+                                                    "extension-import-authority",
+                                                    TRUST_WARNING.replace("。以下", "。\n以下"),
+                                                )
+                                                .whitespace_normal()
+                                                .small(),
+                                            ),
+                                    )
+                                })
                                 .child(
                                     DialogFooter::new()
                                         .child(div().flex_none().w_auto().child(cancel))
-                                        .child(div().flex_none().w_auto().child(confirm)),
+                                        .when(!identical, |footer| {
+                                            footer.child(div().flex_none().w_auto().child(confirm))
+                                        }),
                                 ),
                         )
                         .on_ok(move |_, _, cx| {
-                            if latch.get() {
+                            if identical || latch.get() {
                                 return false;
                             }
                             let can_submit = confirm_owner.upgrade().is_some_and(|app| {
@@ -193,10 +221,14 @@ impl ExtensionManagerView {
 fn confirmation_body(
     preview: &nxtools_extensions::ImportPreview,
     source: &str,
-    replace: bool,
+    previous: Option<&nxtools_extensions::InstalledPackage>,
     details: Rc<Cell<bool>>,
 ) -> gpui_kit::Div {
     let manifest = &preview.manifest;
+    let version = previous.map_or_else(
+        || manifest.version.clone(),
+        |old| format!("{} → {}", old.manifest.version, manifest.version),
+    );
     let filename = std::path::Path::new(source)
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -307,33 +339,100 @@ fn confirmation_body(
                 .gap_1()
                 .child(div().text_lg().font_semibold().child(manifest.name.clone()))
                 .child(
-                    gpui_kit::component::dialog::DialogDescription::new()
-                        .child(format!("版本 {}", manifest.version)),
+                    gpui_kit::component::dialog::DialogDescription::new().child(
+                        div()
+                            .debug_selector(|| format!("extension-import-version:{version}"))
+                            .child(format!("版本 {version}")),
+                    ),
                 ),
         );
+    if let Some(old) = previous {
+        body = body.child(replacement_effects(old, manifest));
+    } else {
+        body = body.child(
+            Alert::new(
+                "extension-import-outcome",
+                if manifest.runtime.is_some() {
+                    "导入后保持停用。请检查运行环境，再单独确认信任和启用。"
+                } else {
+                    "导入后保持停用，可在扩展目录中启用。"
+                },
+            )
+            .small(),
+        );
+    }
     if !manifest.description.is_empty() {
         body = body.child(manifest.description.clone());
     }
-    body.child(
-        Alert::new(
-            "extension-import-outcome",
-            if replace {
-                "将替换已安装的同 ID 扩展。替换后保持停用，需要重新检查并信任。"
-            } else {
-                "导入后保持停用。脚本扩展需先配置运行环境，再单独确认信任和启用。"
-            },
+    body.child(summary)
+        .child(features)
+        .child(permissions)
+        .child(
+            div()
+                .debug_selector(|| "extension-import-technical-toggle".into())
+                .child(disclosure),
         )
-        .small(),
-    )
-    .child(summary)
-    .child(features)
-    .child(permissions)
-    .child(
-        div()
-            .debug_selector(|| "extension-import-technical-toggle".into())
-            .child(disclosure),
-    )
 }
+fn replacement_effects(
+    old: &nxtools_extensions::InstalledPackage,
+    manifest: &nxtools_extensions::Manifest,
+) -> gpui_kit::Div {
+    let mut reset = vec![if manifest.runtime.is_some() {
+        "替换后停用，须重新确认信任"
+    } else {
+        "替换后停用，须重新启用"
+    }];
+    if !old.settings.is_empty()
+        || manifest
+            .settings
+            .iter()
+            .any(|s| s.default_value().is_some())
+    {
+        reset.push("普通设置恢复为新包默认值");
+    }
+    if old.runtime_override.is_some() {
+        reset.push("清除专用解释器设置");
+    }
+    if !old.enabled_events.is_empty() {
+        reset.push("清除自动事件订阅");
+    }
+    if !old.enabled_providers.is_empty() {
+        reset.push("退出速启普通查询");
+    }
+    let mut retained = Vec::new();
+    if old.data_uuid.is_some() {
+        retained.push("扩展持久数据");
+    }
+    let retained_aliases = old
+        .aliases
+        .keys()
+        .filter(|id| {
+            manifest
+                .handlers
+                .iter()
+                .any(|handler| handler.feature == "quick_launch" && &handler.id == *id)
+        })
+        .count();
+    if retained_aliases > 0 {
+        retained.push("仍适用的自定义关键词");
+    }
+    if retained_aliases < old.aliases.len() {
+        reset.push("移除不再适用的自定义关键词");
+    }
+    let impacts = DescriptionList::new()
+        .columns(1)
+        .bordered(false)
+        .label_width(px(80.0))
+        .item("替换影响", reset.join("；"), 1);
+    div()
+        .debug_selector(|| "extension-import-replacement-effects".into())
+        .child(if retained.is_empty() {
+            impacts
+        } else {
+            impacts.item("保留", retained.join("、"), 1)
+        })
+}
+
 fn permission_label(id: &str) -> String {
     let title = match id {
         "clipboard.read" => "读取所选剪贴板条目",
@@ -361,7 +460,7 @@ mod tests {
         cx.executor().allow_parking();
         let app = cx.new(|_| {
             let mut app = ExtensionApplication::new(
-                nxtools_core::AppConfig::default(),
+                nxtools_core::AppConfig::load_from(&path).unwrap_or_default(),
                 path,
                 None,
                 gpui_kit::WeakEntity::new_invalid(),
@@ -402,6 +501,69 @@ mod tests {
         }
         draw(surface);
     }
+    #[gpui_kit::test]
+    fn confirmation_identical_package_only_closes_and_keeps_configuration(cx: &mut TestAppContext) {
+        let temp = tempfile::tempdir().expect("owned");
+        let path = temp.path().join("config.json");
+        let mut config = nxtools_core::AppConfig::default();
+        let preview = candidate();
+        let id = preview.manifest.id.clone();
+        config
+            .extensions
+            .install(preview, "original.zip".into(), false)
+            .expect("install");
+        config
+            .extensions
+            .set_enabled(&id, true, &[])
+            .expect("enable");
+        config.save_to(&path).expect("config");
+        let original = std::fs::read(&path).expect("config bytes");
+        let (app, surface) = mount(path.clone(), cx);
+        assert!(
+            surface
+                .debug_bounds("extension-import-already-installed")
+                .is_some()
+        );
+        assert!(surface.debug_bounds("extension-confirm-import").is_none());
+        click(surface, "extension-cancel-import");
+        draw(surface);
+        assert!(!surface.update(|window, cx| window.has_active_dialog(cx)));
+        assert!(surface.read(|cx| app.read(cx).preview.is_none()));
+        assert_eq!(std::fs::read(path).expect("config bytes"), original);
+    }
+
+    #[gpui_kit::test]
+    fn confirmation_replacement_discloses_both_versions_and_configuration_effects(
+        cx: &mut TestAppContext,
+    ) {
+        let temp = tempfile::tempdir().expect("owned");
+        let path = temp.path().join("config.json");
+        let mut config = nxtools_core::AppConfig::default();
+        let mut previous = candidate().manifest;
+        previous.version = "0.9.0".into();
+        let previous = nxtools_extensions::ImportPreview::from_json(
+            &serde_json::to_vec(&previous).expect("manifest"),
+        )
+        .expect("previous");
+        config
+            .extensions
+            .install(previous, "original.zip".into(), false)
+            .expect("install");
+        config.save_to(&path).expect("config");
+        let (_, surface) = mount(path, cx);
+        assert!(
+            surface
+                .debug_bounds("extension-import-version:0.9.0 → 1.0.0")
+                .is_some()
+        );
+        assert!(
+            surface
+                .debug_bounds("extension-import-replacement-effects")
+                .is_some()
+        );
+        assert!(surface.debug_bounds("extension-confirm-import").is_some());
+    }
+
     #[gpui_kit::test]
     fn confirmation_failure_keeps_dialog_retry_and_double_confirm_commits_once(
         cx: &mut TestAppContext,

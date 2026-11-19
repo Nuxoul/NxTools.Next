@@ -256,7 +256,7 @@ class WrapperFixture:
             tool.write_text("fixture marker - never execute")
             self.env["CLEANUP_INSTALLER"] = "1"
             self.env["CLEANUP_ISCC_PATH"] = str(tool)
-            self.env["CLEANUP_INSTALLER_OUTPUT"] = str(self.root / "artifacts/installer/NxTools.Next-setup-0.7.0.exe")
+            self.env["CLEANUP_INSTALLER_OUTPUT"] = str(self.root / "artifacts/installer/NxTools.Next-setup-0.7.2.exe")
             installer_script = self.root / "installer/nxtools-next.iss"
             installer_script.parent.mkdir()
             installer_script.write_text("synthetic compiler input - only tool stubs consume this")
@@ -425,7 +425,7 @@ class BuildTreeCleanupTests(unittest.TestCase):
                     fixture = self.fixture(mode, failure, installer=True)
                     destination = fixture.area / "package-with-installer"
                     result = fixture.run("package.ps1", "-Configuration Release -SkipVerification -OutputPath " + ps_quote(destination)
-                                         + " -SigningKeyPath " + ps_quote(fixture.key) + " -ReleaseSequence 30")
+                                         + " -SigningKeyPath " + ps_quote(fixture.key) + " -ReleaseSequence 30 -CreateDistributionArchive")
                     self.assert_common(fixture, result, failure)
                     log = (fixture.area / "tools.log").read_text("utf-8-sig")
                     self.assertIn("alive:installer-gate", log)
@@ -434,7 +434,7 @@ class BuildTreeCleanupTests(unittest.TestCase):
                     self.assertIn("alive:iscc", log)
                     if failure != "iscc":
                         self.assertIn("alive:distribution", log)
-                        self.assertTrue((fixture.root / "artifacts/installer/NxTools.Next-setup-0.7.0.exe").is_file())
+                        self.assertTrue((fixture.root / "artifacts/installer/NxTools.Next-setup-0.7.2.exe").is_file())
                     self.assertTrue((destination / "NxTools.release.sig").is_file())
 
     def test_publisher_borrows_outputs_until_its_caller_consumes_them(self):

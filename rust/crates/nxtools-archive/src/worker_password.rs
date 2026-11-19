@@ -91,7 +91,11 @@ pub(crate) fn execute<W: Write + Send>(
         use std::io::Read as _;
         let mut signature = [0; 8];
         let count = std::fs::File::open(&request.path)?.read(&mut signature)?;
-        if !(count >= 4 && matches!(&signature[..4], b"PK\x03\x04" | b"PK\x05\x06")
+        if !(count >= 4
+            && matches!(
+                &signature[..4],
+                b"PK\x03\x04" | b"PK\x05\x06" | b"ALZ\x01" | b"EGGA"
+            )
             || count >= 6 && &signature[..6] == b"7z\xbc\xaf\x27\x1c"
             || count >= 7 && &signature[..7] == b"Rar!\x1a\x07\0"
             || count == 8 && &signature == b"Rar!\x1a\x07\x01\0")
@@ -119,7 +123,13 @@ pub(crate) fn execute<W: Write + Send>(
         read.limits = request.limits;
         read.job_execution = request.job_execution;
         read.volume_paths = request.volume_paths.clone();
-        if request.output_readmission.is_some() || request.browser_entry.is_some() {
+        if request.output_readmission.is_some()
+            || request.browser_entry.is_some()
+            || request
+                .job_extract
+                .as_ref()
+                .is_some_and(|options| options.selection.is_some())
+        {
             let original = crate::ResourceLimits::default();
             read.limits.max_entry_bytes = original.max_entry_bytes;
             read.limits.max_output_bytes = original.max_output_bytes;

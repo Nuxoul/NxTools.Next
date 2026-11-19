@@ -10,6 +10,7 @@ pub mod archive_shell_integration;
 pub mod archive_space;
 pub mod archive_virtual_drag;
 pub mod desktop_archive_intent;
+pub mod desktop_markdown_intent;
 pub mod floating_assistant;
 pub mod main_window;
 pub mod raw_numbered_join;
@@ -92,6 +93,8 @@ pub enum Message {
     IndexerEvent(IndexerEvent),
     DesktopArchiveIntent(desktop_archive_intent::DesktopArchiveIntent),
     DesktopArchiveReceipt(desktop_archive_intent::DesktopArchiveReceipt),
+    DesktopMarkdownIntent(desktop_markdown_intent::DesktopMarkdownIntent),
+    DesktopMarkdownReceipt(desktop_markdown_intent::DesktopMarkdownReceipt),
     Error(ProtocolFault),
 }
 
@@ -530,6 +533,7 @@ pub enum PlatformCommand {
     ReadSystemProxy,
     OpenDefaultAppsSettings(OpenDefaultAppsSettingsCommand),
     ShutdownSystem(ShutdownSystemCommand),
+    SuspendSystem(SuspendSystemCommand),
     ExportBrowserExtension(ExportBrowserExtensionCommand),
     PickBrowserExtensionExportPath(PickBrowserExtensionExportPathCommand),
     LaunchProcess(LaunchProcessCommand),
@@ -544,6 +548,10 @@ pub enum PlatformCommand {
     PickClipboardStorageDirectory(PickClipboardStorageDirectoryCommand),
     PickDirectory(PickDirectoryCommand),
     PickProgram(PickProgramCommand),
+    PickMarkdownDocument(PickMarkdownDocumentCommand),
+    PickMarkdownExport(PickMarkdownExportCommand),
+    PrintMarkdownPdf(PrintMarkdownPdfCommand),
+    MarkdownAssociation(MarkdownAssociationCommand),
     PickExtensionManifest(PickExtensionManifestCommand),
     PickExtensionRuntime(PickExtensionRuntimeCommand),
     PickExtensionSettingPath(PickExtensionSettingPathCommand),
@@ -648,6 +656,8 @@ pub struct ConfigureClipboardCommand {
     pub hotkey_key: String,
     pub hotkey_display: String,
     pub excluded_processes: Vec<String>,
+    #[serde(default = "default_true")]
+    pub suppress_in_fullscreen: bool,
     #[serde(default = "default_clipboard_max_text_bytes")]
     pub max_text_bytes: u64,
     #[serde(default = "default_clipboard_max_image_bytes")]
@@ -704,6 +714,118 @@ pub struct PickProgramCommand {
     pub source_window_handle: i64,
     pub source_process_id: u32,
     pub current_path: String,
+}
+
+/// Opens an owned Windows document chooser; selecting paths does not open or read files.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PickMarkdownDocumentCommand {
+    pub source_window_handle: u64,
+    pub source_process_id: u32,
+}
+
+/// JSON object encoded in a successful [`PlatformCommandResult::data`] string.
+/// An empty `paths` vector means the user dismissed the chooser.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PickMarkdownDocumentResult {
+    pub paths: Vec<String>,
+}
+
+impl PickMarkdownDocumentResult {
+    pub const MAX_PATHS: usize = 32;
+    pub const MAX_PATH_BYTES: usize = 128 * 1024;
+
+    /// Validate transport budgets before applying the result to a reader.
+    pub fn selection_valid(&self) -> bool {
+        self.paths.len() <= Self::MAX_PATHS
+            && self
+                .paths
+                .iter()
+                .all(|path| !path.is_empty() && !path.contains('\0'))
+            && self.paths.iter().map(String::len).sum::<usize>() <= Self::MAX_PATH_BYTES
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MarkdownExportFormat {
+    Html,
+    Pdf,
+}
+
+/// Owned native Save selection. Successful result data is a plain full path, or absent on Cancel.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PickMarkdownExportCommand {
+    pub source_window_handle: u64,
+    pub source_process_id: u32,
+    pub format: MarkdownExportFormat,
+    pub suggested_name: String,
+}
+
+/// Render local standalone HTML to a new Desktop staging path, not the selected destination.
+/// Success has no data; Desktop owns atomic publication to the selected destination.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PrintMarkdownPdfCommand {
+    pub html_path: String,
+    pub output_path: String,
+}
+
+/// Query or modify only the current-user Markdown reader registration, never its default status.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub struct MarkdownAssociationCommand {
+    pub action: MarkdownAssociationAction,
+}
+
+impl<'de> Deserialize<'de> for MarkdownAssociationCommand {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        struct ActionObject;
+        impl<'de> serde::de::Visitor<'de> for ActionObject {
+            type Value = MarkdownAssociationCommand;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a Markdown association action object")
+            }
+
+            fn visit_map<M: serde::de::MapAccess<'de>>(
+                self,
+                mut map: M,
+            ) -> Result<Self::Value, M::Error> {
+                match map.next_key::<String>()?.as_deref() {
+                    Some("action") => {}
+                    Some(other) => return Err(serde::de::Error::unknown_field(other, &["action"])),
+                    None => return Err(serde::de::Error::missing_field("action")),
+                }
+                let action = map.next_value()?;
+                if map.next_key::<serde::de::IgnoredAny>()?.is_some() {
+                    return Err(serde::de::Error::custom("only action is accepted"));
+                }
+                Ok(MarkdownAssociationCommand { action })
+            }
+        }
+        deserializer.deserialize_map(ActionObject)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MarkdownAssociationAction {
+    Query,
+    Register,
+    Unregister,
+    /// Opens Windows Settings; successful result data is `opened`, not association state.
+    OpenDefaults,
+}
+
+/// Observed Windows state encoded as JSON for successful query/register/unregister results.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkdownAssociationState {
+    pub md: MarkdownAssociationExtensionState,
+    pub markdown: MarkdownAssociationExtensionState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarkdownAssociationExtensionState {
+    pub registered: bool,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -999,6 +1121,11 @@ pub struct OpenShellTargetCommand {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ShutdownSystemCommand {
     pub delay_seconds: u16,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SuspendSystemCommand {
+    pub hibernate: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1729,6 +1856,7 @@ mod tests {
                 hotkey_key: "V".into(),
                 hotkey_display: "Ctrl+Shift+V".into(),
                 excluded_processes: vec!["KeePass.exe".into(), "Bitwarden.exe".into()],
+                suppress_in_fullscreen: false,
                 max_text_bytes: 12 * 1024 * 1024,
                 max_image_bytes: 96 * 1024 * 1024,
                 max_image_pixels: 120_000_000,
@@ -2557,6 +2685,52 @@ mod default_apps_command_tests {
 }
 
 #[cfg(test)]
+mod markdown_association_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn markdown_association_uses_a_closed_action_and_per_extension_state() {
+        for (action, name) in [
+            (MarkdownAssociationAction::Query, "query"),
+            (MarkdownAssociationAction::Register, "register"),
+            (MarkdownAssociationAction::Unregister, "unregister"),
+            (MarkdownAssociationAction::OpenDefaults, "open_defaults"),
+        ] {
+            let command =
+                PlatformCommand::MarkdownAssociation(MarkdownAssociationCommand { action });
+            let wire = json!({"command":"markdown_association","data":{"action":name}});
+            assert_eq!(serde_json::to_value(&command).expect("encode action"), wire);
+            assert!(matches!(
+                serde_json::from_value::<PlatformCommand>(wire).expect("decode action"),
+                PlatformCommand::MarkdownAssociation(decoded) if decoded.action == action
+            ));
+        }
+        for data in [
+            json!({}),
+            json!({"action":"set_default"}),
+            json!({"action":"register","path":"C:\\Other.exe"}),
+            json!({"action":"open_defaults","uri":"ms-settings:other"}),
+            json!({"action":"open_defaults","registeredAppUser":"Other App"}),
+            json!(["query"]),
+        ] {
+            assert!(
+                serde_json::from_value::<PlatformCommand>(
+                    json!({"command":"markdown_association","data":data})
+                )
+                .is_err()
+            );
+        }
+        let state: MarkdownAssociationState = serde_json::from_str(
+            r#"{"md":{"registered":true,"is_default":false},"markdown":{"registered":false,"is_default":true}}"#,
+        )
+        .expect("decode native readback");
+        assert!(state.md.registered && !state.md.is_default);
+        assert!(!state.markdown.registered && state.markdown.is_default);
+    }
+}
+
+#[cfg(test)]
 mod index_maintenance_tests {
     use super::*;
 
@@ -2634,5 +2808,31 @@ mod search_cancel_tests {
             envelope
         );
         assert_ne!(envelope.id, request_id);
+    }
+}
+
+#[cfg(test)]
+mod b5_completion_tests {
+    use super::*;
+    #[test]
+    fn b5_suspend_wire_preserves_sleep_hibernate_and_required_state() {
+        for hibernate in [false, true] {
+            let command = PlatformCommand::SuspendSystem(SuspendSystemCommand { hibernate });
+            let wire = serde_json::to_value(&command).expect("typed suspend command");
+            assert_eq!(
+                wire,
+                serde_json::json!({"command":"suspend_system","data":{"hibernate":hibernate}})
+            );
+            assert_eq!(
+                serde_json::from_value::<PlatformCommand>(wire).expect("roundtrip"),
+                command
+            );
+        }
+        assert!(
+            serde_json::from_value::<PlatformCommand>(
+                serde_json::json!({"command":"suspend_system","data":{}})
+            )
+            .is_err()
+        );
     }
 }

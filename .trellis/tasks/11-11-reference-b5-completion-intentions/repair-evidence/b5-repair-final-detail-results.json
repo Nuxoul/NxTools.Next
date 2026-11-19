@@ -1,0 +1,26 @@
+﻿{
+    "fail":  0,
+    "run_count":  1,
+    "list_count":  1,
+    "run_exit":  0,
+    "run_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-detail.log",
+    "pass":  1,
+    "list_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-detail-list.log",
+    "selection":  [
+                      "test",
+                      "--locked",
+                      "--offline",
+                      "-p",
+                      "nxtools-desktop",
+                      "--bin",
+                      "nxtools-desktop",
+                      "live_progress_updates_the_cached_selected_segment_without_requerying_sqlite"
+                  ],
+    "filter":  "live_progress_updates_the_cached_selected_segment_without_requerying_sqlite",
+    "target":  "bin:nxtools-desktop",
+    "list_exit":  0,
+    "expected_count":  0,
+    "package":  "nxtools-desktop",
+    "skip":  0,
+    "not_run":  0
+}

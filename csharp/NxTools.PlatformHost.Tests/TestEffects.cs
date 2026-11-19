@@ -29,6 +29,23 @@ internal static class TestEffects
         // Injected text readers on the original bounded STA; no system clipboard access or writes.
         "ClipboardTextTests.ReadOnlyStaAndResults",
         "ClipboardTextTests.CancellationAndFrameBound",
+        // Injected paste operations only; no native input or clipboard access.
+        "ElevatedInputTests.ForegroundChangeNeverInjects",
+        "ElevatedInputTests.ClipboardWriteAndInputOwnership",
+        "ElevatedInputTests.GestureSourcesNeverDuplicate",
+        // Self-owned random pipes and injected peer/elevation/process-exit facts only.
+        "ElevatedInputChannelTests.ConfigurationReplayAndExit",
+        "ElevatedInputChannelTests.PasteAndDirectoryShareChannel",
+        "ElevatedInputChannelTests.UnavailableKeepsOrdinaryPath",
+        "ElevatedInputChannelTests.FailureBeforeConfigurationAck",
+        "ElevatedInputChannelTests.AutomaticRecoveryIsBounded",
+        "ElevatedInputChannelTests.ActivationAndPointerUseOriginalConnection",
+        "ElevatedInputChannelTests.PointerObservationSurvivesLongIdle",
+        // Self-owned hidden message HWND, fake keyboard hook and fake paste operations only.
+        "ElevatedInputHostTests.MessageRoutingAndOwnedCleanup",
+        "ElevatedInputHostTests.PasteTargetAndDestinationValidation",
+        "ElevatedInputHostTests.AdministratorPointerUsesOriginalMessageWindow",
+        "ElevatedInputHostTests.ActivationRequiresConfiguredDesktopOwnership",
         // Injected message queue/delegate only; no HWND, global hook, SendInput or user data.
         "KeyboardMonitorTests.DedicatedOwnershipAndDisposal",
         "KeyboardMonitorTests.ResetGenerationAndInjectedInput",
@@ -63,11 +80,17 @@ internal static class TestEffects
         "ArchiveTypeIconTests.CorruptPngRegeneratesThroughOriginalSta",
         "ArchiveTypeIconTests.NativeFailureRetainsSafeCategoryAndCode",
         "ArchiveTypeIconTests.CompletedExecutableUsesOwnedCache",
+        "ArchiveTypeIconTests.SmallArtworkOnJumboCanvasUsesExtraLarge",
+        "ArchiveTypeIconTests.CacheHitRefreshesDiskRecency",
         "ArchiveAssociationSettingsTests.StrictWireRejectsInvalidConfiguration",
         "ArchiveAssociationSettingsTests.PlansConsumeActionsFilteringAndLayout",
         "ArchiveAssociationSettingsTests.GroupedServiceCompensationAndGate",
         "ArchiveAssociationSettingsTests.CreateForwardsWholeGroupWithoutComOrLaunch",
         "ArchiveAssociationSettingsTests.FixedDefaultAppsWireResultsAndDetachedReader",
+        "MarkdownAssociationTests.WireAndDetachedReader",
+        "MarkdownAssociationTests.RegistrationAndEffectiveDefault",
+        "MarkdownAssociationTests.ConflictsCancellationAndFailures",
+        "MarkdownAssociationTests.OpensRegisteredAppSettings",
         "ArchiveIntegrationServiceTests.ProductCompositionAppliesOnlyExplicitRequests",
         "ArchiveIntegrationServiceTests.ProductDispatchDoesNotBlockReader",
         "ArchiveIntegrationServiceTests.ProductIdentityLeaseAcceptsExactReleaseAndRejectsUnknown",
@@ -78,6 +101,7 @@ internal static class TestEffects
         "MainWindowStartupTests.DetachedPreparationDoesNotBlockLaterCommands",
         "SystemProxySnapshotTests.StaticAutomaticAndInvalidConfigurations",
         "FloatingAssistantCoordinatorTests.PickerWaitingForUserIsNotBackgroundTimeout",
+        "FloatingAssistantCoordinatorTests.PickerUsesSourceWindowAsModalOwner",
         "FloatingAssistantCoordinatorTests.StrictWireAndEvents",
         "FloatingAssistantCoordinatorTests.EnvironmentSignatureRetriesAndDeduplicates",
         "FloatingAssistantCoordinatorTests.FullscreenPolicyRejectsDesktopAndFramedWindows",
@@ -458,6 +482,7 @@ internal static class TestEffects
         "TrustedUpdateTransactionTests.FramesRejectOversizeTruncationAndCancellation",
         "TrustedUpdateRoutingTests.SameReleaseMigratesTrustExactlyOnce",
         "TrustedReleaseManifestTests.ValidSignatureAndLockedCopy",
+        "TrustedReleaseManifestTests.LegacySnapshotIsRecoveryOnly",
         "TrustedReleaseManifestTests.TamperAndWrongKeyRejectedBeforeParse",
         "TrustedReleaseManifestTests.SignedDuplicateTraversalAndSchemaRejected",
         "TrustedReleaseManifestTests.MissingTamperedAndDowngradeRejected",
@@ -490,6 +515,8 @@ internal static class TestEffects
         "QuickLaunchContractsRoundTrip",
         "QuickLaunchSummonDiagnosticsKeepPublishedCorrelationAndRateLimitFailures",
         "QuickLaunchFullscreenSuppressionIsPrecise",
+        "FullscreenSummonClassifiesForegroundWindows",
+        "FullscreenSummonPublishBoundaryKeepsPoliciesIndependent",
         "QuickLaunchWndProcRoutesBothTriggersThroughFullscreenGate",
         "AutoQuickSwitchRequiresKnownDialog",
         "ExplorerSourceReturnTests.InFlightKnownReturnCompletesOnce",
@@ -499,6 +526,7 @@ internal static class TestEffects
         "ExplorerSourceReturnTests.SourceSupersessionSerializesAndRejectsSameHwndAba",
         "ExplorerSourceReturnTests.FailuresAndFullQueueRetireWithoutPayload",
         "AutoQuickSwitchRefreshesChangedDirectoryOpusSource",
+        "TrackedDirectoryOpusReactivationKeepsPendingSync",
         "DirectoryOpusDialogReturnRefreshesExistingTabPath",
         "DirectoryOpusExistingTabSelectionRefreshesTrackedSource",
         "AutoQuickSwitchInvalidatesStaleCandidates",
@@ -595,6 +623,11 @@ internal static class TestEffects
         "WindowPositionResizeAndShellCommandsPreservePayload",
         "TypedProcessLaunchPreservesArgumentsAndFlags",
         "ShellActionSessionCommandsPreservePayload",
+        // Controlled actions on the production Shell STA worker; no real Shell COM, windows or user data.
+        "ShellActionWaitTests.InvokeWaitsBeyondMachineDeadline",
+        "ShellActionWaitTests.CancellationReturnsPromptlyWithoutWorkerReuse",
+        "ShellActionWaitTests.MachineWaitRetainsFiveSecondDeadline",
+        "ShellActionWaitTests.MachineTimeoutRetiresQueuedInvoke",
         "ShellIconCommandPreservesPayload",
         "ShellIconExtractionRunsOnDedicatedStaWorker",
         "ShellIconExtractionAllowsBoundedParallelWorkers",
@@ -652,6 +685,8 @@ internal static class TestEffects
         "IndexerServiceRegistrationRequiresServiceArguments",
         "ErrorDialogArgumentsParseReportPath",
         "ErrorDialogReadsBoundedReport",
+        "B5CompletionSuspendSystemWireRoutesThroughProductionDispatch",
+        "B5CompletionHeldSuspendKeepsDispatcherResponsiveAndDrains",
     };
 
     internal static TestCase Create(string name, Func<Task> run)
@@ -660,6 +695,9 @@ internal static class TestEffects
         var symbol = type == "Program" ? run.Method.Name : $"{type}.{run.Method.Name}";
         if (Fixtures.Contains(symbol))
         {
+            if (symbol is "B5CompletionSuspendSystemWireRoutesThroughProductionDispatch" or
+                "B5CompletionHeldSuspendKeepsDispatcherResponsiveAndDrains")
+                return new(name, run, TestEffect.Fixture, "Reviewed production parser/pipe/adapter dispatch with injected ICompletionSystemActions and held detached delegate only; no native power capability query, suspend API, process token, GUI, registry or service effect");
             if (type is "DirectoryOpusExportTests")
                 return new(name, run, TestEffect.Fixture, "Reviewed current test-apphost helper and independent writer only; GUID-owned output/control files, real bounded Export and exact teardown; no DOpus/Shell/GUI/registry/service/user data");
             if (type == "ArchiveParallelExtractionTests")
@@ -676,6 +714,8 @@ internal static class TestEffects
                 return new(name, run, TestEffect.Fixture, "Reviewed fixed type parsing, original bounded STA, SHGetFileInfo/system image lists and GUID-owned completed-file/icon cache only; no production cache/external member probes/shortcut COM/Shell launch/Registry/service");
             if (type is "ArchiveAssociationSettingsTests")
                 return new(name, run, TestEffect.Fixture, "Reviewed fake-only JSON/pure plans/in-memory stores/ledgers/managed Shell items, injected no-argument native operation/fake launcher and GUID temporary identity bytes; no actual launch/Registry/COM activation/service/settings");
+            if (type is "MarkdownAssociationTests")
+                return new(name, run, TestEffect.Fixture, "Reviewed parser, bounded STA, and in-memory registration with injected identity, effective default, notifications and Settings launch; no native Registry/Shell/service/Settings/product launch");
             if (type is "ArchiveIntegrationServiceTests")
                 return new(name, run, TestEffect.Fixture, "Reviewed original product composition with injected memory Registry/ledger/notifications, GUID synthetic release bytes and original read-only identity leases, bounded STA/dispatcher/cancellation/log observation; no native Registry/COM/Shell/service/product launch");
             if (type is "ArchiveProductReadTests" or "ArchiveProductSessionTests")

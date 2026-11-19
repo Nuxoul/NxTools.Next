@@ -201,7 +201,7 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             throw new ArchiveOutputException("destination_unavailable");
         return (false, names.ToArray());
     }
-    internal void RequireNewVolumeFamily(string name, bool sevenz)
+    internal void RequireNewVolumeFamily(string name, bool sevenz, bool selfExtracting = false)
     {
         Check(); Validate(name);
         if (root is null) return;
@@ -213,6 +213,7 @@ internal sealed partial class ArchiveOutputSession : IDisposable
             if (++count > 16384) throw new ArchiveOutputException("session_entry_limit");
             var component = Path.GetFileName(candidate);
             if (component.Equals(name, StringComparison.OrdinalIgnoreCase)) throw new ArchiveOutputException("target_exists");
+            if (selfExtracting && component.Equals(Path.GetFileNameWithoutExtension(name) + ".zip", StringComparison.OrdinalIgnoreCase)) throw new ArchiveOutputException("target_exists");
             if (component.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
             {
                 var suffix = component[prefix.Length..];

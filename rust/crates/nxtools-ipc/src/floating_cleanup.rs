@@ -139,6 +139,99 @@ mod tests {
     }
 
     #[test]
+    fn floating_image_picker_waits_for_selection_or_cancel_without_machine_timeout() {
+        for data in [
+            r#"{"selected_path":"C:/fixture/image.png"}"#,
+            r#"{"selected_path":null}"#,
+        ] {
+            let (bridge, endpoint) = platform_bridge(1);
+            let receiver = endpoint.open_connection_for_contract_test();
+            let origin = bridge
+                .floating_assistant_connection()
+                .expect("original picker connection");
+            let id = uuid::Uuid::new_v4();
+            let picker = command(FloatingAssistantOperation::PickImage);
+            bridge
+                .send_command_with_id(PlatformCommand::FloatingAssistant(picker.clone()), id)
+                .expect("admit caller-owned image picker");
+            let envelope = receiver.try_recv().expect("original image picker dispatch");
+            assert_eq!(envelope.id, id);
+            assert_eq!(
+                envelope.message,
+                Message::PlatformCommand(PlatformCommand::FloatingAssistant(picker))
+            );
+            let accepted = endpoint.router.lock().expect("router").pending[&id].accepted_at;
+            for seconds in [11, 121, 601] {
+                assert!(
+                    endpoint
+                        .expire_pending_commands(origin, accepted + Duration::from_secs(seconds))
+                        .is_empty(),
+                    "waiting for image selection must not produce a timeout failure"
+                );
+            }
+            assert!(bridge.notification_receiver().try_recv().is_err());
+            assert!(endpoint.complete_command(origin, id).is_some());
+            endpoint
+                .send_notification_for_contract_test(PlatformNotification::CommandResult {
+                    correlation_id: id,
+                    result: PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: Some(data.into()),
+                    },
+                })
+                .expect("publish delayed picker result");
+            assert!(matches!(
+                bridge.notification_receiver().try_recv(),
+                Ok(PlatformNotification::CommandResult { correlation_id, result })
+                    if correlation_id == id && result.success && result.data.as_deref() == Some(data)
+            ));
+            assert!(endpoint.complete_command(origin, id).is_none());
+            assert!(!endpoint.command_pending_for_contract_test(id));
+        }
+    }
+
+    #[test]
+    fn floating_image_picker_disconnect_retires_pending_and_rejects_late_results() {
+        let (bridge, endpoint) = platform_bridge(1);
+        let receiver = endpoint.open_connection_for_contract_test();
+        let origin = bridge
+            .floating_assistant_connection()
+            .expect("original picker connection");
+        let id = uuid::Uuid::new_v4();
+        bridge
+            .send_command_with_id(
+                PlatformCommand::FloatingAssistant(command(FloatingAssistantOperation::PickImage)),
+                id,
+            )
+            .expect("admit original image picker");
+        assert_eq!(receiver.try_recv().expect("picker dispatch").id, id);
+        endpoint.set_connected_for_contract_test(false);
+        assert!(!endpoint.command_pending_for_contract_test(id));
+        assert!(matches!(
+            bridge.notification_receiver().try_recv(),
+            Ok(PlatformNotification::Disconnected { generation, pending_command_ids })
+                if generation == origin && pending_command_ids == vec![id]
+        ));
+        let replacement = endpoint.open_connection_for_contract_test();
+        let current = bridge
+            .floating_assistant_connection()
+            .expect("replacement picker connection");
+        bridge
+            .send_command_with_id(
+                PlatformCommand::FloatingAssistant(command(FloatingAssistantOperation::PickImage)),
+                id,
+            )
+            .expect("admit replacement picker with retired caller ID");
+        assert_eq!(replacement.try_recv().expect("replacement dispatch").id, id);
+        assert!(endpoint.complete_command(origin, id).is_none());
+        assert!(endpoint.command_pending_for_contract_test(id));
+        assert!(endpoint.complete_command(current, id).is_some());
+        assert!(endpoint.complete_command(current, id).is_none());
+    }
+
+    #[test]
     fn floating_cleanup_is_one_original_slot_and_retire_covers_release() {
         let (bridge, endpoint) = platform_bridge(1);
         let receiver = endpoint.open_connection_for_contract_test();

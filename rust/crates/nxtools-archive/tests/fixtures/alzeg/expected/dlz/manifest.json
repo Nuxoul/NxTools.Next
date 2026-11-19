@@ -1,0 +1,124 @@
+{
+  "oracle": "Independent specification bit parser and inverse BWT; reconstructed standard blocks strictly verified by CPython bz2",
+  "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+  "fixtures": [
+    {
+      "fixture": "bzip2.alz",
+      "origin": "unchanged CC0 alkegi/unalz",
+      "members": [
+        {
+          "name": "a.txt",
+          "method": 1,
+          "size": 2340,
+          "packed": 123,
+          "crc32": "cf5af352",
+          "payload_offset": 36,
+          "blocks": [
+            {
+              "payload_start_bit": 32,
+              "payload_end_bit": 951,
+              "bwt_bytes": 2340,
+              "decoded_bytes": 2340,
+              "bzip2_crc": "76edafec",
+              "strict_bz2": true
+            }
+          ],
+          "expected": "bzip2.alz/0.gz"
+        },
+        {
+          "name": "b.txt",
+          "method": 1,
+          "size": 2160,
+          "packed": 69,
+          "crc32": "7b6217fe",
+          "payload_offset": 187,
+          "blocks": [
+            {
+              "payload_start_bit": 32,
+              "payload_end_bit": 517,
+              "bwt_bytes": 2160,
+              "decoded_bytes": 2160,
+              "bzip2_crc": "195e3d1a",
+              "strict_bz2": true
+            }
+          ],
+          "expected": "bzip2.alz/1.gz"
+        }
+      ],
+      "files": 2,
+      "bytes": 4500
+    },
+    {
+      "fixture": "bzip2_dlz.alz",
+      "origin": "unchanged CC0 alkegi/unalz",
+      "members": [
+        {
+          "name": "text.txt",
+          "method": 1,
+          "size": 3600,
+          "packed": 119,
+          "crc32": "2c19aec0",
+          "payload_offset": 39,
+          "blocks": [
+            {
+              "payload_start_bit": 32,
+              "payload_end_bit": 914,
+              "bwt_bytes": 3600,
+              "decoded_bytes": 3600,
+              "bzip2_crc": "33047482",
+              "strict_bz2": true
+            }
+          ],
+          "expected": "bzip2_dlz.alz/0.gz"
+        }
+      ],
+      "files": 1,
+      "bytes": 3600
+    },
+    {
+      "fixture": "spec_alz_dlz_multiblock.alz",
+      "origin": "project-owned specification fixture; CPython bz2 encoder, independently parsed and strictly reverified",
+      "members": [
+        {
+          "name": "multiblock.bin",
+          "method": 1,
+          "size": 1969632,
+          "packed": 5611,
+          "crc32": "d39d90d2",
+          "payload_offset": 49,
+          "blocks": [
+            {
+              "payload_start_bit": 32,
+              "payload_end_bit": 16024,
+              "bwt_bytes": 899981,
+              "decoded_bytes": 899981,
+              "bzip2_crc": "c869f541",
+              "strict_bz2": true
+            },
+            {
+              "payload_start_bit": 16056,
+              "payload_end_bit": 31992,
+              "bwt_bytes": 899981,
+              "decoded_bytes": 899981,
+              "bzip2_crc": "6ad0a7c4",
+              "strict_bz2": true
+            },
+            {
+              "payload_start_bit": 32024,
+              "payload_end_bit": 44855,
+              "bwt_bytes": 101409,
+              "decoded_bytes": 169670,
+              "bzip2_crc": "53e207e9",
+              "strict_bz2": true
+            }
+          ],
+          "expected": "spec_alz_dlz_multiblock.alz/0.gz"
+        }
+      ],
+      "files": 1,
+      "bytes": 1969632
+    }
+  ],
+  "files": 4,
+  "decoded_bytes": 1977732
+}

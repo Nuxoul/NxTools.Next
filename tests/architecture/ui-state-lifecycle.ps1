@@ -15,7 +15,8 @@ $main = (@(Get-Content -LiteralPath $mainPath -Raw) +
 $quick = (@(Get-Content -LiteralPath $quickPath -Raw) +
     (Get-ChildItem (Join-Path $RepositoryRoot "rust\apps\nxtools-desktop\src\quick_launch") -Filter '*.rs' |
         Sort-Object Name | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw })) -join "`n"
-$clipboard = Get-Content -LiteralPath $clipboardPath -Raw
+$clipboard = (Get-Content -LiteralPath $clipboardPath -Raw) +
+    (Get-Content -LiteralPath (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\ui\history_filters.rs') -Raw)
 
 foreach ($contract in @(
     'pub(crate) fn empty_state(',
@@ -40,9 +41,11 @@ if (-not $main.Contains('"download-empty-state"') -or
 }
 
 if (-not $quick.Contains('"quick-launch-results-empty"') -or
-    -not $quick.Contains('"quick-launch-results-progress"') -or
+    -not $quick.Contains('"quick-launch-search-feedback"') -or
+    -not $quick.Contains('SEARCH_FEEDBACK_DELAY') -or
+    -not $quick.Contains('motion_allowed(cx)') -or
     -not $quick.Contains('"quick-launch-actions-empty"')) {
-    throw "Quick-launch result and action states must use the shared work-state boundary."
+    throw "Quick-launch must separate empty/action states from delayed, motion-aware input feedback."
 }
 
 if (-not $clipboard.Contains('"clipboard-history-empty"')) {

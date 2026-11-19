@@ -27,8 +27,8 @@ internal static class ArchiveSelectionHandlerPlan
         new("test", "05test", Verbs[4].Clsid, Verbs[4].Label, "--archive-test"),
         new("extract_dialog", "06extract-dialog", new("306F1051-91FA-4D1B-87BC-E02E9D68FB46"), "解压到…", "--archive-extract dialog"),
         new("create", "07create", new("BC9707AF-8361-431D-82CC-36554BDDA04C"), "新建压缩包…", "--archive-compress"),
-        new("create_zip", "08create-zip", new("0E30B5E0-6767-4FFB-8198-D748035B3E6D"), "", "--archive-compress-zip"),
-        new("create_7z", "09create-7z", new("55CCFF86-9D14-4750-9497-7A8D586A6402"), "", "--archive-compress-7z"),
+        new("create_zip", "08create-zip", new("0E30B5E0-6767-4FFB-8198-D748035B3E6D"), "压缩为同名 .zip", "--archive-compress-zip"),
+        new("create_7z", "09create-7z", new("55CCFF86-9D14-4750-9497-7A8D586A6402"), "压缩为同名 .7z", "--archive-compress-7z"),
     ];
 
     internal static ArchiveIntegrationPlan Create(string helperPath, long desiredRevision, IReadOnlyList<string> extensions) =>
@@ -51,11 +51,12 @@ internal static class ArchiveSelectionHandlerPlan
             Add(changes, root + @"\LocalServer32", "", "\"" + helperPath + "\"", root);
         }
         var archiveCommands = selected.Where(command => !IsCreation(command.Command)).ToArray();
+        var icon = "\"" + Path.Combine(Path.GetDirectoryName(helperPath)!, "NxTools.exe") + "\",-2";
         foreach (var extension in normalized.Extensions!)
-            AddMenu(changes, Classes + @"\SystemFileAssociations\" + extension, archiveCommands, normalized.MenuLayout);
+            AddMenu(changes, Classes + @"\SystemFileAssociations\" + extension, archiveCommands, normalized.MenuLayout, icon);
         var create = selected.Where(command => IsCreation(command.Command)).ToArray();
-        AddMenu(changes, Classes + @"\*", create, normalized.MenuLayout);
-        AddMenu(changes, Classes + @"\Directory", create, normalized.MenuLayout);
+        AddMenu(changes, Classes + @"\*", create, normalized.MenuLayout, icon);
+        AddMenu(changes, Classes + @"\Directory", create, normalized.MenuLayout, icon);
         var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var change in changes)
         {
@@ -66,7 +67,7 @@ internal static class ArchiveSelectionHandlerPlan
         return new(ArchiveIntegrationScope.CurrentUserClasses, desiredRevision, normalized, normalized.Extensions!, changes, null);
     }
 
-    private static void AddMenu(List<ArchiveRegistryValueChange> changes, string parent, IReadOnlyList<MenuCommand> commands, string layout)
+    private static void AddMenu(List<ArchiveRegistryValueChange> changes, string parent, IReadOnlyList<MenuCommand> commands, string layout, string icon)
     {
         if (commands.Count == 0) return;
         var root = parent + @"\shell\" + GroupedCascadeId;
@@ -74,18 +75,15 @@ internal static class ArchiveSelectionHandlerPlan
         {
             Add(changes, root, "MUIVerb", "NxTools", root);
             Add(changes, root, "SubCommands", "", root);
+            Add(changes, root, "Icon", icon, root);
         }
         foreach (var command in commands)
         {
             var key = layout == "cascade" ? root + @"\shell\" + command.KeyId : root + "." + command.KeyId;
             var owned = layout == "cascade" ? root : key;
-            if (command.Command is "create_zip" or "create_7z")
-                Add(changes, key, "ExplorerCommandHandler", command.Clsid.ToString("B").ToUpperInvariant(), owned);
-            else
-            {
-                Add(changes, key, "MUIVerb", command.Label, owned);
-                Add(changes, key + @"\command", "DelegateExecute", command.Clsid.ToString("B").ToUpperInvariant(), owned);
-            }
+            Add(changes, key, "MUIVerb", command.Label, owned);
+            if (layout == "flat") Add(changes, key, "Icon", icon, owned);
+            Add(changes, key + @"\command", "DelegateExecute", command.Clsid.ToString("B").ToUpperInvariant(), owned);
         }
     }
 

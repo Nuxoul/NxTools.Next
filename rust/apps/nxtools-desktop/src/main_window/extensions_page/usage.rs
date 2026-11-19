@@ -15,7 +15,41 @@ pub(super) fn purpose(package: &InstalledPackage) -> &str {
     }
 }
 
+pub(super) fn has_unfilled_settings(package: &InstalledPackage) -> bool {
+    use nxtools_extensions::SettingType;
+    // Registry load already validates stored values, allowing an empty required field for setup.
+    package.manifest.runtime.is_some()
+        && package.manifest.settings.iter().any(|setting| {
+            if !setting
+                .validation
+                .as_ref()
+                .is_some_and(|rules| rules.required)
+            {
+                return false;
+            }
+            let default = match &setting.field {
+                SettingType::Text { default }
+                | SettingType::File { default }
+                | SettingType::Folder { default } => default,
+                _ => return false,
+            };
+            package
+                .settings
+                .get(&setting.key)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(default)
+                .trim()
+                .is_empty()
+        })
+}
+
 pub(super) fn readiness(package: &InstalledPackage) -> &'static str {
+    if package.enabled
+        && has_unfilled_settings(package)
+        && extensions_settings::current_trust(package)
+    {
+        return "已启用 · 待完成必填设置，脚本暂不可运行";
+    }
     match (
         package.manifest.runtime.is_some(),
         extensions_settings::current_trust(package),

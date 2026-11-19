@@ -3,12 +3,13 @@ use super::*;
 use crate::ui::components::tooltip::bounded_text_tooltip;
 use crate::ui::metrics::ordinary_rem;
 use gpui_kit::base::TestSupportExt as _;
-use gpui_kit::component::alert::Alert;
 use gpui_kit::component::description_list::DescriptionList;
 use gpui_kit::component::dialog::DialogFooter;
 use gpui_kit::component::progress::Progress;
 use gpui_kit::component::table::{Table, TableBody, TableCell, TableHead, TableHeader, TableRow};
 use gpui_kit::component::toolbar::{Toolbar, ToolbarGroup};
+#[path = "task_window_details.rs"]
+mod details;
 pub(crate) struct DownloadTaskWindowPhaseLayout {
     pub(crate) size: gpui_kit::Size<gpui_kit::Pixels>,
     pub(crate) selector: &'static str,
@@ -156,7 +157,11 @@ pub(crate) struct DownloadTaskWindowView {
     pub(crate) window_generation: uuid::Uuid,
     pub(crate) snapshot: Option<DownloadEngineTask>,
     pub(crate) progress: Option<DownloadProgress>,
+    pub(super) persisted_range_progress: Vec<nxtools_download::DownloadSegmentProgress>,
+    pub(super) live_range_progress: Vec<nxtools_download::DownloadSegmentProgress>,
+    pub(super) details_tab: usize,
     pub(crate) shutdown_armed: bool,
+    pub(crate) completion_intention: nxtools_download::DownloadCompletionIntention,
     pub(crate) details_expanded: bool,
     pub(super) display_sampler: ProgressDisplaySampler,
     pub(super) display_started_at: std::time::Instant,
@@ -164,6 +169,8 @@ pub(crate) struct DownloadTaskWindowView {
     pub(super) speed_limit_kib: Option<Entity<InputState>>,
     pub(super) speed_limit_edit: super::speed_limit_edit::SpeedLimitEdit,
     pub(super) speed_limit_subscription: Option<Subscription>,
+    pub(super) source_draft: Option<super::paused_url::PausedUrlDraft>,
+    pub(super) source_window_lifetime: tokio::sync::watch::Sender<bool>,
 }
 
 impl DownloadTaskWindowView {
@@ -187,6 +194,10 @@ impl DownloadTaskWindowView {
         let speed_limit = snapshot
             .as_ref()
             .and_then(|task| task.task.request().speed_limit_bytes_per_second);
+        let live_range_progress = progress
+            .as_ref()
+            .map(|progress| progress.segments.clone())
+            .unwrap_or_default();
         Self {
             theme: Theme::zed_dark(),
             application,
@@ -196,7 +207,11 @@ impl DownloadTaskWindowView {
             window_generation: identity.generation,
             snapshot,
             progress,
+            persisted_range_progress: Vec::new(),
+            live_range_progress,
+            details_tab: 0,
             shutdown_armed,
+            completion_intention: Default::default(),
             details_expanded: false,
             display_sampler,
             display_started_at,
@@ -204,6 +219,8 @@ impl DownloadTaskWindowView {
             speed_limit_kib: None,
             speed_limit_edit: super::speed_limit_edit::SpeedLimitEdit::new(speed_limit),
             speed_limit_subscription: None,
+            source_draft: None,
+            source_window_lifetime: tokio::sync::watch::channel(false).0,
         }
     }
 
@@ -228,6 +245,29 @@ impl DownloadTaskWindowView {
                 self.details_expanded,
             );
         }
+        let same_transfer =
+            self.snapshot
+                .as_ref()
+                .zip(snapshot.as_ref())
+                .is_some_and(|(old, next)| {
+                    old.task.id() == next.task.id()
+                        && old.task.completion_attempt() == next.task.completion_attempt()
+                        && old.task.request().source_url == next.task.request().source_url
+                        && old.task.status() == DownloadStatus::Downloading
+                        && next.task.status() == DownloadStatus::Downloading
+                });
+        if !same_transfer {
+            self.live_range_progress.clear();
+        }
+        if snapshot
+            .as_ref()
+            .is_some_and(|task| task.task.status() == DownloadStatus::Downloading)
+            && let Some(progress) = progress
+                .as_ref()
+                .filter(|progress| !progress.segments.is_empty())
+        {
+            self.live_range_progress.clone_from(&progress.segments);
+        }
         observe_task_display(
             &mut self.display_sampler,
             self.display_started_at.elapsed(),
@@ -238,6 +278,30 @@ impl DownloadTaskWindowView {
         self.progress = progress;
         self.shutdown_armed = shutdown_armed;
         cx.notify();
+    }
+
+    pub(super) fn range_segments(&self) -> &[nxtools_download::DownloadSegmentProgress] {
+        let live = self
+            .progress
+            .as_ref()
+            .map_or(&[][..], |progress| progress.segments.as_slice());
+        if self
+            .snapshot
+            .as_ref()
+            .is_some_and(|task| task.task.status() == DownloadStatus::Downloading)
+        {
+            if !live.is_empty() {
+                return live;
+            }
+            if !self.live_range_progress.is_empty() {
+                return &self.live_range_progress;
+            }
+        }
+        if self.persisted_range_progress.is_empty() {
+            live
+        } else {
+            &self.persisted_range_progress
+        }
     }
 
     pub(crate) fn reset_details_expanded(&mut self) {
@@ -276,7 +340,6 @@ impl Render for DownloadTaskWindowView {
         };
 
         let status = task.task.status();
-        let shutdown_armed = self.shutdown_armed;
         let name = task
             .final_path
             .as_ref()
@@ -462,19 +525,50 @@ impl Render for DownloadTaskWindowView {
 
         if status == DownloadStatus::Failed {
             let cancel_application = application.clone();
-            let retry_application = application.clone();
+            let primary_application = application.clone();
             let redownload_application = application.clone();
-            let retryable = task.error.as_ref().is_some_and(|fault| fault.retryable);
-            let conflict = task.error.as_ref().is_some_and(|fault| {
-                fault.code == nxtools_download::DownloadFaultCode::DestinationExists
-            });
-            let error = if conflict {
-                "目标位置已有同名文件".into()
-            } else {
-                task.error.as_ref().map_or_else(
-                    || "下载任务失败，未返回更多信息。".into(),
-                    |error| error.message.clone(),
-                )
+            let fault = task.error.as_ref();
+            use nxtools_download::DownloadFaultCode;
+            #[derive(Clone, Copy, PartialEq, Eq)]
+            enum Recovery {
+                Rename,
+                Browser,
+                Restart,
+                Retry,
+                Redownload,
+            }
+            let recovery = match fault {
+                Some(fault) if fault.code == DownloadFaultCode::DestinationExists => {
+                    Recovery::Rename
+                }
+                Some(fault) if fault.code == DownloadFaultCode::UnexpectedWebPage => {
+                    Recovery::Browser
+                }
+                Some(fault) if protocol_restart_summary(fault).is_some() => Recovery::Restart,
+                Some(fault) if fault.retryable => Recovery::Retry,
+                _ => Recovery::Redownload,
+            };
+            let conflict = recovery == Recovery::Rename;
+            let offer_secondary_download = recovery == Recovery::Retry;
+            let (action_label, visible_label) = match recovery {
+                Recovery::Rename => ("自动重命名后重试", "自动重命名后重试"),
+                Recovery::Browser => ("在浏览器中打开", "在浏览器中打开"),
+                Recovery::Restart => ("从头下载", "从头下载"),
+                Recovery::Retry => ("重试下载", "重试"),
+                Recovery::Redownload => ("重新下载", "重新下载"),
+            };
+            let status_text = match fault {
+                Some(fault) if fault.code == DownloadFaultCode::FileInUse => {
+                    "目标文件正在被占用，请先关闭占用程序"
+                }
+                Some(fault) if fault.code == DownloadFaultCode::DiskFull => {
+                    "磁盘空间不足，请释放保存位置的空间"
+                }
+                Some(fault) if fault.code == DownloadFaultCode::UnexpectedWebPage => {
+                    "网站返回了网页，请在浏览器中完成登录或验证"
+                }
+                Some(fault) => crate::main_window::download_failure_summary(fault),
+                None => "下载失败",
             };
             return download_task_window_shell(
                 theme,
@@ -512,28 +606,16 @@ impl Render for DownloadTaskWindowView {
                     )
                     .child(
                         div()
-                            .id("download-window-failure-scroll")
                             .debug_selector(|| "download-window-failure-detail".into())
-                            .w_full()
-                            .max_h(px(40.0))
-                            .min_h(px(36.0))
-                            .flex_none()
-                            .overflow_y_scroll()
-                            .child(
-                                div()
-                                    .id("download-window-failure-alert-body")
-                                    .debug_selector(|| "download-window-failure-kit-alert".into())
-                                    .w_full()
-                                    .when(conflict, |body| {
-                                        body.debug_selector(|| {
-                                            "download-window-destination-conflict".into()
-                                        })
-                                        .aria_label("目标位置已有同名文件")
-                                    })
-                                    .child(
-                                        Alert::error("download-task-failure-alert", error).xsmall(),
-                                    ),
-                            ),
+                            .when(conflict, |body| {
+                                body.debug_selector(|| {
+                                    "download-window-destination-conflict".into()
+                                })
+                            })
+                            .text_size(ordinary_rem(TEXT_LABEL))
+                            .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
+                            .text_color(theme.danger)
+                            .child(status_text),
                     )
                     .child(
                         div()
@@ -575,41 +657,39 @@ impl Render for DownloadTaskWindowView {
                                 });
                             }),
                     )
-                    .when(retryable || conflict, |footer| {
-                        footer.child(
-                            crate::ui::components::action::primary_action_button(
-                                "download-window-failed-retry",
-                                if conflict {
-                                    "自动重命名后重试"
-                                } else {
-                                    "重试下载"
-                                },
-                                if conflict {
-                                    "自动重命名后重试"
-                                } else {
-                                    "重试"
-                                },
-                                theme,
-                                false,
-                                cx,
-                            )
-                            .icon(Icon::new(MaterialIcon::Download))
-                            .on_click(move |_, _, cx| {
-                                let application = retry_application.clone();
-                                cx.defer(move |cx| {
-                                    application.update(cx, |application, cx| {
-                                        if conflict {
-                                            let _ = application
-                                                .resolve_destination_conflict(task_id, true, cx);
-                                        } else {
-                                            let _ = application.retry(task_id, cx);
-                                        }
-                                    });
-                                });
-                            }),
+                    .child(
+                        crate::ui::components::action::primary_action_button(
+                            "download-window-failed-retry",
+                            action_label,
+                            visible_label,
+                            theme,
+                            false,
+                            cx,
                         )
-                    })
-                    .when(!conflict, |footer| {
+                        .debug_selector(|| "download-window-failed-primary".into())
+                        .icon(Icon::new(MaterialIcon::Download))
+                        .on_click(move |_, _, cx| {
+                            let application = primary_application.clone();
+                            cx.defer(move |cx| {
+                                application.update(cx, |application, cx| match recovery {
+                                    Recovery::Rename => {
+                                        let _ = application
+                                            .resolve_destination_conflict(task_id, true, cx);
+                                    }
+                                    Recovery::Browser => {
+                                        application.open_task_source_in_browser(task_id, cx)
+                                    }
+                                    Recovery::Restart | Recovery::Redownload => {
+                                        let _ = application.redownload(task_id, cx);
+                                    }
+                                    Recovery::Retry => {
+                                        let _ = application.retry(task_id, cx);
+                                    }
+                                });
+                            });
+                        }),
+                    )
+                    .when(offer_secondary_download, |footer| {
                         footer.child(
                             Button::new("download-window-failed-redownload")
                                 .icon(Icon::new(MaterialIcon::Download))
@@ -636,9 +716,27 @@ impl Render for DownloadTaskWindowView {
         let downloaded = progress_event
             .as_ref()
             .map_or(task.downloaded_bytes, |progress| progress.downloaded_bytes);
-        let ratio = total
-            .filter(|total| *total > 0)
-            .map(|total| (downloaded as f32 / total as f32).clamp(0.0, 1.0));
+        let finishing = (status == DownloadStatus::Finalizing)
+            .then(|| {
+                progress_event
+                    .as_ref()
+                    .and_then(|event| event.finishing.as_ref())
+            })
+            .flatten();
+        let ratio = if status == DownloadStatus::Finalizing {
+            finishing.and_then(finishing_ratio)
+        } else {
+            total.filter(|total| *total > 0).map(|total| {
+                (downloaded as f32 / total as f32).clamp(
+                    0.0,
+                    if status == DownloadStatus::Completed {
+                        1.0
+                    } else {
+                        0.99
+                    },
+                )
+            })
+        };
         let display = self.display_sampler.current();
         let speed = display.bytes_per_second;
         let progress_text = total.map_or_else(
@@ -656,13 +754,20 @@ impl Render for DownloadTaskWindowView {
             .remaining_seconds
             .map(format_download_eta)
             .unwrap_or_else(|| "—".into());
-        let (status_label, status_color) = download_task_status(status, theme);
-        let progress_badge = ratio
-            .map(|ratio| format!("{:.0}%", ratio * 100.0))
-            .unwrap_or_else(|| status_label.to_owned());
+        let (default_label, status_color) = download_task_status(status, theme);
+        let status_label = finishing.map_or(default_label, finishing_stage_label);
+        let progress_badge = if let Some(finishing) = finishing {
+            finishing_ratio(finishing)
+                .map(|ratio| format!("{} · {:.0}%", status_label, ratio * 100.0))
+                .unwrap_or_else(|| status_label.to_owned())
+        } else {
+            ratio
+                .map(|ratio| format!("{:.0}%", ratio * 100.0))
+                .unwrap_or_else(|| status_label.to_owned())
+        };
         let action_application = application.clone();
         let secondary_application = application.clone();
-        let shutdown_application = application.clone();
+        let source_view = cx.entity().downgrade();
         let actions = match status {
             DownloadStatus::Created | DownloadStatus::Paused | DownloadStatus::Failed => div()
                 .flex()
@@ -682,6 +787,26 @@ impl Render for DownloadTaskWindowView {
                                 });
                             });
                         }),
+                )
+                .when(
+                    status == DownloadStatus::Paused && task.task.request().media.is_none(),
+                    |actions| {
+                        actions.child(
+                            Button::new("download-window-replace-url")
+                                .debug_selector(|| "download-window-replace-url".into())
+                                .label("更换链接")
+                                .small()
+                                .outline()
+                                .on_click(move |_, window, cx| {
+                                    let view = source_view.clone();
+                                    window.defer(cx, move |window, cx| {
+                                        let _ = view.update(cx, |view, cx| {
+                                            view.open_source_draft(window, cx)
+                                        });
+                                    });
+                                }),
+                        )
+                    },
                 )
                 .child(
                     crate::ui::components::action::primary_action_button(
@@ -715,7 +840,13 @@ impl Render for DownloadTaskWindowView {
                     }),
                 )
                 .into_any_element(),
-            DownloadStatus::Probing | DownloadStatus::Waiting | DownloadStatus::Downloading => {
+            status
+                if matches!(
+                    status,
+                    DownloadStatus::Probing | DownloadStatus::Waiting | DownloadStatus::Downloading
+                ) || (status == DownloadStatus::Finalizing
+                    && task.task.request().media.is_some()) =>
+            {
                 div()
                     .flex()
                     .items_center()
@@ -758,10 +889,7 @@ impl Render for DownloadTaskWindowView {
             _ => div().into_any_element(),
         };
 
-        let segments = progress_event
-            .as_ref()
-            .map(|progress| progress.segments.clone())
-            .unwrap_or_default();
+        let segments = self.range_segments().to_vec();
         let resume_label = task.probe.as_ref().map_or("续传待确认", |probe| {
             if probe.supports_ranges {
                 "支持续传"
@@ -781,9 +909,15 @@ impl Render for DownloadTaskWindowView {
             .unwrap_or_else(|| "不限速".into());
         let capabilities =
             task_window_capabilities(resume_label, &limit_label, status, progress_event.as_ref());
-        let view_handle = cx.entity().downgrade();
         let details_expanded = self.details_expanded;
-        let speed_limit_editor = self.render_speed_limit_editor(cx);
+        let details = details_expanded
+            .then(|| self.render_detail_pages(capabilities, total, &segments, status, cx));
+        let options_label = self
+            .completion_intention
+            .action
+            .map_or("选项".to_owned(), |action| {
+                format!("选项 · {}", super::completion_action_label(action))
+            });
         download_task_window_shell(
             theme,
             DownloadWindowPhase::Progress,
@@ -850,55 +984,23 @@ impl Render for DownloadTaskWindowView {
                                     .size(ordinary_rem(16.0)),
                                 )
                                 .accessibility_label(if details_expanded {
-                                    "收起分段详情"
+                                    "收起详情"
                                 } else {
-                                    "展开分段详情"
+                                    "展开详情"
                                 })
                                 .tooltip(if details_expanded {
-                                    "收起分段详情"
+                                    "收起详情"
                                 } else {
-                                    "展开分段详情"
+                                    "展开详情"
                                 })
                                 .ghost()
                                 .xsmall()
-                                .on_click({
-                                    let view_handle = view_handle.clone();
-                                    move |_, window, cx| {
-                                        let Some(view) = view_handle.upgrade() else {
-                                            return;
-                                        };
-                                        let expanded = view.read(cx).details_expanded;
-                                        let next_expanded = !expanded;
-                                        let platform = Rc::clone(&view.read(cx).platform);
-                                        let native_handle = view.read(cx).native_window_handle;
-                                        view.update(cx, |view, cx| {
-                                            view.details_expanded = next_expanded;
-                                            cx.notify();
-                                        });
-                                        let target = download_task_window_size_for_details(
-                                            DownloadWindowPhase::Progress,
-                                            next_expanded,
-                                        );
-                                        if native_handle != 0 {
-                                            let scale = window.scale_factor();
-                                            let _ = platform.send_command(
-                                                PlatformCommand::SetWindowBoundsCentered(
-                                                    SetWindowBoundsCenteredCommand {
-                                                        window_handle: native_handle,
-                                                        width: (target.width.as_f32() * scale)
-                                                            .round()
-                                                            as i32,
-                                                        height: (target.height.as_f32() * scale)
-                                                            .round()
-                                                            as i32,
-                                                    },
-                                                ),
-                                            );
-                                        } else {
-                                            window.resize(target);
-                                        }
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    if !this.details_expanded {
+                                        this.details_tab = 0;
                                     }
-                                }),
+                                    this.set_details_expanded(!this.details_expanded, window, cx);
+                                })),
                         ),
                 )
                 .child(
@@ -920,6 +1022,9 @@ impl Render for DownloadTaskWindowView {
                                     Progress::new("download-task-window-progress")
                                         .xsmall()
                                         .value(ratio.unwrap_or(0.0) * 100.0)
+                                        .loading(
+                                            status == DownloadStatus::Finalizing && ratio.is_none(),
+                                        )
                                         .color(status_color)
                                         .accessibility_label("任务汇总进度"),
                                 ),
@@ -927,9 +1032,13 @@ impl Render for DownloadTaskWindowView {
                         .child(
                             div()
                                 .debug_selector(|| "download-window-progress-percent".into())
+                                .id("download-window-progress-percent")
+                                .role(gpui_kit::Role::Label)
+                                .aria_label(progress_badge.clone())
                                 .text_size(ordinary_rem(TEXT_BODY))
                                 .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
                                 .flex_none()
+                                .test_support()
                                 .child(progress_badge),
                         ),
                 )
@@ -969,89 +1078,23 @@ impl Render for DownloadTaskWindowView {
                                 ),
                         ),
                 )
-                .when(details_expanded, |body| {
-                    body.child(
-                        div()
-                            .debug_selector(|| "download-window-details".into())
-                            .w_full()
-                            .flex_1()
-                            .min_h_0()
-                            .pt_1()
-                            .min_h(ordinary_rem(24.0))
-                            .flex()
-                            .flex_col()
-                            .child(
-                                div()
-                                    .id("download-window-progress-capabilities")
-                                    .test_support()
-                                    .debug_selector(|| {
-                                        "download-window-progress-capabilities".into()
-                                    })
-                                    .w_full()
-                                    .min_w_0()
-                                    .h(ordinary_rem(16.0))
-                                    .flex_none()
-                                    .text_size(ordinary_rem(TEXT_BODY))
-                                    .line_height(ordinary_rem(LINE_HEIGHT_LABEL))
-                                    .text_color(theme.text_secondary)
-                                    .truncate()
-                                    .aria_label(capabilities.clone())
-                                    .tooltip(bounded_text_tooltip(
-                                        "download-window-capabilities-tooltip",
-                                        capabilities.clone(),
-                                        true,
-                                    ))
-                                    .child(capabilities),
-                            )
-                            .child(speed_limit_editor)
-                            .child(
-                                div()
-                                    .w_full()
-                                    .flex_1()
-                                    .min_h_0()
-                                    .child(segment_progress_table(&segments, status)),
-                            ),
-                    )
-                }),
+                .when_some(details, |body, details| body.child(details)),
             Toolbar::new("download-task-window-toolbar")
                 .w_full()
-                .when(
-                    !matches!(
-                        status,
-                        DownloadStatus::Completed
-                            | DownloadStatus::Failed
-                            | DownloadStatus::Cancelled
-                    ),
-                    |footer| {
-                        footer.content(
-                            div()
-                                .debug_selector(|| "download-window-shutdown-arm".into())
-                                .child(
-                                    gpui_kit::component::checkbox::Checkbox::new(
-                                        "download-window-shutdown-arm-button",
-                                    )
-                                    .debug_selector(|| "download-window-shutdown-arm-button".into())
-                                    .label(if shutdown_armed {
-                                        "已计划关机"
-                                    } else {
-                                        "完成后关机"
-                                    })
-                                    .checked(shutdown_armed)
-                                    .small()
-                                    .on_click(
-                                        move |_, _, cx| {
-                                            let application = shutdown_application.clone();
-                                            cx.defer(move |cx| {
-                                                application.update(cx, |application, cx| {
-                                                    application.toggle_shutdown_armed(task_id, cx);
-                                                });
-                                            });
-                                        },
-                                    ),
-                                ),
-                        )
-                    },
-                )
+                .when(!matches!(status, DownloadStatus::Cancelled), |footer| {
+                    footer.content(
+                        Button::new("download-window-options")
+                            .debug_selector(|| "download-window-options".into())
+                            .label(options_label)
+                            .accessibility_label("下载选项")
+                            .small()
+                            .outline()
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.details_tab = 1;
+                                this.set_details_expanded(true, window, cx);
+                            })),
+                    )
+                })
                 .content(div().flex_1())
                 .content(
                     ToolbarGroup::new("download-task-window-action-group")
@@ -1175,7 +1218,7 @@ fn server_information_value(task: &DownloadEngineTask, theme: Theme) -> AnyEleme
 /// The collapsed progress window height (34 titlebar + 106 body + 44 footer).
 pub(crate) const TASK_WINDOW_PROGRESS_HEIGHT: f32 = 184.0;
 /// The expanded height adds a bounded, vertically scrollable semantic part table.
-pub(crate) const TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT: f32 = 280.0;
+pub(crate) const TASK_WINDOW_PROGRESS_EXPANDED_HEIGHT: f32 = 400.0;
 
 fn observe_task_display(
     sampler: &mut ProgressDisplaySampler,
@@ -1372,3 +1415,7 @@ pub(super) fn task_window_capabilities(
 #[cfg(test)]
 #[path = "auxiliary_theme_tests.rs"]
 mod auxiliary_theme_tests;
+
+#[cfg(test)]
+#[path = "task_window_layout_tests.rs"]
+pub(crate) mod layout_tests;

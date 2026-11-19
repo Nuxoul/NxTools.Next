@@ -8,11 +8,13 @@ use nxtools_protocol::{
 };
 use std::{path::PathBuf, rc::Rc, time::Instant};
 
-/// Receiver-created Root folder; the application extracts the whole archive into it.
+/// Immutable extraction intent and the receiver-created folder located by the native gesture.
 pub(crate) struct LocatedDrop {
+    pub operation: Uuid,
     pub source: PathBuf,
     pub codepage: u32,
     pub destination: String,
+    pub selection: Option<nxtools_protocol::archive_job::ArchiveJobSelection>,
 }
 
 enum DragTarget {
@@ -35,7 +37,7 @@ struct Pending {
     epoch: u64,
     cancelled: bool,
     started: Instant,
-    locate: bool,
+    drop: LocatedDrop,
     members: Rc<[Option<Uuid>]>,
 }
 #[derive(Default)]
@@ -56,7 +58,6 @@ struct Authorization {
     command: ArchiveEntryCommand,
     receipt: Uuid,
     connection: u64,
-    ready: Option<Instant>,
     waiting: bool,
 }
 impl ArchiveBrowser {
@@ -236,7 +237,7 @@ impl ArchiveBrowser {
         let source_hwnd = self.drag.source_hwnd;
         match self.drag_command(source_hwnd.unwrap_or(0), tree_path.as_deref()) {
             Err(reason) => self.notify_drag(reason, true, cx),
-            Ok(command) => {
+            Ok((command, drop)) => {
                 let request = Uuid::new_v4();
                 let operation = command.operation_id;
                 self.drag.pending = Some(Pending {
@@ -247,7 +248,7 @@ impl ArchiveBrowser {
                     epoch: self.projection_epoch,
                     cancelled: false,
                     started: Instant::now(),
-                    locate: command.action == "locate",
+                    drop,
                     members: command
                         .items
                         .as_ref()
@@ -271,11 +272,15 @@ impl ArchiveBrowser {
         }
         cx.notify();
     }
+    #[cfg(test)]
+    pub(super) fn frozen_drop_for_test(&self) -> &LocatedDrop {
+        &self.drag.pending.as_ref().expect("pending drop").drop
+    }
     fn drag_command(
         &self,
         hwnd: i64,
         tree_path: Option<&str>,
-    ) -> Result<ArchiveVirtualDragCommand, String> {
+    ) -> Result<(ArchiveVirtualDragCommand, LocatedDrop), String> {
         let model = self.model.as_ref().ok_or("快照不可用，请刷新后再拖出。")?;
         let browser = self
             .drag
@@ -283,76 +288,109 @@ impl ArchiveBrowser {
             .as_ref()
             .filter(|browser| browser.snapshot_id == model.snapshot)
             .ok_or("源身份已失效，请刷新后再拖出。")?;
-        let authorized = self.drag.authorization.as_ref().filter(|authorization| {
-            authorization
-                .ready
-                .is_some_and(|at| at.elapsed().as_secs() < 110)
-        });
-        let locate = tree_path == Some("");
-        let freeze = |authorized| {
-            if let Some(path) = tree_path {
-                let display_name = self
-                    .path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .ok_or("压缩包显示名称不满足Windows安全命名限制；未拖出任何项目。")?;
-                if locate {
-                    // Root drops like Bandizip: the receiver creates one folder, then an ordinary
-                    // extraction fills it. No member materializes during the gesture.
-                    model.freeze_drag_locate(display_name)
-                } else {
-                    model.freeze_drag_tree(path, display_name, authorized)
-                }
-            } else if authorized {
-                model.freeze_drag_selection_authorized(true)
-            } else {
-                model.freeze_drag_selection()
-            }
-        };
-        let authorized = authorized.filter(|_| !locate);
-        let frozen = freeze(authorized.is_some())?;
-        let mut items = Vec::with_capacity(frozen.len());
-        for row in frozen {
-            items.push(ArchiveVirtualDragItem {
-                name: row.name,
-                size: row.size,
-                directory: row.directory,
-                entry: ArchiveEntryCommand {
-                    version: 1,
-                    operation_id: Uuid::new_v4(),
-                    session_id: self.window_id,
-                    generation: self.generation,
-                    action: ArchiveEntryAction::Materialize,
-                    path: Some(self.path.to_string_lossy().into_owned()),
-                    codepage: self.codepage,
-                    ordinal: row.ordinal,
-                    browser: Some(browser.clone()),
-                    lease_id: None,
-                    depth: self.drag.depth,
-                    copy_motw: Some(self.drag.copy_motw),
-                    password_interaction: false,
-                    temp_policy: None,
-                    preview_options: None,
+        let display_name = self
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("压缩包显示名称不满足Windows安全命名限制；未拖出任何项目。")?;
+        let frozen = model.freeze_drop(tree_path, display_name)?;
+        let marker_ordinal = frozen
+            .ordinals
+            .as_ref()
+            .and_then(|ordinals| ordinals.first().copied());
+        let selection =
+            frozen.ordinals.map(
+                |ordinals| nxtools_protocol::archive_job::ArchiveJobSelection {
+                    browser: browser.clone(),
+                    ordinals,
+                    strip_prefix: frozen.strip_prefix,
                 },
-            });
+            );
+        // Validate the ordinary job before the receiver creates a folder. Reserve the wire's
+        // maximum destination string (32767 bytes, each potentially JSON-escaped).
+        let mut draft =
+            crate::archive::draft::ExtractDraft::new(&self.settings, self.path.clone(), None);
+        draft.destination = r"C:\".into();
+        draft.strategy = nxtools_core::archive::ArchiveDestination::Here;
+        let mut request = draft.request(&self.settings)?;
+        request.codepage = self.codepage;
+        request.extract.as_mut().expect("extract options").selection = selection.clone();
+        request
+            .validate()
+            .map_err(|_| "拖出选区不满足普通解压任务限制；未拖出任何项目。")?;
+        let probe = nxtools_protocol::archive_job::ArchiveJobCommand {
+            version: 1,
+            operation_id: Uuid::new_v4(),
+            session_id: self.window_id,
+            generation: self.generation,
+            action: nxtools_protocol::archive_job::ArchiveJobAction::Start,
+            request: Some(request),
+            reply: None,
+            batch_id: None,
+        };
+        let probe_operation = probe.operation_id;
+        let mut envelope =
+            nxtools_protocol::Envelope::new(nxtools_protocol::Message::PlatformCommand(
+                nxtools_protocol::PlatformCommand::ArchiveJob(Box::new(probe)),
+            ));
+        envelope.correlation_id = Some(probe_operation);
+        let encoded = envelope
+            .encode_line()
+            .map_err(|_| "拖出选区超过任务传输帧限制；未拖出任何项目。")?;
+        if encoded.len() + 2 * 32767 > nxtools_protocol::MAX_FRAME_BYTES {
+            return Err("拖出选区超过任务传输帧限制；未拖出任何项目。".into());
         }
+        let direct = frozen.direct;
+        let items = vec![ArchiveVirtualDragItem {
+            name: if direct {
+                "selected-files".into()
+            } else {
+                frozen.wrapper
+            },
+            size: direct.then_some(0),
+            directory: !direct,
+            entry: ArchiveEntryCommand {
+                version: 1,
+                operation_id: Uuid::new_v4(),
+                session_id: self.window_id,
+                generation: self.generation,
+                action: ArchiveEntryAction::Materialize,
+                path: Some(self.path.to_string_lossy().into_owned()),
+                codepage: self.codepage,
+                ordinal: if direct { marker_ordinal } else { None },
+                browser: Some(browser.clone()),
+                lease_id: None,
+                depth: self.drag.depth,
+                copy_motw: Some(self.drag.copy_motw),
+                password_interaction: false,
+                temp_policy: None,
+                preview_options: None,
+            },
+        }];
         if hwnd <= 0 {
             return Err("来源窗口不可用，未开始拖出。".into());
         }
         let command = ArchiveVirtualDragCommand {
             version: 1,
-            authorization_id: authorized.map(|authorization| authorization.command.operation_id),
+            authorization_id: None,
             operation_id: Uuid::new_v4(),
             session_id: self.window_id,
             generation: self.generation,
-            action: if locate { "locate" } else { "start" }.into(),
+            action: "locate".into(),
             source_window_handle: hwnd,
             items: Some(items),
         };
         command
             .validate()
             .map_err(|_| "原生拖出请求超过传输帧限制或源绑定已失效；未拖出任何项目。")?;
-        Ok(command)
+        let drop = LocatedDrop {
+            operation: command.operation_id,
+            source: self.path.clone(),
+            codepage: self.codepage,
+            destination: String::new(),
+            selection,
+        };
+        Ok((command, drop))
     }
     pub(crate) fn invalidate_drag(&mut self) {
         self.revoke_drag_authorization();
@@ -413,8 +451,8 @@ impl ArchiveBrowser {
     pub(crate) fn native_drag_active(&self) -> bool {
         self.drag.pending.is_some()
     }
-    /// Returns the receiver-created folder of a completed Root drop; the caller starts the
-    /// ordinary extraction on a later application turn.
+    /// Return the frozen intent only for a current located drop; the caller starts the ordinary
+    /// extraction on a later application turn.
     pub(crate) fn drag_result(
         &mut self,
         request: Uuid,
@@ -429,7 +467,9 @@ impl ArchiveBrowser {
             .as_deref()
             .and_then(|data| serde_json::from_str::<serde_json::Value>(data).ok());
         let incomplete = data.as_ref().is_some_and(|data| {
-            data.get("cleanup_complete").and_then(|value| value.as_bool()) == Some(false)
+            data.get("cleanup_complete")
+                .and_then(|value| value.as_bool())
+                == Some(false)
         });
         let pending = self.drag.pending.as_ref().expect("matched drag");
         tracing::info!(event="archive.virtual_drag.finished",correlation_id=%pending.operation,success=result.success,cleanup_complete=!incomplete,elapsed_ms=pending.started.elapsed().as_millis() as u64,"archive virtual gesture finished");
@@ -445,7 +485,8 @@ impl ArchiveBrowser {
             return None;
         }
         let pending = self.drag.pending.take().expect("matched drag");
-        let located = (result.success && pending.locate)
+        let located = result
+            .success
             .then_some(data.as_ref())
             .flatten()
             .filter(|data| data.get("status").and_then(|v| v.as_str()) == Some("located"))
@@ -456,6 +497,12 @@ impl ArchiveBrowser {
             || pending.cancelled
             || self.generation != pending.generation
             || self.projection_epoch != pending.epoch
+            || self
+                .drag
+                .platform
+                .as_ref()
+                .and_then(|platform| platform.connection_generation())
+                != Some(pending.connection)
         {
             if located.is_some() {
                 self.notify_drag("拖出已取消；目标处新建的文件夹未解压任何内容。", true, cx);
@@ -477,19 +524,25 @@ impl ArchiveBrowser {
                 true,
                 cx,
             );
-        } else if pending.locate && located.is_none() && data.as_ref().and_then(|data| data.get("status")).and_then(|v| v.as_str()) != Some("cancelled") {
+        } else if located.is_none()
+            && data
+                .as_ref()
+                .and_then(|data| data.get("status"))
+                .and_then(|v| v.as_str())
+                != Some("cancelled")
+        {
             self.notify_drag("未能确定放置位置；未解压任何内容。", true, cx);
         }
         cx.notify();
         located.map(|destination| LocatedDrop {
-            source: self.path.clone(),
-            codepage: self.codepage,
             destination,
+            ..pending.drop
         })
     }
 }
 
 impl ArchiveBrowser {
+    #[cfg(test)]
     pub(crate) fn unlock_drag(&mut self, cx: &mut Context<Self>) {
         self.invalidate_drag();
         if self.retired
@@ -528,7 +581,6 @@ impl ArchiveBrowser {
             command: command.clone(),
             receipt,
             connection: self.drag.connection,
-            ready: None,
             waiting: true,
         });
         let sent = self.drag.platform.as_ref().is_some_and(|platform| {
@@ -636,7 +688,6 @@ impl ArchiveBrowser {
             && !self.retired
         {
             authorization.waiting = false;
-            authorization.ready = Some(Instant::now());
             self.notify_drag("已解锁拖出（短期有效）；请重新按住条目拖动。", false, cx);
         } else {
             self.revoke_drag_authorization();

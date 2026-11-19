@@ -1,0 +1,8 @@
+namespace NxTools.PlatformHost.Windows;
+
+// Historical public trust anchor retained only to authenticate the pre-rotation protected snapshot.
+// New package admission and all subsequent releases use UpdateTrust.PublicKeySpkiBase64.
+internal static class LegacyUpdateTrust
+{
+    internal const string PublicKeySpkiBase64 = "MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAx2Oe2t4HYzSmEpKZZo8XQQdlFx06HygWMwCZxR1mUyYMx8uZxqA9C20y3MBTtOYm650KDAsyi6yoQIw7+E8amJvdP62yvDfLrMMGodXcpHJftMiTKv52dw8bQ4IEKe0Pn3ky+KeeuSw2JtQyJRJ8ZazkEyjbbLPGFMcYn6Zb/kWnpzjhp+8nASRgFgh0sBJlPZwvlHqImZwcYPLSAUO9zqgd4h0UPKeS25AQvq9RVoBZ3jOO+7pIj8qwnK82VFQ4eB2NiNXKRBTsh6CHbUfK05wDqR50R9vj91b0jdCy+yVgLz6ew/YgIzJVEZK3KOznyRS+9mh05n13TxsvYbsJpmOMVZNG5NPZ6Vq0trsYdYH/RoBxjfKnBibwFW7Q912neh43vznxqNpCk4UY0lWM8l05cUGIEh1OUDlQbkE+lZVhityVc5DGtetqC81MO+NsuDZy2M5h/TkqwpjytGim7wsk0m8cYC5uk1Un5PUvuo07mPMw60nDr2zOFTcFMqKpAgMBAAE=";
+}

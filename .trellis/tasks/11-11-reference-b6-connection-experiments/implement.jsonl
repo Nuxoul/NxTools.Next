@@ -1,0 +1,14 @@
+{"file":".trellis/spec/shared/architecture.md","reason":"Original Download domain, Network route, C# Windows and GPUI rendering owners"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Durable-before-publication, actual joins, bounded lifecycle and diagnostic privacy"}
+{"file":".trellis/spec/nxtools-download/backend/index.md","reason":"Original HTTP/engine/resolution/storage/artifact/checkpoint pre-development contracts"}
+{"file":".trellis/spec/nxtools-download/backend/database-guidelines.md","reason":"Original task/plan/probe transaction and persistence-before-events"}
+{"file":".trellis/spec/nxtools-download/backend/server-information.md","reason":"Same-response route/peer/headers-time facts; no extra probe or render IO"}
+{"file":".trellis/spec/nxtools-network/backend/index.md","reason":"Immutable original route/client construction; no replacement connector manager"}
+{"file":".trellis/spec/nxtools-network/backend/quality-guidelines.md","reason":"Actual owned local proxy and injected-resolver tests without live proxy/Registry inspection"}
+{"file":".trellis/spec/nxtools-desktop/backend/ui-experience-contracts.md","reason":"Original close/edit/generation/deferred application and focus/IME/window lifecycle for REF-14"}
+{"file":"docs/reference-code/gpui-kit-080.md","reason":"Current released controls/API remain unchanged; no vendor or visual redesign"}
+{"file":"docs/reference-code/download.md","reason":"ABDM-first and legacy original download behavior and ownership index"}
+{"file":"docs/reference-code/mister-download-manager.md","reason":"Clean-room reference heuristics and GPL/no-copy boundary"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/reference-review.md","reason":"Verified actual source and locked stack, fallback/no-op receipt and same-family gap facts"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/prd.md","reason":"Current independent B6 scope; no UIA acceptance or packaging prerequisite"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/design.md","reason":"Independent candidate ownership, fixed workload/adoption thresholds and retained costs"}

@@ -113,3 +113,28 @@ Good: the no-password decision and extraction share the same admitted catalog. B
 
 ### 7. Wrong vs Correct
 Wrong: open solely to discover encryption, discard the catalog, then open the same protected source again. Correct: retain the probe's operation-local catalog under its genuine native lease and enter the original execution guards with it.
+
+## Scenario: Selected extraction output prefix
+
+### 1. Scope / Trigger
+Archive Browser drag-out uses one native locate folder, followed by the original ordinary selected Extract. Source and output namespaces remain independent. [Drop contract](../../../tasks/10-16-archive-manager/drop-selection-repair.md).
+### 2. Signatures
+`ArchiveJobSelection { browser, ordinals, strip_prefix: Option<String> }`; C# `ArchiveJobSelection(..., string? StripPrefix=null)`; `ExtractionPlan::strip_output_prefix(&mut self, prefix: &str)` and `directory_output_path(entry)`.
+### 3. Contracts
+Absent prefix preserves legacy selected extraction. Present prefix requires Here and a safe slash-ended directory, native255-UTF-16 components and32767 UTF-8 bytes. Original browser/source binding and IDs are frozen before OLE. The plan removes the common prefix only from final output paths; the receiver-owned exact directory root emits no duplicate child or empty-path metadata call. Codec lookup uses original names/ordinals; directory metadata uses mapped output paths. Ordinary password/conflict/progress/cancellation owners remain. Logical selections have no4096 cap; actual envelope, metadata, working and output budgets still apply.
+Collision warnings are archive-wide metadata. Whole-archive extraction preserves their refusal; selected extraction reuses the original path annotator on participating collision candidates and retains actual selected collisions. A codec job plan owns selected path/count admission; full metadata validation and complete required decoding/source checks still run. SevenZ/RAR gate each output by its original ordinal in the plan before name-to-output mapping. Native codec catalogs use monotonic original ordinals and the plan retains catalog order for binary membership lookup; same-named records never grant each other output authority.
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+| Invalid prefix or non-Here prefix | InvalidRequest before execution |
+| Selected original outside prefix or changed source | SourceChanged before output |
+| Selected output collision | OutputCollision; no partial selection |
+| Unselected unsafe/colliding record | No output authority; does not reject safe selected output |
+| Empty selected directory | Successful receiver-owned folder, no nested duplicate |
+| Retired/cancelled/reconnected locate receipt | No job submission |
+### 5. Good/Base/Bad Cases
+Good: `top/sub/a.txt` under prefix `top/sub/` writes `a.txt` using the original member ID. Base: absent prefix keeps `top/sub/a.txt`. Bad: mutate snapshot names or use current selection after the gesture.
+### 6. Tests Required
+Protocol omission/strict prefix/UTF-16/4097-selection tests; plan exact IDs/files/empty directories/outside-prefix and selected-collision assertions; actual C# selected ZIP/7z/RAR, long-CJK prefix, duplicate original ordinal and changed-source native output. The two-Copy-block 7z fixture with interleaved empty files must select ordinals2/3 as payload `two` and empty-b, never ordinal0 payload `one`. Desktop actual held gestures, frozen selection, current receipt/deferred original owner and retired-connection tests. Controlled fixtures are separate from physical Explorer/Directory Opus acceptance.
+### 7. Wrong vs Correct
+Wrong: strip the source name, trust archive-wide collision warnings for a single selected member, or let virtual-drag lifetime govern extraction. Correct: immutable source IDs plus a mapped ordinary output plan, ordinary task lifetime and one correlated locate-to-job handoff.

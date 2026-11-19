@@ -326,7 +326,7 @@ pub(crate) struct PrivateOutput<'a, W: Write> {
     pub(crate) conflict: Option<crate::worker_conflict::ExtractionConflict<'a>>,
     pub(crate) risk: Option<crate::zip_risk::ZipRisk<'a>>,
     plan_paths: Option<std::collections::HashMap<String, String>>,
-    plan_directories: Option<std::collections::HashSet<String>>,
+    plan_directories: Option<std::collections::HashMap<String, String>>,
     plan_prefix: String,
     // Presentation only; unlike plan_prefix this never changes a native operation path.
     display_prefix: Option<String>,
@@ -406,12 +406,15 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
     ) -> Result<Self> {
         if let Some(plan) = plan {
             self.reserve_subfolder(plan)?;
-            return Ok(self.planned(Some(plan)));
+            return self.planned(Some(plan));
         }
         Ok(self)
     }
     #[cfg(feature = "isolated-codecs")]
-    pub(crate) fn planned(mut self, plan: Option<&crate::planning::ExtractionPlan>) -> Self {
+    pub(crate) fn planned(
+        mut self,
+        plan: Option<&crate::planning::ExtractionPlan>,
+    ) -> Result<Self> {
         if let Some(plan) = plan {
             self.control
                 .configure_extraction_progress(plan.total_bytes(), plan.files().len() as u64);
@@ -423,17 +426,22 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
                 plan.files()
                     .iter()
                     .map(|file| {
-                        (
-                            file.relative_path().to_owned(),
+                        Ok((
+                            plan.original_file_path(file)?,
                             format!("{prefix}{}", file.relative_path()),
-                        )
+                        ))
                     })
+                    .collect::<Result<std::collections::HashMap<_, _>>>()?,
+            );
+            self.plan_prefix = prefix.clone();
+            self.plan_directories = Some(
+                plan.directories()
+                    .iter()
+                    .map(|relative| (plan.original_directory_path(relative), relative.clone()))
                     .collect(),
             );
-            self.plan_prefix = prefix;
-            self.plan_directories = Some(plan.directories().iter().cloned().collect());
         }
-        self
+        Ok(self)
     }
     pub(crate) fn ordinary_extraction(mut self, enabled: bool) -> Self {
         self.ordinary_extraction = enabled;
@@ -768,6 +776,10 @@ impl<'a, W: Write> PrivateOutput<'a, W> {
                 Some("cancelled") => ArchiveError::Cancelled,
                 Some("source_changed") => ArchiveError::SourceChanged,
                 Some("missing_volume") => ArchiveError::MissingVolume,
+                Some("corrupt_archive") => ArchiveError::CorruptArchive,
+                Some("unsupported_format") => ArchiveError::UnsupportedFormat,
+                Some("unsupported_method") => ArchiveError::UnsupportedMethod,
+                Some("unsupported_encryption") => ArchiveError::UnsupportedEncryption,
                 Some(
                     "reclamation_unsupported"
                     | "reclamation_filesystem"
@@ -885,14 +897,15 @@ impl<W: Write + Send> ArchiveOutput for PrivateOutput<'_, W> {
         risk.confirm(entry, limits, self.control, &mut self.writer)
     }
     fn ensure_directory(&mut self, path: &str) -> Result<()> {
-        if self
-            .plan_directories
-            .as_ref()
-            .is_some_and(|paths| !paths.contains(path))
-        {
-            return Ok(());
-        }
-        let path = format!("{}{path}", self.plan_prefix);
+        let mapped = if let Some(paths) = &self.plan_directories {
+            let Some(mapped) = paths.get(path) else {
+                return Ok(());
+            };
+            mapped.as_str()
+        } else {
+            path
+        };
+        let path = format!("{}{mapped}", self.plan_prefix);
         self.call("directory", Some(&path), None, &[]).map(|_| ())
     }
     fn begin_file(&mut self, path: &str) -> Result<Uuid> {
@@ -1032,14 +1045,15 @@ impl<W: Write + Send> ArchiveOutput for PrivateOutput<'_, W> {
             return Ok(());
         }
         metadata.validate()?;
-        if self
-            .plan_directories
-            .as_ref()
-            .is_some_and(|paths| !paths.contains(relative))
-        {
-            return Ok(());
-        }
-        let mapped = format!("{}{relative}", self.plan_prefix);
+        let mapped = if let Some(paths) = &self.plan_directories {
+            let Some(mapped) = paths.get(relative) else {
+                return Ok(());
+            };
+            mapped.as_str()
+        } else {
+            relative
+        };
+        let mapped = format!("{}{mapped}", self.plan_prefix);
         self.call_payload(
             "directory_metadata",
             Some(&mapped),

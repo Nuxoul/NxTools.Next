@@ -2,17 +2,18 @@
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { loadBackground } = require("./harness/load-background.cjs");
+const { loadBackground, createControlledHandoffResponder } = require("./harness/load-background.cjs");
 const url = "https://exports.example.test/report.zip";
 const tab = { id: 7, url: "https://exports.example.test/reports", active: true, cookieStoreId: "origin-store" };
 
 function fixture(browser) {
+  const controlled = createControlledHandoffResponder({ fallback(message) {
+    return message.type === "create_task"
+      ? { ok: true, accepted: true, handoffId: message.payload.handoffId, taskId: "durable-task" }
+      : { ok: true, data: { tasks: [] } };
+  } });
   return loadBackground({ browser, chrome: { tabs: [tab], storage: { captureResources: false, openDialog: false } },
-    desktop: { respond(message) {
-      return message.type === "create_task"
-        ? { ok: true, accepted: true, handoffId: message.payload.handoffId, taskId: "durable-task" }
-        : { ok: true, data: { tasks: [] } };
-    } } });
+    desktop: { respond: controlled.respond } });
 }
 function request(bg, method, target = url, requestId = "export", source = {}) {
   bg.chrome.api.webRequest.onBeforeSendHeaders.fire({ requestId, url: target, method,
@@ -38,7 +39,7 @@ for (const browser of ["chrome", "firefox"]) {
     bg.chrome.api.cookies.getAll = async () => { cookieReads += 1; return []; };
     request(bg, "POST");
     const state = await intercept(bg, browser);
-    assert.equal(bg.desktop.requestsOfType("create_task").length, 0);
+    assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 0);
     assert.equal(bg.chrome.callsNamed("downloads.cancel").length, 0);
     assert.equal(bg.chrome.callsNamed("downloads.erase").length, 0);
     assert.equal(cookieReads, 0);
@@ -59,7 +60,7 @@ for (const browser of ["chrome", "firefox"]) {
     request(bg, "GET");
     const state = await intercept(bg, browser, { url: initial });
     assert.equal(state.lastHandoff.state, "transferred");
-    assert.equal(bg.desktop.requestsOfType("create_task").length, 1);
+    assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 1);
     assert.equal(bg.chrome.callsNamed("downloads.cancel").length, 1);
   });
 
@@ -80,7 +81,7 @@ for (const browser of ["chrome", "firefox"]) {
     request(isolated, "POST", url, "other-container", { tabId: 8, cookieStoreId: "other-store" });
     state = await intercept(isolated, browser, { id: 92 });
     assert.equal(state.lastHandoff.state, "transferred");
-    assert.equal(isolated.desktop.requestsOfType("create_task").length, 1);
+    assert.equal(isolated.desktop.requestsOfType("prepare_browser_handoff").length, 1);
   });
 
   test(`${browser} a newer unrelated GET cannot mask same-source POST evidence`, async () => {
@@ -91,7 +92,7 @@ for (const browser of ["chrome", "firefox"]) {
     request(bg, "GET", url, "preview-get");
     const state = await intercept(bg, browser);
     assert.equal(state.lastHandoff.reason, "unsupported_request_method");
-    assert.equal(bg.desktop.requestsOfType("create_task").length, 0);
+    assert.equal(bg.desktop.requestsOfType("prepare_browser_handoff").length, 0);
     assert.equal(bg.chrome.callsNamed("downloads.cancel").length, 0);
   });
 }

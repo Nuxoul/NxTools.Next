@@ -44,7 +44,7 @@ internal static class ArchivePasswordTests
                 var events = new ConcurrentQueue<ArchiveWorkerEvent>(); var log = new CaptureLog();
                 using var runner = ArchiveWorkerRunner.ForPackage(events.Enqueue, log);
                 var id = Guid.NewGuid();
-                var request = new ArchiveWorkerRequest(id, mode == "open" ? "open" : "test", source, 936, new { max_entries = 100, max_entry_bytes = 100, max_output_bytes = 100 });
+                var request = new ArchiveWorkerRequest(id, mode == "open" ? "open" : "test", source, 936, new { max_entries = 100, max_entry_bytes = 100, max_output_bytes = 1048576 });
                 if (mode == "ambiguous") {
                     // Existing independently documented RAR5 damaged-payload mutation, not bad-password guessing.
                     var damaged = File.ReadAllBytes(source); damaged[^30] ^= 1; File.WriteAllBytes(source, damaged);

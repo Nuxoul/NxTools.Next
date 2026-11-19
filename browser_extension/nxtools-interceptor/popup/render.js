@@ -561,8 +561,16 @@ function renderHandoff(status) {
     handoff_timeout: "接管等待超时，未交出浏览器下载所有权。",
     handoff_disconnected: "接管连接已断开，未交出浏览器下载所有权。",
     identity_mismatch: "接管回复身份不匹配，下载仍由浏览器处理。",
-    confirmation_pending: "确认窗口已打开，尚未创建任务；浏览器下载保留。",
+    confirmation_pending: status?.controlled
+      ? "原下载已暂停，等待 NxTools 确认；取消确认会恢复浏览器。"
+      : "确认窗口已打开，尚未创建任务；浏览器下载保留。",
     queued_not_accepted: "请求仅进入等待队列，尚未持久接受；浏览器下载保留。",
+    browser_control_failed: "未能暂停或保持浏览器原任务，未启动桌面接管。",
+    browser_resume_failed: "桌面接管已停止，但浏览器恢复失败；请在浏览器下载页恢复原任务。",
+    browser_cancel_unconfirmed: "浏览器取消状态尚未确认，桌面任务保持暂停；重新检查连接可继续交接。",
+    desktop_activation_pending: "浏览器原任务已取消，桌面任务尚未启动；重新检查连接可重试同一任务。",
+    confirmation_cancelled: "桌面确认已取消，已恢复浏览器原任务。",
+    confirmation_timeout: "桌面确认已过期，已恢复浏览器原任务。",
     handoff_started: "正在请求桌面接管，浏览器下载暂时保留。",
     desktop_accepted: "桌面已持久接受，正在取消浏览器原下载。",
     browser_transferred: status?.queued

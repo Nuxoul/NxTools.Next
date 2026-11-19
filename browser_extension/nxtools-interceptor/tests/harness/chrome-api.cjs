@@ -6,9 +6,11 @@
 
 function createEvent() {
   const listeners = [];
+  const registrations = [];
   return {
     listeners,
-    addListener(fn) { listeners.push(fn); },
+    registrations,
+    addListener(fn, filter, extra) { listeners.push(fn); registrations.push({ filter, extra }); },
     removeListener(fn) {
       const index = listeners.indexOf(fn);
       if (index >= 0) listeners.splice(index, 1);
@@ -53,6 +55,25 @@ function createChromeApi(options = {}) {
   const tabMessages = [];
   let tabMessageHandler = options.tabMessageHandler || (() => ({ ok: true }));
   const extensionId = options.extensionId || "fixtureextensionid";
+  const downloadItems = new Map((options.downloadItems || []).map((item) => [item.id, {
+    state: "in_progress", paused: false, ...item
+  }]));
+  const downloadCreated = createEvent();
+  const downloadDeterminingFilename = createEvent();
+  const recordDownloadItem = (item) => {
+    if (!item || !Number.isInteger(item.id)) return;
+    downloadItems.set(item.id, { state: "in_progress", paused: false, ...item });
+  };
+  const fireCreated = downloadCreated.fire;
+  downloadCreated.fire = (item, ...args) => {
+    recordDownloadItem(item);
+    return fireCreated(item, ...args);
+  };
+  const fireDeterminingFilename = downloadDeterminingFilename.fire;
+  downloadDeterminingFilename.fire = (item, ...args) => {
+    recordDownloadItem(item);
+    return fireDeterminingFilename(item, ...args);
+  };
 
   function storageArea(areaName) {
     const values = storageAreas[areaName];
@@ -106,14 +127,47 @@ function createChromeApi(options = {}) {
       onChanged: createEvent()
     },
     downloads: {
-      onCreated: createEvent(),
-      onDeterminingFilename: createEvent(),
+      onCreated: downloadCreated,
+      onDeterminingFilename: downloadDeterminingFilename,
+      async search(query = {}) {
+        record("downloads.search", [query]);
+        return [...downloadItems.values()]
+          .filter((item) => query.id == null || item.id === query.id)
+          .map((item) => ({ ...item }));
+      },
+      async pause(id) {
+        record("downloads.pause", [id]);
+        const item = downloadItems.get(id);
+        if (!item) throw new Error(`No download with id: ${id}`);
+        item.paused = true;
+        // Firefox pause calls Download.cancel() while retaining partial data.
+        if (options.firefox) Object.assign(item, { state: "interrupted", error: "USER_CANCELED" });
+      },
+      async resume(id) {
+        record("downloads.resume", [id]);
+        const item = downloadItems.get(id);
+        if (!item) throw new Error(`No download with id: ${id}`);
+        item.paused = false;
+        item.state = "in_progress";
+        delete item.error;
+      },
       async cancel(id) {
         record("downloads.cancel", [id]);
         if (options.cancelFails) throw new Error("synthetic cancel failure");
+        const item = downloadItems.get(id);
+        if (!item) throw new Error(`No download with id: ${id}`);
+        Object.assign(item, { state: "interrupted", error: "USER_CANCELED", paused: false });
       },
-      async erase(query) { record("downloads.erase", [query]); return [query.id]; },
-      async download(details) { record("downloads.download", [details]); return 1; }
+      async erase(query) {
+        record("downloads.erase", [query]);
+        const ids = [...downloadItems.values()]
+          .filter((item) => query?.id == null || item.id === query.id)
+          .map((item) => item.id);
+        ids.forEach((id) => downloadItems.delete(id));
+        return ids;
+      },
+      async download(details) { record("downloads.download", [details]); return 1; },
+      ...(options.downloads || {})
     },
     tabs: {
       onActivated: createEvent(),
@@ -158,6 +212,8 @@ function createChromeApi(options = {}) {
     },
     webRequest: {
       onBeforeSendHeaders: createEvent(),
+      onHeadersReceived: createEvent(),
+      onErrorOccurred: createEvent(),
       onResponseStarted: createEvent(),
       onBeforeRedirect: createEvent()
     },
@@ -201,6 +257,7 @@ function createChromeApi(options = {}) {
     tabMessages,
     setTabMessageHandler(handler) { tabMessageHandler = handler; },
     callsNamed(name) { return calls.filter((call) => call.name === name); },
+    downloadItems,
     extensionId
   };
 }

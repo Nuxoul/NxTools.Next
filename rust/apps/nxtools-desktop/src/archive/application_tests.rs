@@ -695,20 +695,21 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
             break (wire.clone(), drag.clone());
         }
     };
+    assert_eq!(drag.action, "locate");
     assert_eq!(
-        drag.items.as_ref().expect("selected")[0].entry.browser,
-        Some(browser)
+        drag.items.as_ref().expect("receiver folder")[0]
+            .entry
+            .browser,
+        Some(browser.clone())
     );
-    assert_eq!(
-        drag.items.as_ref().expect("selected")[0].entry.ordinal,
-        Some(0)
+    assert!(
+        drag.items.as_ref().expect("receiver folder")[0]
+            .entry
+            .ordinal
+            .is_none()
     );
     assert_eq!(drag.source_window_handle, 311);
-    assert_eq!(
-        drag.items.as_ref().expect("selected").len(),
-        2,
-        "complete actual multi-selection"
-    );
+    assert_eq!(drag.items.as_ref().expect("receiver folder").len(), 1);
     let drag_progress = nxtools_protocol::archive_virtual_drag::ArchiveVirtualDragProgress {
         version: 1,
         operation_id: drag.operation_id,
@@ -733,181 +734,19 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
     let before_progress = surface.update(|_, cx| cx.windows());
     r45_deliver_drag_progress(&owner, drag_progress.clone(), &mut surface);
     assert!(
-        owner.read_with(&surface, |app, _| app
-            .jobs
-            .drag_progress
-            .as_ref()
-            .is_some_and(|slot| slot.operation == drag.operation_id)),
-        "real held gesture + native demand opens original shared progress presentation"
+        owner.read_with(&surface, |app, _| app.jobs.drag_progress.is_none()),
+        "locate has no virtual content progress"
     );
-    let progress_window = surface
-        .update(|_, cx| cx.windows())
-        .into_iter()
-        .find(|candidate| !before_progress.contains(candidate))
-        .expect("original demand window");
-    let mut progress_surface = gpui_kit::VisualTestContext::from_window(progress_window, cx);
-    progress_surface.simulate_resize(gpui_kit::size(px(480.), px(260.)));
-    progress_surface.run_until_parked();
-    let labels = r45_drag_labels(&mut progress_surface);
-    assert!(labels.iter().any(|label| label == "拖出解压"), "{labels:?}");
-    assert!(
-        labels
-            .iter()
-            .any(|label| label.starts_with("当前文件 ·") && label.contains("33%")),
-        "{labels:?}"
-    );
-    assert!(
-        labels
-            .iter()
-            .any(|label| label.starts_with("总体解压 ·") && label.contains("10%")),
-        "{labels:?}"
-    );
-    assert!(
-        labels
-            .iter()
-            .all(|label| !label.contains("缓存物化") && !label.contains("关闭窗口不会")),
-        "{labels:?}"
-    );
-    let current = progress_surface
-        .debug_bounds("archive-current-file-progress")
-        .expect("current group");
-    let overall = progress_surface
-        .debug_bounds("archive-overall-progress")
-        .expect("overall group");
-    let footer = progress_surface
-        .debug_bounds("archive-progress-footer")
-        .expect("footer");
-    assert!(current.bottom() <= overall.top() && overall.bottom() <= footer.top());
-    let mut next = drag_progress.clone();
-    next.sequence = Some(2);
-    next.current_index = Some(1);
-    next.current_request_id = Some(drag.items.as_ref().expect("items")[1].entry.operation_id);
-    next.current_member = Some("second.txt".into());
-    next.current_bytes_total = Some(7);
-    next.bytes_done = 3;
-    next.bytes_processed = Some(4);
-    next.files_done = 1;
-    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
-    let labels = r45_drag_labels(&mut progress_surface);
-    assert!(
-        labels
-            .iter()
-            .any(|label| label.starts_with("当前文件 ·") && label.contains("14%")),
-        "{labels:?}"
-    );
-    assert!(
-        labels
-            .iter()
-            .any(|label| label.starts_with("总体解压 ·") && label.contains("40%")),
-        "{labels:?}"
-    );
-    let mut stale = drag_progress;
-    stale.bytes_done = 3;
-    stale.files_done = 1;
-    stale.bytes_processed = Some(4);
-    let mut wrong_request = next.clone();
-    wrong_request.sequence = Some(50);
-    wrong_request.current_request_id = Some(Uuid::new_v4());
-    let mut wrong_index = next.clone();
-    wrong_index.sequence = Some(50);
-    wrong_index.current_index = Some(99);
-    let mut wrong_generation = next.clone();
-    wrong_generation.sequence = Some(50);
-    wrong_generation.generation += 1;
-    let mut wrong_operation = next.clone();
-    wrong_operation.operation_id = Uuid::new_v4();
-    let mut wrong_session = next.clone();
-    wrong_session.session_id = Uuid::new_v4();
-    let mut rewind = next.clone();
-    rewind.sequence = Some(50);
-    rewind.current_bytes_done = Some(0);
-    for invalid in [
-        stale,
-        wrong_request,
-        wrong_index,
-        wrong_generation,
-        wrong_operation,
-        wrong_session,
-        rewind,
-        next.clone(),
-    ] {
-        r45_deliver_drag_progress(&owner, invalid, &mut progress_surface);
-        let after = r45_drag_labels(&mut progress_surface);
-        assert!(after.iter().any(|label| label == "second.txt"), "{after:?}");
-        assert!(
-            after
-                .iter()
-                .any(|label| label.starts_with("当前文件 ·") && label.contains("14%")),
-            "{after:?}"
-        );
-    }
-    next.sequence = Some(3);
-    next.current_bytes_total = None;
-    next.bytes_total = None;
-    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
-    let unknown = r45_drag_labels(&mut progress_surface);
-    for title in ["当前文件 ·", "总体解压 ·"] {
-        let label = unknown
-            .iter()
-            .find(|label| label.starts_with(title))
-            .expect("unknown amount");
-        assert!(
-            label.contains("大小未知") && !label.contains('%'),
-            "{label}"
-        );
-    }
-    next.sequence = Some(4);
-    next.phase = "target_copying".into();
-    next.current_bytes_done = Some(7);
-    next.current_bytes_total = Some(7);
-    next.bytes_done = 10;
-    next.bytes_processed = Some(10);
-    next.bytes_total = Some(10);
-    next.files_done = 2;
-    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
-    let waiting = r45_drag_labels(&mut progress_surface);
-    assert!(waiting.iter().any(|label| label == "等待接收方完成"));
-    assert!(!waiting.iter().any(|label| label == "已完成"));
-    assert!(
-        waiting
-            .iter()
-            .any(|label| label.starts_with("总体解压 ·") && label.contains("100%"))
-    );
-    next.sequence = Some(5);
-    next.phase = "finished".into();
-    next.code = Some("receiver_reported_complete".into());
-    next.cleanup_complete = Some(true);
-    r45_deliver_drag_progress(&owner, next.clone(), &mut progress_surface);
-    assert!(
-        r45_drag_labels(&mut progress_surface)
-            .iter()
-            .any(|label| label == "已完成")
-    );
-    next.sequence = Some(6);
-    next.phase = "materializing".into();
-    next.cleanup_complete = None;
-    r45_deliver_drag_progress(&owner, next, &mut progress_surface);
-    assert!(
-        r45_drag_labels(&mut progress_surface)
-            .iter()
-            .any(|label| label == "已完成")
-    );
-    owner.update(&mut surface, |app, cx| {
-        app.background_drag_progress(drag.operation_id, cx)
-    });
-    assert!(
-        view.read_with(&surface, |view, _| view.drag_matches(wire.id)),
-        "closing progress cannot cancel original native gesture"
-    );
+    assert_eq!(surface.update(|_, cx| cx.windows()), before_progress);
     owner.update(&mut surface, |app, cx| {
         app.notification(
             PlatformNotification::CommandResult {
                 correlation_id: wire.id,
                 result: PlatformCommandResult {
-                    success: false,
-                    error: Some("virtual_target_not_accepted".into()),
+                    success: true,
+                    error: None,
                     native_error_code: None,
-                    data: None,
+                    data: Some(serde_json::json!({"status":"located","destination":r"D:\out\drag (2)","drop_effect":1}).to_string()),
                 },
             },
             cx,
@@ -919,6 +758,33 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
     });
     surface.run_until_parked();
     view.read_with(&surface, |view, _| assert!(!view.drag_matches(wire.id)));
+    owner.read_with(&surface, |app, _| {
+        assert_eq!(
+            app.jobs.records.len(),
+            1,
+            "one ordinary extraction after deferred location"
+        );
+        let request = app
+            .jobs
+            .records
+            .values()
+            .next()
+            .expect("job")
+            .command
+            .request
+            .as_ref()
+            .expect("extract request");
+        assert_eq!(request.destination.as_deref(), Some(r"D:\out\drag (2)"));
+        let options = request.extract.as_ref().expect("options");
+        assert_eq!(
+            options.strategy,
+            nxtools_protocol::archive_job::ArchiveJobStrategy::Here
+        );
+        let selection = options.selection.as_ref().expect("frozen whole selection");
+        assert_eq!(selection.browser, browser);
+        assert_eq!(selection.ordinals, vec![0, 1]);
+        assert!(selection.strip_prefix.is_none());
+    });
 }
 
 fn r45_deliver_drag_progress(
@@ -938,18 +804,6 @@ fn r45_deliver_drag_progress(
         app.notification(PlatformNotification::Event(event), cx)
     });
     surface.run_until_parked();
-}
-
-fn r45_drag_labels(surface: &mut gpui_kit::VisualTestContext) -> Vec<String> {
-    surface.run_until_parked();
-    surface.update(|window, cx| {
-        window.activate_window();
-        window.draw(cx).clear(cx);
-        gpui_kit::base::test_support::snapshots(window)
-            .iter()
-            .filter_map(|node| node.label().map(str::to_owned))
-            .collect()
-    })
 }
 
 // Keep original transport/client/completion + deferred install; pause only the application drain
@@ -1198,7 +1052,7 @@ fn production_row_drag_connection_origin_rejects_replacement_after_prepared_down
 }
 
 #[gpui_kit::test]
-fn production_password_unlock_visibility_uses_actual_read_encryption_metadata(
+fn production_ordinary_drop_never_requires_a_visible_password_unlock_action(
     cx: &mut TestAppContext,
 ) {
     for encrypted in [Some(false), None, Some(true)] {
@@ -1230,11 +1084,10 @@ fn production_password_unlock_visibility_uses_actual_read_encryption_metadata(
                         && node.visible()
                 })
                 .collect::<Vec<_>>();
-            assert_eq!(unlock.len(), usize::from(encrypted == Some(true)));
-            if let Some(button) = unlock.first() {
-                assert_eq!(button.bounds().size.height, px(64.));
-                assert_ne!(button.disabled(), Some(true));
-            }
+            assert!(
+                unlock.is_empty(),
+                "password is requested by ordinary extraction after the drop"
+            );
         });
         assert!(
             endpoint.try_receive_business_command().is_err(),
@@ -1271,38 +1124,8 @@ fn production_password_application_original_dialog_ticket_and_deferred_grant_nev
         w.activate_window();
         w.draw(cx).clear(cx);
     });
-    let button = surface
-        .debug_bounds("archive-unlock-drag")
-        .expect("official unlock Button");
-    assert_eq!(button.size.height, px(64.));
-    assert!(
-        surface.update(|window, _| {
-            gpui_kit::base::test_support::snapshots(window)
-                .iter()
-                .any(|node| {
-                    node.role() == Some(gpui_kit::Role::Button)
-                        && node.label() == Some("解锁拖出")
-                        && node.visible()
-                        && node.disabled() != Some(true)
-                        && node.bounds() == button
-                })
-        }),
-        "actual enabled official unlock action, not only a cached debug selector"
-    );
-    assert!(button.left() >= px(0.) && button.right() <= px(1100.));
-    assert!(button.top() >= px(0.) && button.bottom() <= px(640.));
-    surface.simulate_event(gpui_kit::MouseDownEvent {
-        position: button.center(),
-        button: gpui_kit::MouseButton::Left,
-        click_count: 1,
-        ..Default::default()
-    });
-    surface.simulate_event(gpui_kit::MouseUpEvent {
-        position: button.center(),
-        button: gpui_kit::MouseButton::Left,
-        click_count: 1,
-        modifiers: Default::default(),
-    });
+    assert!(surface.debug_bounds("archive-unlock-drag").is_none());
+    view.update(&mut surface, |view, cx| view.unlock_drag(cx));
     let wire = endpoint
         .try_receive_business_command()
         .expect("button original prepare");
@@ -3706,6 +3529,8 @@ fn root_drop_extracts_whole_archive_into_receiver_created_folder(cx: &mut TestAp
     let job = owner.update(cx, |app, cx| {
         app.extract_dropped(
             crate::archive::browser::LocatedDrop {
+                operation: Uuid::new_v4(),
+                selection: None,
                 source: PathBuf::from(r"C:\owned\preview.zip"),
                 codepage: 936,
                 destination: r"D:\Downloads\preview".into(),
@@ -3740,6 +3565,55 @@ fn root_drop_extracts_whole_archive_into_receiver_created_folder(cx: &mut TestAp
             "whole archive, not a member list"
         );
         assert!(extract.reclamation.is_none());
+    });
+}
+
+#[gpui_kit::test]
+fn selected_drop_submits_ordinary_snapshot_bound_extraction_with_output_prefix(
+    cx: &mut TestAppContext,
+) {
+    use nxtools_protocol::archive_job::*;
+    let (owner, endpoint, session, _) = preview_fixture(cx);
+    while endpoint.try_receive_command_for_contract_test().is_ok() {}
+    owner.update(cx, |app, cx| {
+        let browser = app.windows[&session]
+            .browser
+            .clone()
+            .expect("browser binding");
+        let selection: ArchiveJobSelection = serde_json::from_value(serde_json::json!({
+            "browser":browser,"ordinals":[7,9],"strip_prefix":"top/sub/"
+        }))
+        .expect("selected extraction intent");
+        app.extract_dropped(
+            crate::archive::browser::LocatedDrop {
+                operation: Uuid::new_v4(),
+                source: PathBuf::from(r"C:\owned\preview.zip"),
+                codepage: 936,
+                destination: r"D:\out\sub (2)".into(),
+                selection: Some(selection.clone()),
+            },
+            cx,
+        );
+        assert_eq!(app.jobs.records.len(), 1);
+        let request = app
+            .jobs
+            .records
+            .values()
+            .next()
+            .expect("ordinary job")
+            .command
+            .request
+            .as_ref()
+            .expect("request");
+        request.validate().expect("ordinary extract admission");
+        assert_eq!(request.kind, ArchiveJobKind::Extract);
+        assert_eq!(request.codepage, 936);
+        assert_eq!(request.destination.as_deref(), Some(r"D:\out\sub (2)"));
+        let extract = request.extract.as_ref().expect("extract");
+        assert_eq!(extract.strategy, ArchiveJobStrategy::Here);
+        assert_eq!(extract.selection.as_ref(), Some(&selection));
+        assert!(extract.reclamation.is_none());
+        assert!(!extract.single_file_folder);
     });
 }
 

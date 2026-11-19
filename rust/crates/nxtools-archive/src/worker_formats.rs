@@ -20,6 +20,8 @@ type Core = archive_core::Archive<File>;
 type Wim = archive_core::wim::FileWimArchive<File>;
 
 enum Reader {
+    Alz(crate::worker_alzeg::Alz),
+    Egg(crate::worker_alzeg::Egg),
     Cab(Core),
     Iso(libmkiso::iso9660::IsoReader<File>),
     Udf(archive_core::udf::UdfArchive<'static>),
@@ -34,6 +36,8 @@ enum Reader {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Family {
+    Alz,
+    Egg,
     Cab,
     Iso,
     Udf,
@@ -48,6 +52,8 @@ enum Family {
 impl Family {
     fn label(self) -> &'static str {
         match self {
+            Self::Alz => "Alz",
+            Self::Egg => "Egg",
             Self::Cab => "Cab",
             Self::Iso => "Iso",
             Self::Udf => "Udf",
@@ -71,6 +77,12 @@ fn detect(path: &Path, file: &mut File) -> Result<Option<Family>> {
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
+    if signature.starts_with(b"ALZ\x01") {
+        return Ok(Some(Family::Alz));
+    }
+    if signature.starts_with(b"EGGA") {
+        return Ok(Some(Family::Egg));
+    }
     if signature.starts_with(b"MSCF") {
         return Ok(Some(Family::Cab));
     }
@@ -301,11 +313,22 @@ fn open_reader(
     request: &WorkerRequest,
     control: &OperationControl,
     size: u64,
+    sources: Option<&crate::worker_codecs::volumes::SourceSet>,
 ) -> Result<(Reader, Vec<ArchiveEntry>)> {
     let path = Path::new(&request.path);
     let limits = crate::worker_browser::decode_limits(request);
     let core_limits = core_limits(limits, size);
     match family {
+        Family::Alz => {
+            let (reader, entries) =
+                crate::worker_alzeg::Alz::open(request, control, sources.expect("ALZ source set"))?;
+            Ok((Reader::Alz(reader), entries))
+        }
+        Family::Egg => {
+            let (reader, entries) =
+                crate::worker_alzeg::Egg::open(request, control, sources.expect("EGG source set"))?;
+            Ok((Reader::Egg(reader), entries))
+        }
         Family::Cab => {
             let archive = Core::open_as(File::open(path)?, archive_core::Format::Cab, core_limits)
                 .map_err(core_error)?;
@@ -488,6 +511,8 @@ fn copy_decoded(input: &mut impl Read, writer: &mut MemberWriter<'_>) -> Result<
 impl Reader {
     fn extract(&mut self, index: usize, path: &Path, writer: &mut MemberWriter<'_>) -> Result<u64> {
         match self {
+            Self::Alz(reader) => reader.extract(index, writer),
+            Self::Egg(reader) => reader.extract(index, writer),
             Self::Cab(reader) => reader
                 .extract(archive_core::EntryId(index), writer)
                 .map(|r| r.bytes)
@@ -648,22 +673,46 @@ fn run<W: Write + Send>(
     metadata: &crate::worker_metadata::MetadataCredit,
     interaction: &crate::interaction::InteractionPort,
 ) -> Result<(u64, u64)> {
+    let framed = matches!(family, Family::Alz | Family::Egg);
     if request.version != 2
-        || request.volume_paths.len() > 1
-        || request.password.is_some()
+        || request.volume_paths.len() > 1 && !framed
+        || request.password.is_some() && !framed
         || !matches!(request.operation.as_str(), "open" | "test" | "extract")
     {
         return Err(ArchiveError::UnsupportedOperation);
     }
     let lifecycle = control.source_delete_begin();
     let path = Path::new(&request.path);
-    let revision = source_revision(path, control)?;
+    let sources = framed
+        .then(|| crate::worker_codecs::volumes::SourceSet::open_formats(request, control))
+        .transpose()?;
+    let revision = if let Some(set) = sources.as_ref() {
+        (
+            set.digest(),
+            set.length(),
+            std::fs::metadata(path)?.modified()?,
+        )
+    } else {
+        source_revision(path, control)?
+    };
+    let verify = || -> Result<()> {
+        if let Some(set) = sources.as_ref() {
+            set.verify(control)?;
+            if std::fs::metadata(path)?.modified()? != revision.2 {
+                return Err(ArchiveError::SourceChanged);
+            }
+        } else if source_revision(path, control)? != revision {
+            return Err(ArchiveError::SourceChanged);
+        }
+        Ok(())
+    };
     if request.operation == "extract" {
         PrivateOutput::new(output, control, replies.clone())
             .source_checkpoint("source_validated")?;
     }
     let limits = crate::worker_browser::decode_limits(request);
-    let (mut reader, mut entries) = open_reader(family, request, control, revision.1)?;
+    let (mut reader, mut entries) =
+        open_reader(family, request, control, revision.1, sources.as_ref())?;
     validate_entries(&mut entries, &limits, control)?;
     let entries: Arc<[ArchiveEntry]> = entries.into();
     control.record_work(|work| work.catalog_loads += 1);
@@ -692,9 +741,7 @@ fn run<W: Write + Send>(
             control,
             metadata,
         )?;
-        if source_revision(path, control)? != revision {
-            return Err(ArchiveError::SourceChanged);
-        }
+        verify()?;
         return Ok((entries.len() as u64, 0));
     }
     let chosen: HashSet<_> = plan.as_ref().map_or_else(
@@ -760,6 +807,7 @@ fn run<W: Write + Send>(
         .transpose()?;
     let mut files = 0;
     let mut bytes = 0u64;
+    let mut source_verified_before_commit = false;
     let result = (|| {
         if let Some(out) = native.as_mut() {
             let directories: Vec<_> = plan.as_ref().map_or_else(
@@ -827,6 +875,10 @@ fn run<W: Write + Send>(
             let count = decoded?;
             if let (Some(out), Some(token)) = (native.as_mut(), token) {
                 let publish = (|| {
+                    if sources.is_some() && !source_verified_before_commit {
+                        verify()?;
+                        source_verified_before_commit = true;
+                    }
                     out.set_file_metadata(token, entry.metadata)?;
                     out.source_checkpoint("source_precommit")?;
                     out.commit_file(token)
@@ -848,6 +900,11 @@ fn run<W: Write + Send>(
         }
         Ok(())
     })();
+    let result = if native.is_some() && framed {
+        result.and_then(|()| verify())
+    } else {
+        result
+    };
     if let Some(out) = native.as_mut() {
         let specials = entries
             .iter()
@@ -871,9 +928,7 @@ fn run<W: Write + Send>(
         );
     } else {
         result?;
-        if source_revision(path, control)? != revision {
-            return Err(ArchiveError::SourceChanged);
-        }
+        verify()?;
     }
     Ok((files, bytes))
 }

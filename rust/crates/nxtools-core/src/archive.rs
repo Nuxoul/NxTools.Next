@@ -177,14 +177,14 @@ impl ArchiveMenuCommand {
     }
     pub fn label(self) -> &'static str {
         match self {
-            Self::Open => "在 NxTools 中打开",
+            Self::Open => "使用 NxTools 打开",
             Self::ExtractSmart => "智能解压",
-            Self::ExtractHere => "解压到当前文件夹",
+            Self::ExtractHere => "解压到此处",
             Self::ExtractName => "解压到同名文件夹",
-            Self::ExtractDialog => "选择解压路径…",
+            Self::ExtractDialog => "解压到…",
             Self::Test => "测试压缩包",
-            Self::CreateZip => "压缩为当前选择名.zip",
-            Self::CreateSevenZ => "压缩为当前选择名.7z",
+            Self::CreateZip => "压缩为同名 .zip",
+            Self::CreateSevenZ => "压缩为同名 .7z",
             Self::Create => "新建压缩包…",
         }
     }
@@ -213,6 +213,9 @@ pub struct ArchiveShellIntegrationSettings {
     pub desired_revision: i64,
     #[serde(default)]
     pub double_click_action: ArchiveDoubleClickAction,
+    /// Makes NxTools the per-user default for the selected extensions (icons and double-click).
+    #[serde(default)]
+    pub set_default: bool,
     #[serde(default)]
     pub menu_layout: ArchiveMenuLayout,
     #[serde(default = "recommended_menu_commands")]
@@ -232,6 +235,7 @@ impl Default for ArchiveShellIntegrationSettings {
             extensions: Vec::new(),
             desired_revision: 0,
             double_click_action: Default::default(),
+            set_default: false,
             menu_layout: Default::default(),
             menu_commands: recommended_menu_commands(),
         }

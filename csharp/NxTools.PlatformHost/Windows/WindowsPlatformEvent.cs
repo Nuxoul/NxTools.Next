@@ -44,7 +44,8 @@ internal sealed record ClipboardPanelRequestedEvent(
     uint CursorDisplayIndex,
     uint CursorMonitorDpi,
     long RequestedAtUnixMs,
-    ulong EventSequence = 0) : WindowsPlatformEvent;
+    ulong EventSequence = 0,
+    Guid? CorrelationId = null) : WindowsPlatformEvent;
 
 internal sealed record ExplorerContext(
     long WindowHandle,

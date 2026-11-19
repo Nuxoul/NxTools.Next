@@ -87,7 +87,8 @@ impl DownloadHttpPolicy {
 fn parse_snapshot(
     settings: &DownloadSettings,
 ) -> Result<DownloadHttpPolicySnapshot, DownloadHttpPolicyError> {
-    let raw_headers = settings.default_request_headers.trim();
+    let raw_headers =
+        nxtools_core::effective_download_request_headers(&settings.default_request_headers);
     if raw_headers.len() > MAX_DEFAULT_HEADER_TEXT_BYTES {
         return Err(DownloadHttpPolicyError::HeaderTextTooLarge);
     }
@@ -279,6 +280,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: None,
+            source_page: None,
             certificate_policy: DownloadCertificatePolicy::Strict,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -322,6 +324,7 @@ mod tests {
             }],
             cookie: Some("task=1".into()),
             referrer: None,
+            source_page: None,
             certificate_policy: DownloadCertificatePolicy::Strict,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,
@@ -362,6 +365,7 @@ mod tests {
             headers: Vec::new(),
             cookie: None,
             referrer: Some("https://task.example/".into()),
+            source_page: None,
             certificate_policy: DownloadCertificatePolicy::Strict,
             connection_limit: Some(1),
             speed_limit_bytes_per_second: None,

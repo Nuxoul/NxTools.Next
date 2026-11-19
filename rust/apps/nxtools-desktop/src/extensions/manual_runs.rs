@@ -131,6 +131,7 @@ pub(crate) struct ManualRun {
     pub(crate) action_name: String,
     pub(crate) state: ManualState,
     pub(crate) started: Instant,
+    pub(crate) at_unix_ms: i64,
     pub(crate) elapsed_ms: Option<u128>,
     pub(crate) message: Option<String>,
     pub(crate) items: Vec<i64>,
@@ -163,6 +164,23 @@ impl ExtensionApplication {
         id
     }
 }
+#[cfg(test)]
+impl ExtensionApplication {
+    pub(crate) fn seed_manual_settings_failure(&mut self, package: &str) -> Uuid {
+        let id = Uuid::new_v4();
+        self.begin_manual_run(
+            id,
+            package.into(),
+            "Settings fixture".into(),
+            "Action".into(),
+        );
+        if let Some(run) = self.manual_runs.back_mut() {
+            run.state = ManualState::Failed(RuntimeError::InvalidSettings);
+        }
+        id
+    }
+}
+
 impl ExtensionApplication {
     pub(crate) fn attach_manual_origin(
         &mut self,
@@ -248,6 +266,7 @@ impl ExtensionApplication {
             action_name,
             state: ManualState::Running,
             started: Instant::now(),
+            at_unix_ms: chrono::Utc::now().timestamp_millis(),
             elapsed_ms: None,
             message: None,
             items: Vec::new(),
@@ -303,6 +322,7 @@ impl ExtensionApplication {
         run.message = message;
         run.items = items;
         run.elapsed_ms = Some(run.started.elapsed().as_millis());
+        run.at_unix_ms = chrono::Utc::now().timestamp_millis();
         // No plugin-provided text/name or clipboard content in diagnostics.
         tracing::info!(event="extension.manual.terminal", correlation_id=%id, elapsed_ms=run.elapsed_ms, result_count=run.items.len(), success=matches!(run.state, ManualState::Succeeded | ManualState::NotHandled), "manual extension invocation terminated");
         self.notify_manual_run(id, cx);

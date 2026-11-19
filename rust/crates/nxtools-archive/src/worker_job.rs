@@ -58,13 +58,20 @@ fn plan_observed(
         {
             return Err(ArchiveError::ResourceLimit);
         }
-        let plan = ExtractionPlan::build_observed_with_limits(
+        let mut plan = ExtractionPlan::build_observed_with_limits(
             snapshot,
             selection,
             strategy(options, &request.path),
             &request.limits.into(),
             work,
         )?;
+        if let Some(prefix) = options
+            .selection
+            .as_ref()
+            .and_then(|selected| selected.strip_prefix.as_deref())
+        {
+            plan.strip_output_prefix(prefix)?;
+        }
         if plan.files().len() as u64 > request.output_file_limit() {
             return Err(ArchiveError::ResourceLimit);
         }
@@ -197,13 +204,10 @@ pub(crate) fn extract_compound(
         .sort_by_key(|entry| std::cmp::Reverse(entry.display_path().matches(['/', '\\']).count()));
     for entry in directories {
         control.checkpoint()?;
-        let name = entry.display_path().replace('\\', "/");
-        let name = name.trim_end_matches('/');
-        let relative = plan
-            .subfolder()
-            .map_or_else(|| name.to_owned(), |root| format!("{root}/{name}"));
-        entry.metadata.validate()?;
-        output.finalize_directory_metadata(&relative, entry.metadata)?;
+        if let Some(relative) = plan.directory_output_path(entry)? {
+            entry.metadata.validate()?;
+            output.finalize_directory_metadata(&relative, entry.metadata)?;
+        }
     }
     crate::engine::ensure_revision(&mut source, &snapshot.revision, control)?;
     Ok(result)

@@ -21,11 +21,13 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 mod blob_upload;
+mod controlled_handoff;
 use blob_upload::{BlobUploadService, MAX_BLOB_CHUNK_BYTES, MAX_BLOB_UPLOAD_BYTES};
 
 pub const BROWSER_PROTOCOL_VERSION: u16 = 2;
 pub const MAX_NATIVE_MESSAGE_BYTES: usize = 256 * 1024;
 const MAX_URL_BYTES: usize = 16 * 1024;
+const MAX_SOURCE_PAGE_TITLE_BYTES: usize = 4096;
 const MAX_FILE_NAME_BYTES: usize = 512;
 const MAX_HEADER_COUNT: usize = 64;
 const MAX_HEADER_NAME_BYTES: usize = 128;
@@ -113,6 +115,12 @@ const HANDOFF_REASONS: &[&str] = &[
     "handoff_timeout",
     "handoff_disconnected",
     "browser_cancel_failed",
+    "browser_control_failed",
+    "browser_resume_failed",
+    "confirmation_cancelled",
+    "confirmation_timeout",
+    "browser_cancel_unconfirmed",
+    "desktop_activation_pending",
     "identity_mismatch",
     "confirmation_pending",
     "queued_not_accepted",
@@ -191,6 +199,10 @@ struct BrowserDownloadPayload {
     cookie: String,
     #[serde(default)]
     referrer: String,
+    #[serde(default)]
+    source_page_url: String,
+    #[serde(default)]
+    source_page_title: String,
     #[serde(default)]
     size: u64,
     #[serde(default)]
@@ -523,10 +535,16 @@ fn handle_request(
             Some(json!({
                 "hostVersion": env!("CARGO_PKG_VERSION"),
                 "extensionVersion": request.extension_version,
-                "capabilities": ["ordinary_download", "batch_download_v1", "blob_upload_v1", "task_snapshot", "task_action"]
+                "capabilities": ["ordinary_download", "batch_download_v1", "blob_upload_v1", "task_snapshot", "task_action", "controlled_browser_handoff_v1"]
             })),
         )),
         "create_task" => submit_download(request_id, request.payload, paths, executable),
+        "prepare_browser_handoff" => {
+            controlled_handoff::prepare(request_id, request.payload, paths, executable)
+        }
+        "get_browser_handoff" | "commit_browser_handoff" | "abort_browser_handoff" => {
+            controlled_handoff::operate(request_id, &request.kind, request.payload)
+        }
         "create_tasks" => submit_download_batch(request_id, request.payload, paths, executable),
         "prepare_blob_upload" => prepare_blob_upload(request_id, request.payload, blob_uploads),
         "commit_blob_upload" => {
@@ -1143,6 +1161,12 @@ fn build_browser_download_request(
         headers,
         cookie: non_empty(payload.cookie),
         referrer,
+        source_page: non_empty(payload.source_page_url).map(|url| {
+            nxtools_download::DownloadSourcePage {
+                url,
+                title: payload.source_page_title,
+            }
+        }),
         certificate_policy: Default::default(),
         connection_limit: Some(config.download.default_connection_limit),
         speed_limit_bytes_per_second: None,
@@ -1365,6 +1389,12 @@ fn validate_payload(payload: &BrowserDownloadPayload) -> Result<()> {
     bounded("url", &payload.url, MAX_URL_BYTES)?;
     bounded("fileName", &payload.file_name, MAX_FILE_NAME_BYTES)?;
     bounded("referrer", &payload.referrer, MAX_URL_BYTES)?;
+    bounded("sourcePageUrl", &payload.source_page_url, MAX_URL_BYTES)?;
+    bounded(
+        "sourcePageTitle",
+        &payload.source_page_title,
+        MAX_SOURCE_PAGE_TITLE_BYTES,
+    )?;
     bounded("cookie", &payload.cookie, MAX_COOKIE_BYTES)?;
     if payload.headers.len() > MAX_HEADER_COUNT {
         bail!("headers exceed the bounded count limit");
@@ -1789,8 +1819,16 @@ mod tests {
         assert!(!response.ok);
         assert_eq!(response.request_id, request_id);
         assert_eq!(response.error.as_deref(), Some("desktop_unavailable"));
-        assert_eq!(response.data.unwrap()["reason"], "desktop_unavailable");
-        assert!(!response.message.unwrap().contains(&pipe_name));
+        assert_eq!(
+            response.data.expect("fixed diagnosis metadata")["reason"],
+            "desktop_unavailable"
+        );
+        assert!(
+            !response
+                .message
+                .expect("actionable unavailable guidance")
+                .contains(&pipe_name)
+        );
     }
 
     #[test]
@@ -2117,6 +2155,8 @@ mod tests {
                     headers: BTreeMap::new(),
                     cookie: String::new(),
                     referrer: String::new(),
+                    source_page_url: String::new(),
+                    source_page_title: String::new(),
                     size: 0,
                     start_immediately: false,
                     open_dialog: false,
@@ -2158,6 +2198,8 @@ mod tests {
                 headers,
                 cookie: String::new(),
                 referrer: String::new(),
+                source_page_url: String::new(),
+                source_page_title: String::new(),
                 size: 0,
                 start_immediately: false,
                 open_dialog: false,
@@ -2242,6 +2284,8 @@ mod tests {
             headers: BTreeMap::new(),
             cookie: String::new(),
             referrer: String::new(),
+            source_page_url: String::new(),
+            source_page_title: String::new(),
             size: 0,
             start_immediately: false,
             open_dialog: false,
@@ -2288,6 +2332,7 @@ mod tests {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: None,

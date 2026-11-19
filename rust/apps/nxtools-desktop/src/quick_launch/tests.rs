@@ -584,31 +584,20 @@ fn production_results_surface_uses_shared_empty_and_progress_states(cx: &mut Tes
     assert_eq!(empty.left(), panel_surface.left() + px(1.0));
     assert_eq!(empty.right(), panel_surface.right() - px(1.0));
 
-    panel.update_in(window, |panel, _window, cx| {
+    panel.update_in(window, |panel, _, cx| {
         panel.search_pending = true;
         cx.notify();
     });
-    window
-        .refresh()
-        .expect("render quick-launch progress state");
-    let progress = window
-        .debug_bounds("quick-launch-results-progress")
-        .expect("quick-launch shared progress state");
-    let progress_icon = window
-        .debug_bounds("quick-launch-results-progress-icon")
-        .expect("quick-launch progress icon");
-    let progress_title = window
-        .debug_bounds("quick-launch-results-progress-title")
-        .expect("quick-launch progress title");
-    let progress_description = window
-        .debug_bounds("quick-launch-results-progress-description")
-        .expect("quick-launch progress description");
-    assert_eq!(progress.size.width, empty.size.width);
-    assert!(progress_icon.size.width > px(0.0) && progress_icon.size.height <= px(24.0));
-    assert_eq!(progress_title.size.height, empty_title.size.height);
+    window.refresh().expect("render newly pending quick launch");
+    assert!(window.debug_bounds("quick-launch-results-empty").is_none());
+    assert!(
+        window
+            .debug_bounds("quick-launch-search-feedback")
+            .is_none()
+    );
     assert_eq!(
-        progress_description.size.height,
-        empty_description.size.height
+        window.debug_bounds("quick-launch-window"),
+        Some(panel_surface)
     );
 }
 
@@ -1121,35 +1110,7 @@ fn keyboard_health_ordinary_configuration_success_keeps_new_native_failure(
     assert!(reason.contains("线程已退出") && reason.contains("17"));
 }
 
-#[gpui_kit::test]
-fn exclusive_fullscreen_suppression_setting_persists_and_syncs(cx: &mut TestAppContext) {
-    let (temp, application, endpoint) = quick_launch_application_fixture(cx);
-    cx.update(|cx| {
-        application.update(cx, |application, cx| {
-            application.set_exclusive_fullscreen_suppression(false, cx);
-        });
-    });
-
-    let config_path = temp.path().join("config.json");
-    let persisted = AppConfig::load_from(&config_path).expect("reload Quick Launch settings");
-    assert!(!persisted.quick_launch.suppress_in_exclusive_fullscreen);
-
-    let command = endpoint
-        .try_receive_command_for_contract_test()
-        .expect("updated Quick Launch configuration command");
-    let nxtools_protocol::Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(command)) =
-        command.message
-    else {
-        panic!("expected typed Quick Launch configuration command");
-    };
-    assert!(!command.suppress_in_exclusive_fullscreen);
-    assert!(command.enabled);
-    assert!(command.auto_quick_switch_enabled);
-    assert!(command.file_dialog_search_enabled);
-    assert_eq!(command.hotkey_key, "Control");
-}
-
-fn quick_launch_panel_fixture(
+pub(super) fn quick_launch_panel_fixture(
     cx: &mut TestAppContext,
     results: Vec<SearchResult>,
 ) -> (Entity<QuickLaunchPanel>, &mut gpui_kit::VisualTestContext) {
@@ -1186,7 +1147,7 @@ fn quick_launch_panel_fixture(
     (panel, window)
 }
 
-fn search_result(id: &str, source: ApplicationSource) -> SearchResult {
+pub(super) fn search_result(id: &str, source: ApplicationSource) -> SearchResult {
     SearchResult {
         entry: nxtools_finder::ApplicationEntry {
             id: id.into(),
@@ -3086,10 +3047,12 @@ fn action_mode_returns_to_the_parent_viewport_on_its_first_frame(cx: &mut TestAp
         .collect::<Vec<_>>();
     let (panel, window) = quick_launch_panel_fixture(cx, results);
 
-    panel.update_in(window, |panel, window, cx| panel.focus_search(window, cx));
-    window.simulate_input("item");
-    panel.update_in(window, |panel, _window, cx| {
-        panel.replace_results(panel.results.to_vec(), cx); // This fixture supplies current completed provider rows.
+    panel.update_in(window, |panel, window, cx| {
+        panel.focus_search(window, cx);
+        panel
+            .search_input
+            .update(cx, |input, cx| input.set_value("item", window, cx));
+        panel.replace_results(panel.results.to_vec(), cx);
         panel.selected = 24;
         panel
             .result_scroll
@@ -3862,10 +3825,7 @@ fn popup_activation_retries_topmost_and_finishes_with_post_activation_confirmati
         next_window_activation_step(Activate(0), false),
         Some(Activate(1))
     );
-    assert_eq!(
-        next_window_activation_step(Activate(1), false),
-        Some(ConfirmTopmost(0))
-    );
+    assert_eq!(next_window_activation_step(Activate(1), false), None);
     assert_eq!(
         next_window_activation_step(Activate(0), true),
         Some(ConfirmTopmost(0))
@@ -3880,6 +3840,209 @@ fn popup_activation_retries_topmost_and_finishes_with_post_activation_confirmati
     );
     assert_eq!(next_window_activation_step(ConfirmTopmost(2), false), None);
     assert_eq!(next_window_activation_step(ConfirmTopmost(0), true), None);
+}
+
+#[gpui_kit::test]
+fn popup_activation_owner_stops_on_foreground_failure_and_preserves_success_chain(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temp, application, endpoint) = quick_launch_application_fixture(cx);
+    let (panel, window) = quick_launch_panel_fixture(cx, Vec::new());
+    let popup_window = window.update(|window, _| window.window_handle());
+    let native_window_handle = 77;
+    let result = |success| PlatformCommandResult {
+        success,
+        error: (!success).then(|| "foreground_not_confirmed".into()),
+        native_error_code: (!success).then_some(5),
+        data: None,
+    };
+
+    panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
+        assert!(!panel.search_input.focus_handle(cx).is_focused(window));
+    });
+    application.update(window, |application, cx| {
+        application.popup = Some(QuickLaunchWindow {
+            window: popup_window,
+            panel: panel.downgrade(),
+            native_window_handle,
+        });
+        application.begin_window_activation(native_window_handle, cx);
+    });
+
+    let pre_topmost = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("pre-activation topmost command");
+    assert!(matches!(
+        pre_topmost.message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::SetWindowTopmost(_))
+    ));
+    application.read_with(window, |application, _| {
+        assert_eq!(
+            application
+                .pending_window_activation
+                .get(&pre_topmost.id)
+                .expect("pre-topmost pending stage")
+                .step,
+            QuickLaunchWindowActivationStep::PreTopmost(0)
+        );
+    });
+    application.update(window, |application, cx| {
+        application.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: pre_topmost.id,
+                result: result(true),
+            },
+            cx,
+        );
+    });
+
+    let first_activate = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("first foreground activation command");
+    assert!(matches!(
+        first_activate.message,
+        nxtools_protocol::Message::PlatformCommand(PlatformCommand::ActivateWindow(_))
+    ));
+    application.update(window, |application, cx| {
+        application.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: first_activate.id,
+                result: result(false),
+            },
+            cx,
+        );
+    });
+    let second_activate = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("bounded foreground activation retry");
+    application.read_with(window, |application, _| {
+        assert_eq!(
+            application
+                .pending_window_activation
+                .get(&second_activate.id)
+                .expect("activation retry pending stage")
+                .step,
+            QuickLaunchWindowActivationStep::Activate(1)
+        );
+    });
+    application.update(window, |application, cx| {
+        application.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: second_activate.id,
+                result: result(false),
+            },
+            cx,
+        );
+    });
+    window.run_until_parked();
+
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "exhausted activation must not queue ConfirmTopmost"
+    );
+    application.read_with(window, |application, cx| {
+        assert!(application.pending_window_activation.is_empty());
+        let notices = application.notifications.read(cx).items();
+        assert_eq!(notices.len(), 1);
+        assert_eq!(
+            notices[0].level,
+            crate::notifications::NotificationLevel::Error
+        );
+        assert!(notices[0].message.contains("点击搜索框"));
+    });
+    panel.update_in(window, |panel, window, cx| {
+        assert!(!panel.search_input.focus_handle(cx).is_focused(window));
+        assert!(panel.status.is_none());
+        assert!(panel.is_open);
+    });
+
+    application.update(window, |application, cx| {
+        application.begin_window_activation(native_window_handle, cx);
+    });
+    let stale_pre_topmost = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("superseded pre-topmost command");
+    application.update(window, |application, cx| {
+        application.popup_session_id = uuid::Uuid::new_v4();
+        application.begin_window_activation(native_window_handle, cx);
+    });
+    let current_pre_topmost = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("replacement pre-topmost command");
+    application.update(window, |application, cx| {
+        application.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: stale_pre_topmost.id,
+                result: result(true),
+            },
+            cx,
+        );
+    });
+    application.read_with(window, |application, _| {
+        assert_eq!(application.pending_window_activation.len(), 1);
+        assert!(
+            application
+                .pending_window_activation
+                .contains_key(&current_pre_topmost.id),
+            "an old result must not consume the replacement activation"
+        );
+    });
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
+
+    application.update(window, |application, cx| {
+        application.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: current_pre_topmost.id,
+                result: result(true),
+            },
+            cx,
+        );
+    });
+    let successful_activate = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("successful foreground activation command");
+    application.update(window, |application, cx| {
+        application.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: successful_activate.id,
+                result: result(true),
+            },
+            cx,
+        );
+    });
+    let confirm_topmost = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("post-activation topmost confirmation");
+    application.read_with(window, |application, _| {
+        assert_eq!(
+            application
+                .pending_window_activation
+                .get(&confirm_topmost.id)
+                .expect("confirm-topmost pending stage")
+                .step,
+            QuickLaunchWindowActivationStep::ConfirmTopmost(0)
+        );
+    });
+    panel.update_in(window, |panel, window, cx| {
+        assert!(panel.search_input.focus_handle(cx).is_focused(window));
+    });
+    application.update(window, |application, cx| {
+        application.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: confirm_topmost.id,
+                result: result(true),
+            },
+            cx,
+        );
+    });
+
+    application.read_with(window, |application, cx| {
+        assert!(application.pending_window_activation.is_empty());
+        assert_eq!(application.notifications.read(cx).items().len(), 1);
+    });
+    assert!(endpoint.try_receive_command_for_contract_test().is_err());
 }
 
 #[test]
@@ -4023,15 +4186,10 @@ fn direct_unicode_input_does_not_look_like_an_ime_confirmation() {
 }
 
 #[test]
-fn connected_index_search_publishes_local_rows_immediately_before_the_merged_batch() {
+fn index_search_requires_a_connected_searchable_snapshot() {
     assert!(!should_search_indexer(false, false));
     assert!(!should_search_indexer(true, false));
     assert!(should_search_indexer(true, true));
-    // Local instant results always publish; the pending flag only keeps the
-    // "正在搜索" hint alive while the index batch is in flight.
-    assert!(should_publish_immediate_results(false, false));
-    assert!(should_publish_immediate_results(true, false));
-    assert!(should_publish_immediate_results(true, true));
 }
 
 #[test]
@@ -5087,23 +5245,31 @@ fn w2_local_ordinary_hit_disables_indexed_homophone_fallback(cx: &mut TestAppCon
             program: r"C:\Fixture\tool.exe".into(),
             ..Default::default()
         }];
+        let manifest = br#"{"schema_version":1,"id":"fixture.local-probe","name":"Probe","version":"1","handlers":[{"id":"open","title":"Open","feature":"quick_launch","entry":"command","keywords":["package"],"action":{"type":"folder","path":"C:\\Fixture"}}]}"#;
+        app.config.extensions.install(nxtools_extensions::ImportPreview::from_json(manifest).expect("probe manifest"), "fixture".into(), false).expect("install");
+        app.config.extensions.set_enabled("fixture.local-probe", true, &[]).expect("enable");
     });
     for (query, allow, recent) in [
         ("年度报高", false, false),
         ("年度报低", true, false),
+        ("package", false, false),
+        ("pack", false, false),
         ("recent:", false, true),
     ] {
         application.update(cx, |app, cx| {
             let update = app.search_and_request_icons(query, cx);
-            assert_eq!(update.pending, query != "年度报高");
+            assert!(
+                update.pending,
+                "indexed queries wait for their current providers"
+            );
+            assert!(update.results.is_empty());
             assert!(
                 !app.index_search.complete,
                 "provider completion is independent of usable current rows"
             );
             if query == "年度报高" {
                 assert!(
-                    update
-                        .results
+                    app.combined_results(query)
                         .iter()
                         .any(|result| result.entry.source == ApplicationSource::CustomCommand)
                 );
@@ -5120,6 +5286,25 @@ fn w2_local_ordinary_hit_disables_indexed_homophone_fallback(cx: &mut TestAppCon
         assert_eq!(request.context.allow_homophone_fallback, allow, "{query}");
         assert_eq!(request.context.recent_modified, recent, "{query}");
     }
+    application.update(cx, |app, cx| {
+        app.config
+            .extensions
+            .set_enabled("fixture.local-probe", false, &[])
+            .expect("disable");
+        assert!(app.search_and_request_icons("package", cx).pending);
+    });
+    let command = endpoint
+        .try_recv_command_for_test()
+        .expect("disabled package query");
+    let nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(request)) =
+        command.message
+    else {
+        panic!("indexed search request");
+    };
+    assert!(
+        request.context.allow_homophone_fallback,
+        "disabled declarations cannot suppress approximation"
+    );
 }
 
 #[gpui_kit::test]
@@ -5601,22 +5786,24 @@ fn row_spacing_setting_is_durable_and_failure_preserves_live_style_without_nativ
 }
 
 #[test]
-fn ux_repair_pending_local_results_publish_without_clearing_on_empty_pending() {
+fn pending_results_wait_for_complete_even_when_the_partial_set_is_nonempty() {
     let mut committed = vec!["old"];
-    assert!(apply_search_update(
+    assert!(!apply_search_update(
         &mut committed,
         vec!["current-local"],
         true
     ));
-    assert_eq!(committed, vec!["current-local"]);
+    assert_eq!(committed, vec!["old"]);
     assert!(!apply_search_update(&mut committed, Vec::new(), true));
-    assert_eq!(committed, vec!["current-local"]);
+    assert_eq!(committed, vec!["old"]);
     assert!(apply_search_update(&mut committed, Vec::new(), false));
     assert!(committed.is_empty());
 }
 
 #[gpui_kit::test]
-fn ux_repair_real_panel_publishes_local_command_while_index_is_pending(cx: &mut TestAppContext) {
+fn normal_search_local_command_waits_for_index_completion_before_pointer_execution(
+    cx: &mut TestAppContext,
+) {
     cx.update(gpui_kit::init);
     let (_temp, app, platform) = quick_launch_application_fixture(cx);
     let (bridge, endpoint) = crate::runtime::indexer_bridge(8);
@@ -5649,16 +5836,51 @@ fn ux_repair_real_panel_publishes_local_command_while_index_is_pending(cx: &mut 
     });
     panel.update_in(window, |panel, window, cx| {
         panel.application = app.downgrade();
-        panel
-            .search_input
-            .update(cx, |input, cx| input.set_value("fixture-fast", window, cx));
-        panel.run_search("fixture-fast".into(), cx);
+        panel.focus_search(window, cx);
     });
+    window.refresh().expect("focused command search");
+    panel.update_in(window, |panel, window, cx| {
+        panel.search_input.update(cx, |input, cx| {
+            input.replace_all("fixture-fast", window, cx)
+        })
+    });
+    window.run_until_parked();
+    window.run_until_parked();
     panel.read_with(window, |panel, _| {
         assert!(
-            !panel.search_pending,
-            "current command is usable before the indexer completes"
+            panel.search_pending,
+            "retained rows stay inert until the current providers complete"
         );
+        assert_eq!(panel.results[0].entry.id, "old");
+    });
+    window.executor().advance_clock(Duration::from_millis(150));
+    window.run_until_parked();
+    panel.read_with(window, |panel, _| {
+        assert!(panel.search_pending);
+        assert_eq!(panel.results[0].entry.id, "old");
+    });
+    let envelope = endpoint
+        .try_recv_command_for_test()
+        .expect("actual indexed request");
+    let nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(request)) =
+        envelope.message
+    else {
+        panic!("expected indexed search");
+    };
+    app.update(window, |app, cx| {
+        app.handle_indexer_notification(
+            IndexerNotification::Event(IndexerEvent::SearchBatch(IndexSearchBatch {
+                generation: request.generation,
+                items: Vec::new(),
+                complete: true,
+                elapsed_us: 20,
+            })),
+            cx,
+        );
+    });
+    app.read_with(window, |app, _| assert!(app.index_search.complete));
+    panel.read_with(window, |panel, _| {
+        assert!(!panel.search_pending);
         assert!(
             panel
                 .results
@@ -5667,11 +5889,6 @@ fn ux_repair_real_panel_publishes_local_command_while_index_is_pending(cx: &mut 
         );
         assert!(!panel.results.iter().any(|row| row.entry.id == "old"));
     });
-    app.read_with(window, |app, _| assert!(!app.index_search.complete));
-    assert!(
-        endpoint.try_recv_command_for_test().is_some(),
-        "real indexed request remains queued without waiting for reply"
-    );
     window.refresh().expect("paint current local command");
     let row = window
         .debug_bounds("quick-launch-result-row-0")
@@ -5685,18 +5902,23 @@ fn ux_repair_real_panel_publishes_local_command_while_index_is_pending(cx: &mut 
             nxtools_protocol::Message::PlatformCommand(PlatformCommand::LaunchProcess(command))
                 if command.executable == r"C:\Fixture\tool.exe")
         })
-        .expect("current local command dispatches before the indexed provider replies");
+        .expect("complete current local command dispatches through the original pointer action");
     app.read_with(window, |app, _| {
         assert_eq!(
             app.pending_actions[&command.id].trigger,
             QuickLaunchActionTrigger::Pointer
         );
-        assert!(!app.index_search.complete);
+        assert!(
+            app.index_search.query.is_empty(),
+            "successful execution retires its search"
+        );
     });
 }
 
 #[gpui_kit::test]
-fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut TestAppContext) {
+fn search_latency_complete_indexed_rows_commit_atomically_with_local_results(
+    cx: &mut TestAppContext,
+) {
     cx.update(gpui_kit::init);
     let (temporary, application, platform) = quick_launch_application_fixture(cx);
     let applications = temporary.path().join("applications");
@@ -5742,10 +5964,10 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
         panel.focus_search(window, cx);
     });
     window.refresh().expect("focused production search input");
-    let started = Instant::now();
-    window.simulate_input("latency-fixture");
+    input.update_in(window, |input, window, cx| {
+        input.replace_all("latency-fixture", window, cx)
+    });
     window.run_until_parked();
-    window.executor().advance_clock(SEARCH_INPUT_DEBOUNCE);
     window.run_until_parked();
     let envelope = endpoint
         .try_recv_command_for_test()
@@ -5759,19 +5981,20 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
     assert!(request.generation > old_generation);
     panel.read_with(window, |panel, _| {
         assert!(
-            !panel.search_pending,
-            "current local rows are available for actions"
+            panel.search_pending,
+            "current local row waits for the first merge"
         );
-        assert!(panel.results.iter().any(|row| {
-            row.entry.source == ApplicationSource::StartMenu
-                && row.entry.name == "latency-fixture-app"
-        }));
-        assert!(!panel.results.iter().any(|row| row.entry.id == "old"));
-        eprintln!(
-            "search_latency local_publish_us={} visible_rows={}",
-            elapsed_microseconds(started),
-            panel.results.len()
+        assert_eq!(panel.results.len(), 1);
+        assert_eq!(panel.results[0].entry.id, "old");
+    });
+    window.executor().advance_clock(Duration::from_millis(150));
+    window.run_until_parked();
+    panel.read_with(window, |panel, _| {
+        assert!(
+            panel.search_pending,
+            "local rows wait for all current providers"
         );
+        assert_eq!(panel.results[0].entry.id, "old");
     });
     application.read_with(window, |application, _| {
         assert!(!application.index_search.complete);
@@ -5796,16 +6019,15 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
         );
     });
     panel.read_with(window, |panel, _| {
-        assert!(!panel.search_pending);
+        assert!(panel.search_pending);
         assert_eq!(
             panel.results.len(),
             1,
-            "stale reply cannot replace local rows"
+            "stale reply cannot replace the retained collection"
         );
     });
 
     // Hold the terminal reply while a current-query batch is already available.
-    let batch_started = Instant::now();
     application.update(window, |application, cx| {
         application.handle_indexer_notification(
             IndexerNotification::Event(IndexerEvent::SearchBatch(IndexSearchBatch {
@@ -5817,57 +6039,29 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
             cx,
         );
     });
-    window.run_until_parked();
-    window
-        .refresh()
-        .expect("paint ready rows before terminal reply");
+    panel.read_with(window, |panel, _| {
+        assert_eq!(
+            panel.results.len(),
+            1,
+            "intermediate batch does not replace the list"
+        );
+    });
     let accepted_rows = application.read_with(window, |application, _| {
         assert!(!application.index_search.complete);
         application.index_search.items.len()
     });
-    let ready_row = panel.read_with(window, |panel, _| {
-        eprintln!(
-            "search_latency nonterminal_publish_us={} accepted_indexed_rows={} visible_indexed_rows={}",
-            elapsed_microseconds(batch_started),
-            accepted_rows,
+    assert_eq!(accepted_rows, 1);
+    panel.read_with(window, |panel, _| {
+        assert!(
+            panel.search_pending,
+            "partial results cannot enable the retained collection"
+        );
+        assert!(
             panel
                 .results
                 .iter()
-                .filter(|row| row.entry.source == ApplicationSource::IndexedFile)
-                .count()
+                .all(|row| row.entry.source != ApplicationSource::IndexedFile)
         );
-        assert!(
-            !panel.search_pending,
-            "ready current-query rows must remain actionable before terminal"
-        );
-        assert_eq!(accepted_rows, 1);
-        panel
-            .results
-            .iter()
-            .position(|row| {
-                row.entry.source == ApplicationSource::IndexedFile
-                    && row.entry.target == r"C:\synthetic\latency-fixture-ready.txt"
-            })
-            .expect("ready current-query file must publish without the terminal batch")
-    });
-    assert!(
-        window
-            .debug_bounds(["quick-launch-result-row-0", "quick-launch-result-row-1"][ready_row])
-            .is_some(),
-        "ready result must reach the production virtual list, not only session storage"
-    );
-    panel.update_in(window, |panel, window, cx| {
-        panel.enter_action_mode(ready_row, window, cx);
-        let mode = panel
-            .action_mode
-            .as_ref()
-            .expect("ready indexed result can enter actions before terminal");
-        assert_eq!(
-            mode.target().entry.target,
-            r"C:\synthetic\latency-fixture-ready.txt"
-        );
-        panel.exit_action_mode(window, cx);
-        assert!(panel.action_mode.is_none());
     });
     application.update(window, |application, cx| {
         application.handle_indexer_notification(
@@ -5910,7 +6104,9 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
     });
     let accepted_actions =
         application.read_with(window, |application, _| application.pending_actions.len());
-    window.simulate_input("-new-query");
+    input.update_in(window, |input, window, cx| {
+        input.replace_all("latency-fixture-new-query", window, cx)
+    });
     panel.update_in(window, |panel, window, cx| {
         assert!(
             panel.search_pending,
@@ -5945,7 +6141,6 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
             )),
         "retained rows cannot emit another native open"
     );
-    window.executor().advance_clock(SEARCH_INPUT_DEBOUNCE);
     window.run_until_parked();
     let newer_envelope = endpoint
         .try_recv_command_for_test()
@@ -6000,9 +6195,10 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
     });
     panel.update_in(window, |panel, window, cx| panel.focus_search(window, cx));
     window.simulate_keystrokes("ctrl-a");
-    window.simulate_input("latency-fixture");
+    input.update_in(window, |input, window, cx| {
+        input.replace_all("latency-fixture", window, cx)
+    });
     window.run_until_parked();
-    window.executor().advance_clock(SEARCH_INPUT_DEBOUNCE);
     window.run_until_parked();
     let action_envelope = endpoint
         .try_recv_command_for_test()
@@ -6017,18 +6213,20 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
             IndexerNotification::Event(IndexerEvent::SearchBatch(IndexSearchBatch {
                 generation: action_request.generation,
                 items: vec![item("latency-fixture-ready.txt")],
-                complete: false,
+                complete: true,
                 elapsed_us: 20,
             })),
             cx,
         );
     });
+    application.read_with(window, |app, _| assert!(app.index_search.complete));
+    window.run_until_parked();
     panel.update_in(window, |panel, window, cx| {
         let row = panel
             .results
             .iter()
             .position(|row| row.entry.target == r"C:\synthetic\latency-fixture-ready.txt")
-            .expect("fresh nonterminal result");
+            .expect("fresh completed result");
         assert!(!panel.search_pending);
         panel.select_result(row, cx);
         panel.focus_search(window, cx);
@@ -6052,13 +6250,16 @@ fn search_latency_ready_indexed_rows_publish_before_terminal_batch(cx: &mut Test
             nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(open))
                 if open.target == r"C:\synthetic\latency-fixture-ready.txt")
         })
-        .expect("ready indexed row dispatches through real Enter before terminal");
+        .expect("completed indexed row dispatches through the original Enter action");
     application.read_with(window, |application, _| {
         assert_eq!(
             application.pending_actions[&ready_command.id].trigger,
             QuickLaunchActionTrigger::Enter
         );
-        assert!(!application.index_search.complete);
+        assert!(
+            application.index_search.query.is_empty(),
+            "successful execution retires its search"
+        );
     });
 }
 
@@ -6201,8 +6402,8 @@ fn result_ux_retained_rows_and_pending_have_distinct_state(cx: &mut TestAppConte
         .expect("render pending without pretending no match");
     assert!(
         window
-            .debug_bounds("quick-launch-results-progress")
-            .is_some()
+            .debug_bounds("quick-launch-search-feedback")
+            .is_none()
     );
     assert!(window.debug_bounds("quick-launch-results-empty").is_none());
     panel.update_in(window, |panel, _, cx| {
@@ -6244,6 +6445,212 @@ fn result_ux_failed_query_does_not_reenable_retained_rows(cx: &mut TestAppContex
             .debug_bounds("quick-launch-result-actions-0")
             .is_none()
     );
+}
+
+#[test]
+fn terminal_phonetic_fallback_does_not_replace_published_normal_rows() {
+    let normal = search_result("normal", ApplicationSource::StartMenu);
+    let fallback = search_result("phonetic", ApplicationSource::IndexedFile);
+    let rows = stable_indexed_results(std::slice::from_ref(&normal), vec![fallback.clone()]);
+    assert_eq!(rows, vec![normal, fallback]);
+}
+
+#[gpui_kit::test]
+fn normal_mode_keeps_partial_index_batches_private_until_terminal(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temporary, application, _platform) = quick_launch_application_fixture(cx);
+    let (bridge, endpoint) = crate::runtime::indexer_bridge(8);
+    endpoint.connect_for_test();
+    application.update(cx, |app, _| {
+        app.indexer = Rc::new(bridge);
+        app.index_status = Some(IndexStatus {
+            phase: nxtools_protocol::IndexPhase::Ready,
+            indexed_items: 3,
+            drives: Vec::new(),
+            last_error: None,
+        });
+    });
+    let (panel, window) = quick_launch_panel_fixture(
+        cx,
+        vec![search_result("previous", ApplicationSource::StartMenu)],
+    );
+    window.update(|window, cx| {
+        application.update(cx, |app, _| {
+            app.popup = Some(QuickLaunchWindow {
+                window: window.window_handle(),
+                panel: panel.downgrade(),
+                native_window_handle: 1,
+            });
+        });
+    });
+    panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
+        panel.focus_search(window, cx);
+    });
+    window.refresh().expect("focused indexed search");
+    panel.update_in(window, |panel, window, cx| {
+        panel.search_input.update(cx, |input, cx| {
+            input.replace_all("fixture-indexed", window, cx)
+        })
+    });
+    window.run_until_parked();
+    window.run_until_parked();
+    let envelope = endpoint
+        .try_recv_command_for_test()
+        .expect("indexed request");
+    let nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(request)) =
+        envelope.message
+    else {
+        panic!("expected indexed search");
+    };
+    let item = |name: &str| IndexSearchItem {
+        name: name.into(),
+        path: format!(r"C:\synthetic\{name}"),
+        is_directory: false,
+        score: 0,
+        size_bytes: None,
+        modified_at_unix_ms: None,
+    };
+    let deliver =
+        |window: &mut gpui_kit::VisualTestContext, items: Vec<IndexSearchItem>, complete: bool| {
+            application.update(window, |app, cx| {
+                app.handle_indexer_notification(
+                    IndexerNotification::Event(IndexerEvent::SearchBatch(IndexSearchBatch {
+                        generation: request.generation,
+                        items,
+                        complete,
+                        elapsed_us: 25,
+                    })),
+                    cx,
+                )
+            });
+        };
+    deliver(window, vec![item("fixture-indexed-first.txt")], false);
+    deliver(window, vec![item("fixture-indexed-second.txt")], false);
+    panel.read_with(window, |panel, _| {
+        assert!(panel.search_pending);
+        assert_eq!(panel.results[0].entry.id, "previous");
+    });
+    window.executor().advance_clock(Duration::from_secs(1));
+    window.run_until_parked();
+    panel.read_with(window, |panel, _| {
+        assert!(panel.search_pending);
+        assert_eq!(panel.results[0].entry.id, "previous");
+    });
+    deliver(window, vec![item("fixture-indexed-third.txt")], false);
+    panel.read_with(window, |panel, _| {
+        assert!(panel.search_pending);
+        assert_eq!(panel.results[0].entry.id, "previous");
+    });
+    deliver(window, Vec::new(), true);
+    panel.read_with(window, |panel, _| {
+        assert!(!panel.search_pending);
+        assert_eq!(panel.results.len(), 3);
+        assert_eq!(panel.selected, 0);
+    });
+    panel.update_in(window, |panel, window, cx| {
+        panel.enter_action_mode(0, window, cx);
+        assert!(
+            panel.action_mode.is_some(),
+            "only the complete current set enters actions"
+        );
+        panel.exit_action_mode(window, cx);
+    });
+    window.run_until_parked();
+    panel.read_with(window, |panel, _| assert_eq!(panel.results.len(), 3));
+}
+
+#[gpui_kit::test]
+fn normal_terminal_commits_once_and_rejects_retired_query_notifications(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_temporary, application, _platform) = quick_launch_application_fixture(cx);
+    let (bridge, endpoint) = crate::runtime::indexer_bridge(8);
+    endpoint.connect_for_test();
+    application.update(cx, |app, _| {
+        app.indexer = Rc::new(bridge);
+        app.index_status = Some(IndexStatus {
+            phase: nxtools_protocol::IndexPhase::Ready,
+            indexed_items: 1,
+            drives: Vec::new(),
+            last_error: None,
+        });
+    });
+    let (panel, window) = quick_launch_panel_fixture(cx, Vec::new());
+    window.update(|window, cx| {
+        application.update(cx, |app, _| {
+            app.popup = Some(QuickLaunchWindow {
+                window: window.window_handle(),
+                panel: panel.downgrade(),
+                native_window_handle: 1,
+            });
+        })
+    });
+    panel.update_in(window, |panel, window, cx| {
+        panel.application = application.downgrade();
+        panel.focus_search(window, cx);
+    });
+    window.refresh().expect("focused terminal search");
+    panel.update_in(window, |panel, window, cx| {
+        panel.search_input.update(cx, |input, cx| {
+            input.replace_all("fixture-terminal", window, cx)
+        })
+    });
+    window.run_until_parked();
+    window.run_until_parked();
+    let envelope = endpoint
+        .try_recv_command_for_test()
+        .expect("indexed request");
+    let nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(request)) =
+        envelope.message
+    else {
+        panic!("expected indexed search");
+    };
+    application.update(window, |app, cx| {
+        app.handle_indexer_notification(
+            IndexerNotification::Event(IndexerEvent::SearchBatch(IndexSearchBatch {
+                generation: request.generation,
+                items: vec![IndexSearchItem {
+                    name: "fixture-terminal.txt".into(),
+                    path: r"C:\synthetic\fixture-terminal.txt".into(),
+                    is_directory: false,
+                    score: 0,
+                    size_bytes: None,
+                    modified_at_unix_ms: None,
+                }],
+                complete: true,
+                elapsed_us: 12,
+            })),
+            cx,
+        )
+    });
+    let first = panel.read_with(window, |panel, _| {
+        assert!(!panel.search_pending);
+        panel.results.to_vec()
+    });
+    window.executor().advance_clock(Duration::from_millis(150));
+    window.run_until_parked();
+    panel.read_with(window, |panel, _| assert_eq!(panel.results.to_vec(), first));
+    panel.update_in(window, |panel, window, cx| {
+        panel
+            .search_input
+            .update(cx, |input, cx| input.set_value("new-input", window, cx));
+        panel.schedule_search("new-input".into(), cx);
+    });
+    application.update(window, |app, cx| {
+        app.handle_indexer_notification(
+            IndexerNotification::Event(IndexerEvent::SearchBatch(IndexSearchBatch {
+                generation: request.generation,
+                items: Vec::new(),
+                complete: true,
+                elapsed_us: 22,
+            })),
+            cx,
+        )
+    });
+    panel.read_with(window, |panel, _| {
+        assert!(panel.search_pending);
+        assert_eq!(panel.results.to_vec(), first);
+    });
 }
 
 #[path = "refresh_tests.rs"]
@@ -6305,9 +6712,12 @@ fn assert_search_retirement_frame(cx: &mut TestAppContext, gesture: RetirementGe
         panel.focus_search(window, cx);
     });
     window.refresh().expect("focused production input");
-    window.simulate_input("retirement-fixture");
+    panel.update_in(window, |panel, window, cx| {
+        panel.search_input.update(cx, |input, cx| {
+            input.replace_all("retirement-fixture", window, cx)
+        })
+    });
     window.run_until_parked();
-    window.executor().advance_clock(SEARCH_INPUT_DEBOUNCE);
     window.run_until_parked();
     let search = endpoint
         .try_recv_command_for_test()
@@ -6409,10 +6819,97 @@ fn assert_search_retirement_frame(cx: &mut TestAppContext, gesture: RetirementGe
         assert_ne!(application.index_search.generation, request.generation);
         assert!(application.index_search.items.is_empty());
     });
-    window.executor().advance_clock(SEARCH_INPUT_DEBOUNCE);
     window.run_until_parked();
     assert!(
         endpoint.try_recv_command_for_test().is_none(),
-        "retired debounce must not send another query"
+        "retired input must not dispatch another query"
     );
 }
+
+#[test]
+fn indexed_terminal_keeps_already_displayed_extension_rows_beyond_normal_limit() {
+    let mut previous = (0..RESULT_LIMIT)
+        .map(|index| search_result(&format!("normal-{index}"), ApplicationSource::StartMenu))
+        .collect::<Vec<_>>();
+    previous.push(search_result(
+        "extension-script:fixture/provider/item",
+        ApplicationSource::CustomCommand,
+    ));
+    assert_eq!(
+        stable_indexed_results(&previous, previous.clone()),
+        previous
+    );
+}
+
+#[gpui_kit::test]
+fn indexed_ready_retry_keeps_retained_rows_inert_until_complete_replacement(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    let (_temporary, application, _platform) = quick_launch_application_fixture(cx);
+    let (bridge, endpoint) = crate::runtime::indexer_bridge(8);
+    endpoint.connect_for_test();
+    let (panel, window) = quick_launch_panel_fixture(
+        cx,
+        vec![search_result("current-local", ApplicationSource::StartMenu)],
+    );
+    panel.update_in(window, |panel, window, cx| {
+        panel
+            .search_input
+            .update(cx, |input, cx| input.set_value("stable", window, cx));
+        panel.committed_query = "stable".into();
+        panel.search_pending = false;
+    });
+    window.update(|window, cx| {
+        application.update(cx, |app, cx| {
+            app.indexer = Rc::new(bridge);
+            app.index_status = Some(IndexStatus {
+                phase: nxtools_protocol::IndexPhase::Ready,
+                indexed_items: 1,
+                drives: Vec::new(),
+                last_error: None,
+            });
+            app.popup = Some(QuickLaunchWindow {
+                window: window.window_handle(),
+                panel: panel.downgrade(),
+                native_window_handle: 1,
+            });
+            app.retry_index_search_after_ready(cx);
+        })
+    });
+    panel.read_with(window, |panel, _| assert!(panel.search_pending));
+    let envelope = endpoint
+        .try_recv_command_for_test()
+        .expect("same-query indexed retry");
+    let nxtools_protocol::Message::IndexerCommand(IndexerCommand::Search(request)) =
+        envelope.message
+    else {
+        panic!("indexed search")
+    };
+    application.update(window, |app, cx| {
+        app.handle_indexer_notification(
+            IndexerNotification::Event(IndexerEvent::SearchBatch(IndexSearchBatch {
+                generation: request.generation,
+                items: vec![IndexSearchItem {
+                    name: "stable.txt".into(),
+                    path: r"C:\synthetic\stable.txt".into(),
+                    is_directory: false,
+                    score: 10_000,
+                    size_bytes: None,
+                    modified_at_unix_ms: None,
+                }],
+                complete: true,
+                elapsed_us: 10,
+            })),
+            cx,
+        )
+    });
+    panel.read_with(window, |panel, _| {
+        assert_eq!(panel.results[0].entry.name, "stable.txt");
+        assert_eq!(panel.selected, 0);
+        assert_eq!(panel.results.len(), 1);
+    });
+}
+
+#[path = "normal_search_tests.rs"]
+mod normal_search_tests;

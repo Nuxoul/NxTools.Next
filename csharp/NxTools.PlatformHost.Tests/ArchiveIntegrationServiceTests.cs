@@ -200,17 +200,30 @@ internal static class ArchiveIntegrationServiceTests
         var store = new FakeArchiveIntegrationStore();
         var ledger = new MemoryLedger();
         var notified = 0;
-        var service = Enabled(store, ledger, () => notified++);
+        var service = new ArchiveIntegrationService(store, ledger, NullPlatformLog.Instance,
+            () => Executable, () => notified++, applyEnabled: true, _ => new ApprovalLease());
 
         var applied = service.Execute(Command("apply", 21, true, true, ".zip", ".7z"), Guid.NewGuid());
         Check(applied.State == ArchiveShellIntegrationStates.Applied && applied.AppliedRevision == 21 && applied.AppliedValues > 0,
             "explicit apply reports observed facts and revision");
         Check(ledger.Facts?.DesiredRevision == 21 && ledger.Facts.Values.Count == applied.AppliedValues, "facts persisted before success");
         Check(notified == 1, "association refresh hint after observed apply");
+        var refreshEvent = 0;
+        uint refreshFlags = 0;
+        WindowsArchiveIntegrationStore.NotifyAssociationsChanged((eventId, flags, _, _) =>
+        {
+            refreshEvent = eventId;
+            refreshFlags = flags;
+        });
+        Check(refreshEvent == 0x08000000 && (refreshFlags & 0x1000) != 0,
+            "association refresh flushes the Shell notification before Apply returns");
 
         var again = service.Execute(Command("apply", 22, true, false, ".zip"), Guid.NewGuid());
-        Check(again.State == ArchiveShellIntegrationStates.RevertRequired && again.AppliedRevision == 21,
-            "a changed desired revision cannot overwrite unreverted applied facts");
+        Check(again.State == ArchiveShellIntegrationStates.Applied && again.AppliedRevision == 22 &&
+            again.Removed == applied.AppliedValues && ledger.Facts?.DesiredRevision == 22 && notified == 2,
+            "a changed desired revision replaces the earlier applied facts through exact revert, then applies");
+        Check(ledger.Facts!.Values.All(fact => !fact.Target.KeyPath.Contains(@"\.7z", StringComparison.OrdinalIgnoreCase)) &&
+            store.SnapshotValues().Count == again.AppliedValues, "replacement leaves only the new revision's values");
 
         var modified = ledger.Facts!.Values.First(fact => fact.Target.KeyPath.EndsWith(@"\05test\command", StringComparison.OrdinalIgnoreCase)).Target;
         store.SeedValue(modified, ArchiveRegistryValue.String("user edit"));
@@ -219,18 +232,123 @@ internal static class ArchiveIntegrationServiceTests
 
         var reverted = service.Execute(Command("revert", 22, false, false), Guid.NewGuid());
         Check(reverted.State == ArchiveShellIntegrationStates.Reverted && reverted.Preserved == 1
-            && reverted.Removed == applied.AppliedValues - 1, "revert removes exact owned values and reports preserved modification");
+            && reverted.Removed == again.AppliedValues - 1, "revert removes exact owned values and reports preserved modification");
         Check(store.Value(modified)?.ContentEquals(ArchiveRegistryValue.String("user edit")) == true, "user-modified value preserved");
         Check(store.Value(foreign) is not null, "another application's OpenWithProgids value preserved");
-        Check(ledger.Facts is null && ledger.Deletes == 1, "applied facts retired only after exact revert");
+        Check(ledger.Facts is null && ledger.Deletes == 2, "applied facts retired by replacement and then by exact revert");
         Check(service.Execute(Command("status", 22, false, false), Guid.NewGuid()).State == ArchiveShellIntegrationStates.NotApplied,
             "observed status returns to not applied");
         return Task.CompletedTask;
     }
 
+    internal static Task SetDefaultClaimsClassAndExplorerChoice()
+    {
+        var store = new FakeArchiveIntegrationStore();
+        var ledger = new MemoryLedger();
+        var choices = new FakeDefaultClaim();
+        choices.Choices[".rar"] = "Applications\\Bandizip.exe";
+        var notified = 0;
+        var service = new ArchiveIntegrationService(store, ledger, NullPlatformLog.Instance,
+            () => Executable, () => notified++, applyEnabled: true, _ => new ApprovalLease(), choices);
+        var zipDefault = new ArchiveRegistryValueTarget(@"Software\Classes\.zip", "", @"Software\Classes\.zip");
+        var rarDefault = new ArchiveRegistryValueTarget(@"Software\Classes\.rar", "", @"Software\Classes\.rar");
+        store.SeedValue(rarDefault, ArchiveRegistryValue.String("rar_auto_file"));
+
+        var plan = ArchiveIntegrationPlan.Create(Executable, 1, new ArchiveIntegrationIntent(false, false, [".zip", ".rar"]) { SetDefault = true });
+        Check(plan.Changes.Any(change => change.Target == zipDefault && change.Value.ContentEquals(ArchiveRegistryValue.String("NxTools.Archive"))) &&
+            plan.Changes.Any(change => change.Target.KeyPath == @"Software\Classes\NxTools.Archive\DefaultIcon") &&
+            plan.Changes.Any(change => change.Target.KeyPath == @"Software\Classes\.zip\OpenWithProgids"),
+            "set_default claims the class default and carries the owned ProgID icon/open command");
+        var classIndex = plan.Changes.ToList().FindIndex(change => change.Target == zipDefault);
+        var openWithIndex = plan.Changes.ToList().FindIndex(change => change.Target.KeyPath == @"Software\Classes\.zip\OpenWithProgids");
+        Check(classIndex >= 0 && classIndex < openWithIndex, "class default precedes OpenWithProgids so reverse restore empties children first");
+        foreach (var change in plan.Changes) WindowsArchiveIntegrationStore.Validate(change.Target);
+        Check(ArchiveIntegrationPlan.Create(Executable, 1, new ArchiveIntegrationIntent(false, true, [".zip"])).Changes
+            .All(change => change.Target != zipDefault), "Open With alone never claims the class default");
+
+        var applied = service.Execute(Command("apply", 1, false, false, ".zip", ".rar") with { SetDefault = true }, Guid.NewGuid());
+        Check(applied.State == ArchiveShellIntegrationStates.Applied && applied.Failure is null && notified == 1,
+            "default claim applies, refreshes Explorer once and reads the resolution back");
+        Check(choices.Choices[".zip"] == "NxTools.Archive" && choices.Choices[".rar"] == "NxTools.Archive",
+            "a valid Explorer choice is written for every claimed extension");
+        Check(ledger.Facts!.PriorUserChoices![".rar"] == "Applications\\Bandizip.exe" && ledger.Facts.PriorUserChoices[".zip"] is null,
+            "the original Explorer choice is recorded with the facts before claiming");
+
+        var replaced = service.Execute(Command("apply", 2, false, false, ".zip", ".rar") with { SetDefault = true }, Guid.NewGuid());
+        Check(replaced.State == ArchiveShellIntegrationStates.Applied &&
+            ledger.Facts!.PriorUserChoices![".rar"] == "Applications\\Bandizip.exe",
+            "replacing keeps the original choice, never our own claim, as the prior");
+
+        choices.Choices[".zip"] = "Other.Zip"; // the user picked another program in Windows meanwhile
+        var reverted = service.Execute(Command("revert", 3, false, false), Guid.NewGuid());
+        Check(reverted.State == ArchiveShellIntegrationStates.Reverted &&
+            store.Value(rarDefault)?.ContentEquals(ArchiveRegistryValue.String("rar_auto_file")) == true &&
+            store.Value(zipDefault) is null, "revert restores the prior class default exactly and removes the created one");
+        Check(choices.Choices[".rar"] == "Applications\\Bandizip.exe" && choices.Choices[".zip"] == "Other.Zip",
+            "revert writes the original choice back and keeps a choice the user changed afterwards");
+
+        var locked = new FakeDefaultClaim { Locked = true };
+        var lockedResult = new ArchiveIntegrationService(new FakeArchiveIntegrationStore(), new MemoryLedger(), NullPlatformLog.Instance,
+            () => Executable, () => { }, applyEnabled: true, _ => new ApprovalLease(), locked)
+            .Execute(Command("apply", 4, false, false, ".zip") with { SetDefault = true }, Guid.NewGuid());
+        Check(lockedResult.State == ArchiveShellIntegrationStates.Applied && lockedResult.Failure == "user_choice_locked",
+            "a choice Explorer does not resolve keeps the applied facts and is reported, never hidden");
+
+        var alreadyOurs = new FakeDefaultClaim();
+        alreadyOurs.Choices[".zip"] = "NxTools.Archive"; // claimed by an earlier build without a recorded original
+        var oursLedger = new MemoryLedger();
+        var oursService = new ArchiveIntegrationService(new FakeArchiveIntegrationStore(), oursLedger, NullPlatformLog.Instance,
+            () => Executable, () => { }, applyEnabled: true, _ => new ApprovalLease(), alreadyOurs);
+        oursService.Execute(Command("apply", 6, false, false, ".zip") with { SetDefault = true }, Guid.NewGuid());
+        Check(oursLedger.Facts!.PriorUserChoices![".zip"] is null, "our own choice is never recorded as the original");
+        oursService.Execute(Command("revert", 7, false, false), Guid.NewGuid());
+        Check(alreadyOurs.Choices[".zip"] is null, "revert then removes the claim instead of re-writing it");
+
+        var untouched = new FakeDefaultClaim();
+        new ArchiveIntegrationService(new FakeArchiveIntegrationStore(), new MemoryLedger(), NullPlatformLog.Instance,
+            () => Executable, () => { }, applyEnabled: true, _ => new ApprovalLease(), untouched)
+            .Execute(Command("apply", 5, false, true, ".zip"), Guid.NewGuid());
+        Check(untouched.Writes == 0, "Open With only never writes an Explorer choice");
+        return Task.CompletedTask;
+    }
+
+    internal static Task UserChoiceProofIsStableAndMinuteScoped()
+    {
+        const string sid = "S-1-5-21-1000000000-2000000000-3000000000-1001";
+        var at = new DateTime(2026, 11, 16, 5, 15, 42, DateTimeKind.Utc);
+        // Pinned output of the implementation verified against every Windows-written UserChoice
+        // on the development machine (156 of 156 matched).
+        Check(UserChoiceHash.Compute(".zip", sid, "NxTools.Archive", at, UserChoiceHash.DefaultExperience) == "AI8U96r1/xg=",
+            "known proof for a fixed extension/user/ProgID/minute");
+        Check(UserChoiceHash.Compute(".zip", sid, "NxTools.Archive", at.AddSeconds(17), UserChoiceHash.DefaultExperience) == "AI8U96r1/xg=" &&
+            UserChoiceHash.Compute(".zip", sid, "NxTools.Archive", at.AddMinutes(1), UserChoiceHash.DefaultExperience) != "AI8U96r1/xg=",
+            "the proof covers the last-write minute only");
+        Check(UserChoiceHash.Compute(".ZIP", sid.ToLowerInvariant(), "nxtools.archive", at, UserChoiceHash.DefaultExperience) == "AI8U96r1/xg=",
+            "inputs are case-insensitive");
+        var resource = System.Text.Encoding.Unicode.GetBytes("xx" + UserChoiceHash.DefaultExperience + "yy");
+        Check(UserChoiceHash.FindExperience(resource) == UserChoiceHash.DefaultExperience &&
+            UserChoiceHash.FindExperience(System.Text.Encoding.Unicode.GetBytes("none")) is null,
+            "experience string is read from shell32 resources");
+        return Task.CompletedTask;
+    }
+
+    private sealed class FakeDefaultClaim : IArchiveDefaultClaim
+    {
+        internal readonly Dictionary<string, string?> Choices = new(StringComparer.OrdinalIgnoreCase);
+        internal bool Locked { get; init; }
+        internal int Writes;
+        public string? Current(string extension) => Choices.GetValueOrDefault(extension);
+        public void Set(string extension, string? progId) { Writes++; if (!Locked) Choices[extension] = progId; }
+        public bool Resolves(string extension, string progId) => Current(extension) == progId;
+    }
+
     internal static Task ApplyFailuresCompensateAndNeverReportApplied()
     {
-        var plan = ArchiveIntegrationPlan.Create(Executable, 5, new ArchiveIntegrationIntent(true, true, [".zip"]));
+        var plan = ArchiveIntegrationPlan.Create(Executable, 5,
+            new ArchiveIntegrationIntent(true, true, [".zip"])
+            {
+                MenuCommands = ArchiveIntegrationIntent.DefaultMenuCommands,
+            });
         for (var failAt = 1; failAt <= plan.Changes.Count; failAt += Math.Max(1, plan.Changes.Count / 4))
         {
             var store = new FakeArchiveIntegrationStore { FailWriteAt = failAt };
@@ -265,7 +383,11 @@ internal static class ArchiveIntegrationServiceTests
     // F-AC03: after a ledger failure every attempted value is restored in reverse even if one Restore fails.
     internal static Task LedgerFailureCompensatesEveryValueDespiteRestoreFailure()
     {
-        var plan = ArchiveIntegrationPlan.Create(Executable, 41, new ArchiveIntegrationIntent(true, true, [".zip"]));
+        var plan = ArchiveIntegrationPlan.Create(Executable, 41,
+            new ArchiveIntegrationIntent(true, true, [".zip"])
+            {
+                MenuCommands = ArchiveIntegrationIntent.DefaultMenuCommands,
+            });
         Check(plan.Changes.Count == 17, $"probe-equivalent plan has 17 values ({plan.Changes.Count})");
         var failing = plan.Changes[plan.Changes.Count - 1].Target; // first one restored (reverse order)
         var store = new FakeArchiveIntegrationStore { FailRestoreIdentity = failing.Identity };
@@ -352,7 +474,10 @@ internal static class ArchiveIntegrationServiceTests
         new(store, ledger, NullPlatformLog.Instance, () => Executable, notify, applyEnabled: true);
 
     private static ArchiveShellIntegrationCommand Command(string action, long revision, bool cascade, bool openWith, params string[] extensions) =>
-        new(ArchiveIntegrationService.WireVersion, action, revision, cascade, openWith, extensions);
+        new(ArchiveIntegrationService.WireVersion, action, revision, cascade, openWith, extensions)
+        {
+            MenuCommands = ArchiveIntegrationIntent.DefaultMenuCommands,
+        };
 
     private static void Check(bool value, string detail)
     {

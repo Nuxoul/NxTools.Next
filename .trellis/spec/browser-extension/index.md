@@ -4,6 +4,7 @@ Evidence: `repo:browser_extension/nxtools-interceptor/manifest.json`, `repo:brow
 
 ## Pre-Development Checklist
 Read [authority](../shared/architecture.md), [engineering/privacy](../shared/engineering.md), [extension contracts](contracts.md), [UI/current gaps](ui-guidelines.md) and download reference before capture/handoff changes. MV3 worker/content/page-hook/popup are different trust/lifecycle contexts; browser item ownership remains browser until acceptance+cancel success.
+Automatic ownership and external intake also require [controlled handoff](controlled-handoff.md): pause → Pending → durable Held → verified browser cancel → Commit. Held never expires automatically.
 
 ## Module layout (2026-10-22)
 - Background: `background.js` is a thin entry (listeners only). Dependencies are classic scripts sharing the worker global scope: the four `*-policy.js` modules plus `bg/*.js`. One ordered list must be identical in the entry `BACKGROUND_DEPENDENCIES` (Chrome `importScripts`, guarded by `typeof importScripts === "function"`) and manifest `background.scripts` (Firefox event page, dependencies first, entry last). Manifest also declares `minimum_chrome_version: "121"` because older Chromium rejects MV3 `background.scripts`.

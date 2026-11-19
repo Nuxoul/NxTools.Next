@@ -91,6 +91,8 @@ impl ArchiveBrowserContext {
                     | "Bzip2"
                     | "Xz"
                     | "Zstd"
+                    | "Alz"
+                    | "Egg"
                     | "Cab"
                     | "Iso"
                     | "Udf"

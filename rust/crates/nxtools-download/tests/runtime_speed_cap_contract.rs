@@ -132,6 +132,7 @@ fn runtime_cap_never_mutates_task_caps_in_memory_or_storage() {
                     headers: Vec::new(),
                     cookie: None,
                     referrer: None,
+                    source_page: None,
                     certificate_policy: Default::default(),
                     connection_limit: Some(1),
                     speed_limit_bytes_per_second: task_cap,

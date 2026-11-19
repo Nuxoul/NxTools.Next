@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NxTools · 扩展工作区</title>
+<style>
+:root{color-scheme:light;--base:#eff1f5;--rail:#e6e9ef;--surface:#fbfcfe;--text:#3c4057;--muted:#5a617a;--line:#c8cdda;--accent:#4354af;--wash:#e5e8fa;--on:#fff;--ok:#286042;--ok-bg:#e5efe6;--warn:#79491b;--warn-bg:#f8ecdb;--bad:#9b2d46;--bad-bg:#f8e2e7;--dim:#e9ebf1;--focus:#3759c0;--shadow:rgba(39,44,72,.10);font:14px/1.5 "Microsoft YaHei UI","Microsoft YaHei",system-ui,sans-serif}
+:root[data-theme=dark]{color-scheme:dark;--base:#303446;--rail:#292c3c;--surface:#363a4e;--text:#c6d0f5;--muted:#b4bfe2;--line:#555a73;--accent:#babbf1;--wash:#414568;--on:#25283d;--ok:#a6d6ab;--ok-bg:#3c504d;--warn:#f5c795;--warn-bg:#554637;--bad:#f5a8b6;--bad-bg:#594052;--dim:#42465c;--focus:#a6c4ff;--shadow:rgba(8,10,24,.35)}
+*,*::before,*::after{box-sizing:border-box} body{margin:0;color:var(--text);background:var(--base);overflow:hidden}button,input,select{font:inherit;color:inherit}button,select,summary{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.55}button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:2px solid var(--focus);outline-offset:3px}button{white-space:nowrap}h1,h2,h3,p{margin:0}small{font-size:12px}svg.ico{width:17px;height:17px;flex:none;vertical-align:middle} [hidden]{display:none!important}
+.app{height:100dvh;display:grid;grid-template-columns:176px minmax(0,1fr);grid-template-rows:36px minmax(0,1fr)}
+.titlebar{grid-column:1/-1;background:var(--surface);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;padding:0 13px;font-size:12px}.brand{display:flex;align-items:center;gap:8px}.mark{width:21px;height:21px;border-radius:5px;background:var(--accent);color:var(--on);display:grid;place-items:center;font:700 11px "Segoe UI",sans-serif;letter-spacing:-.05em}.brand strong{font:650 14px "Segoe UI",sans-serif}.title-section{color:var(--muted);padding-left:8px;border-left:1px solid var(--line)}.preview-tag{color:var(--muted);font-size:11px;border:1px solid var(--line);border-radius:5px;padding:2px 7px}
+.rail{grid-column:1;display:flex;flex-direction:column;min-height:0;background:var(--rail);border-right:1px solid var(--line);padding:17px 11px 12px}.rail-label{color:var(--muted);font-size:11px;margin:0 8px 8px}.nav-item{display:flex;align-items:center;gap:9px;height:33px;border-radius:6px;padding:0 9px;margin-bottom:3px;font-size:13px;color:var(--muted)}.nav-item.current{background:var(--wash);color:var(--accent);font-weight:710}.rail-bottom{margin-top:auto}.theme{width:100%;justify-content:flex-start!important}
+main{grid-column:2;min-width:0;min-height:0;display:flex;flex-direction:column;container-type:inline-size}.mast{padding:16px 22px 0;background:var(--surface);border-bottom:1px solid var(--line);flex:none}.heading{display:flex;align-items:center;justify-content:space-between;gap:12px}.heading h1{font-size:24px;line-height:1.3;letter-spacing:-.035em;font-weight:760}.heading p{font-size:12px;color:var(--muted);margin-top:3px}.heading-actions{display:flex;align-items:center;gap:8px}.btn{display:inline-flex;justify-content:center;align-items:center;gap:6px;min-height:32px;padding:0 10px;border:1px solid var(--line);border-radius:6px;background:var(--surface);font-weight:600;font-size:12px;line-height:1.25}.btn:hover:not(:disabled){background:var(--dim)}.btn.primary{background:var(--accent);color:var(--on);border-color:var(--accent)}.btn.primary:hover:not(:disabled){filter:brightness(.94)}.btn.danger{color:var(--bad)}.btn.icon{padding:0;width:32px}.tabs{display:flex;gap:23px;align-items:stretch;margin-top:10px}.tabs button{min-height:32px;border:0;padding:0 1px;background:none;color:var(--muted);border-bottom:2px solid transparent;font-size:12px;font-weight:650}.tabs button[aria-current=page]{color:var(--accent);border-color:var(--accent);font-weight:760}.tabs .count{margin-left:4px;color:inherit;font-size:11px}
+.content{padding:14px 22px 18px;min-height:0;overflow:auto;scrollbar-gutter:stable}.attention{min-height:61px;border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:7px;padding:8px 10px;background:var(--surface);display:flex;align-items:center;gap:10px;margin-bottom:14px}.attention .symbol{background:var(--wash);color:var(--accent);width:34px;height:34px;border-radius:7px;display:grid;place-items:center;flex:none}.attention strong{font-weight:750;display:block;font-size:13px}.attention p{font-size:12px;color:var(--muted);margin-top:1px}.attention .btn{margin-left:auto}
+.filters{display:flex;justify-content:space-between;gap:9px;align-items:center;margin-bottom:10px}.search{position:relative;max-width:365px;min-width:135px;flex:1;display:flex;align-items:center}.search svg{position:absolute;left:9px;color:var(--muted);pointer-events:none}.search input,.field input,.field select,.filters select{width:100%;min-height:32px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:5px 9px;min-width:0;font-size:13px}.search input{padding-left:33px}.search input::placeholder{color:var(--muted)}.filters select{width:auto}.filters-side{display:flex;align-items:center;gap:10px;white-space:nowrap}.result-count{font-size:11px;color:var(--muted)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}.tile{--tint:var(--wash);text-align:left;display:grid;grid-template-rows:auto 1fr auto;gap:6px;min-width:0;min-height:120px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--surface);white-space:normal;box-shadow:0 1px 0 var(--shadow)}.tile:hover{border-color:var(--accent);background:color-mix(in srgb,var(--surface),var(--wash) 31%)}.tile-head,.tile-foot{display:flex;align-items:center;gap:7px;min-width:0}.tile-head strong{font-size:13px;font-weight:735;line-height:1.25}.tile p{font-size:12px;color:var(--muted);line-height:1.5;align-self:start}.app-icon{width:29px;height:29px;border-radius:6px;display:inline-grid;place-items:center;flex:none;color:var(--accent);background:var(--wash)}.app-icon.clip{color:var(--ok);background:var(--ok-bg)}.app-icon.download{color:var(--warn);background:var(--warn-bg)}.app-icon.tool{color:var(--muted);background:var(--dim)}.tile-foot{padding-top:6px;border-top:1px solid var(--line)}.tile-foot .route{flex:1;font-size:11px;color:var(--muted);overflow-wrap:anywhere}.tile-foot>.ico{width:13px;height:13px;color:var(--muted)}.tag{min-height:20px;display:inline-flex;align-items:center;gap:4px;padding:1px 6px;white-space:nowrap;border-radius:4px;background:var(--dim);color:var(--muted);font-size:10px;font-weight:690;line-height:1.4}.tag.ok{background:var(--ok-bg);color:var(--ok)}.tag.warn{background:var(--warn-bg);color:var(--warn)}.tag.bad{background:var(--bad-bg);color:var(--bad)}.empty{display:grid;place-items:center;text-align:center;border:1px dashed var(--line);border-radius:8px;padding:20px 14px;min-height:160px;color:var(--muted)}.empty h2{font-size:15px;color:var(--text);margin-bottom:4px}.empty .btn{margin-top:12px}
+@container(max-width:775px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}.mast{padding-inline:18px}.content{padding-inline:18px}}@container(max-width:510px){.tiles{grid-template-columns:minmax(0,1fr)}.result-count{display:none}.heading p{display:none}.heading h1{font-size:20px}.mast,.content{padding-inline:10px}.attention p{display:none}}
+@media(max-width:660px){.app{grid-template-columns:54px minmax(0,1fr)}.rail{padding:12px 6px 8px}.rail-label,.rail .nav-item span,.rail .theme span{display:none}.nav-item,.rail .theme{justify-content:center!important;padding:0}.heading-actions .tools-label{display:none}.heading-actions .tools{width:32px;padding:0}.tabs{gap:14px}.sheet[open]{width:100%}}
+.activity-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}.activity-bar h2{font-size:14px}.activity-bar label{color:var(--muted);font-size:12px;white-space:nowrap}.activity-list{display:grid;gap:6px}.event{display:grid;grid-template-columns:44px minmax(0,1fr) auto;gap:8px;align-items:center;border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:8px 9px}.event time{font:12px "Segoe UI",sans-serif;color:var(--muted)}.event strong{font-size:12px;display:block}.event p{font-size:12px;color:var(--muted)}.event .tag{margin-right:6px}.menu-wrap{position:relative}.menu{position:absolute;z-index:5;right:0;top:calc(100% + 5px);min-width:140px;box-shadow:0 5px 18px var(--shadow);background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:4px}.menu button{width:100%;display:flex;gap:8px;align-items:center;text-align:left;padding:5px 7px;min-height:31px;border:0;background:transparent;border-radius:4px;font-size:12px}.menu button:hover{background:var(--wash)}
+.ref-dialog{padding:0;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--text);width:min(515px,calc(100vw - 24px));max-width:none;max-height:calc(100dvh - 30px);box-shadow:0 12px 35px var(--shadow)}.ref-dialog::backdrop,.sheet::backdrop{background:rgba(28,31,52,.34)}.ref-dialog[open],.sheet[open]{display:flex;flex-direction:column}.sheet{margin:36px 0 0 auto;inset:0 0 auto auto;width:min(420px,100vw);height:calc(100dvh - 36px);max-height:none;max-width:none;padding:0;border:none;border-left:1px solid var(--line);background:var(--surface);color:var(--text);box-shadow:-12px 0 38px var(--shadow)}.panel-header{display:flex;align-items:flex-start;justify-content:space-between;padding:13px 15px 10px;gap:10px;border-bottom:1px solid var(--line);flex:none}.panel-header h2{font-size:17px;line-height:1.32}.panel-header p{font-size:12px;color:var(--muted);margin-top:3px}.dialog-body,.panel-body{padding:12px 15px;overflow:auto;min-height:0;flex:1;display:flex;flex-direction:column;gap:11px}.panel-footer,.dialog-footer{border-top:1px solid var(--line);padding:8px 15px;display:flex;justify-content:flex-end;align-items:center;gap:7px;flex:none;background:var(--surface)}.footer-note{margin-right:auto;color:var(--muted);font-size:11px}.panel-tabs{padding:0 15px;margin-top:0;border-bottom:1px solid var(--line);flex:none}.panel-tabs button{min-height:36px}.subhead{font-size:13px;font-weight:730;margin-bottom:5px}.notice{border:1px solid var(--line);border-radius:7px;background:var(--wash);padding:8px 10px;font-size:12px;color:var(--text)}.notice.warn{background:var(--warn-bg);color:var(--warn)}.notice.bad{background:var(--bad-bg);color:var(--bad)}.notice.ok{background:var(--ok-bg);color:var(--ok)}.notice strong{display:block;margin-bottom:2px}.notice .btn{margin-top:6px}.use-route{border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:12px}.use-route strong{display:block;font-weight:720;margin-bottom:4px}.use-route p,.muted{color:var(--muted);font-size:12px}.steps{display:flex;gap:5px;align-items:center;flex-wrap:wrap}.step{background:var(--dim);border-radius:4px;padding:2px 5px}.field{display:grid;gap:4px;font-size:12px}.field label{font-weight:670}.field small{color:var(--muted)}.inline{display:flex;align-items:center;gap:7px}.split{justify-content:space-between}.meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 13px;font-size:12px;margin:0}.meta dt{color:var(--muted)}.meta dd{margin:0;overflow-wrap:anywhere}.section-rule{border-top:1px solid var(--line);padding-top:8px}.seg{display:flex;flex-wrap:wrap;gap:6px}.seg button[aria-pressed=true]{background:var(--wash);color:var(--accent);border-color:var(--accent)}.version{font:650 17px/1.25 "Segoe UI",sans-serif}.feedback{position:fixed;z-index:10;right:14px;bottom:12px;max-width:min(390px,calc(100vw - 28px));color:var(--text);padding:8px 11px;border:1px solid var(--line);background:var(--surface);box-shadow:0 4px 18px var(--shadow);border-radius:7px;font-size:12px}
+@media(prefers-reduced-motion:no-preference){.btn,.tile{transition:background-color .12s,border-color .12s}}
+@media(max-height:510px){.mast{padding-top:10px}.tabs{margin-top:5px}.panel-tabs{margin-top:0}.content{padding-top:9px}.attention{min-height:48px;margin-bottom:9px;padding-block:5px}.attention .symbol{width:30px;height:30px}.filters{margin-bottom:8px}.tiles{gap:8px}.tile{min-height:103px;padding-block:8px;gap:4px}.tile-foot{padding-top:4px}}
+</style>
+</head>
+<body>
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-puzzle" viewBox="0 0 24 24"><path d="M12 4H5a1 1 0 0 0-1 1v5h2a2 2 0 1 1 0 4H4v5a1 1 0 0 0 1 1h5v-2a2 2 0 1 1 4 0v2h5a1 1 0 0 0 1-1v-5h-2a2 2 0 1 1 0-4h2V5a1 1 0 0 0-1-1h-3V3a2 2 0 1 0-4 0z"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/></symbol>
+<symbol id="i-clip" viewBox="0 0 24 24"><path d="M8 5H5v15h14V5h-3M8 3h8v5H8zM8 12h8m-8 4h6"/></symbol>
+<symbol id="i-box" viewBox="0 0 24 24"><path d="M4 8h16v12H4zM3 4h18v4H3zm7 8h4"/></symbol>
+<symbol id="i-tool" viewBox="0 0 24 24"><path d="M4 4h6v6H4zm10 0h6v6h-6zM4 14h6v6H4zm10 0h6v6h-6z"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="i-inbox" viewBox="0 0 24 24"><path d="m4 4-2 10v6h20v-6L20 4zm-2 10h6l2 3h4l2-3h6M12 6v5m0 2v.1"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15a8.5 8.5 0 0 1-11-11 8.5 8.5 0 1 0 11 11Z"/></symbol>
+<symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2"/></symbol>
+<symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="m10 6-6 6 6 6m-6-6h16"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13 4-4m-7 1-3 3a4 4 0 0 0 6 6l3-3m-2-8 3-3a4 4 0 0 1 6 6l-3 3"/></symbol>
+</defs></svg>
+<div class="app">
+ <header class="titlebar"><div class="brand"><span class="mark" aria-hidden="true">Nx</span><strong>NxTools</strong><span class="title-section">扩展</span></div><span class="preview-tag">设计预览 · 示例数据</span></header>
+ <aside class="rail" aria-label="工作区"><div class="rail-label">工作区</div><div id="rail-nav"></div><div class="rail-bottom"><button class="btn theme" id="theme" type="button"></button></div></aside>
+ <main aria-label="扩展管理">
+  <header class="mast"><div class="heading"><div><h1>扩展</h1><p>管理剪贴板、下载和速启里的附加功能。</p></div><div class="heading-actions"><div class="menu-wrap"><button class="btn tools" id="tools" aria-expanded="false" aria-controls="tools-menu" type="button"></button><div class="menu" id="tools-menu" hidden></div></div><button class="btn primary" id="import" type="button"></button></div></div>
+  <nav class="tabs" aria-label="扩展视图" id="tabs"></nav></header>
+  <div class="content" id="content">
+   <section class="attention" id="attention" aria-label="待处理摘要"></section>
+   <div class="filters" id="filters"><label class="search" id="search-wrap"><input type="search" id="query" aria-label="搜索扩展" placeholder="搜索名称、功能或关键词"></label><div class="filters-side"><span class="result-count" id="result-count" aria-live="polite"></span><select id="category" aria-label="使用位置"><option value="all">所有使用位置</option><option>剪贴板</option><option>下载</option><option>速启</option><option>其他工具</option></select></div></div>
+   <section id="results" aria-label="扩展目录"></section>
+   <section id="activity" aria-label="调用记录" hidden></section>
+  </div>
+ </main>
+</div>
+<dialog class="sheet" id="sheet" aria-labelledby="sheet-title"></dialog>
+<dialog class="ref-dialog" id="dialog" aria-labelledby="dialog-title"></dialog>
+<div class="feedback" role="status" id="feedback" hidden></div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const icon = name => `<svg class="ico" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><use href="#i-${name}"/></svg>`;
+const e = v => String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const items = [
+ {id:'clip',name:'剪贴板文本工具',description:'去重、格式化 JSON、解码文本，保留原文。',group:'剪贴板',where:'条目菜单',steps:['剪贴板','选中文本','扩展处理'],actions:['按行去重','格式化 JSON','百分号解码'],state:'ready',icon:'clip',style:'clip',source:'内置',version:'1.0.0',runtime:'Python'},
+ {id:'links',name:'下载链接清单',description:'复制所选下载任务的原始链接。',group:'下载',where:'任务菜单',steps:['下载','选择任务','扩展动作'],actions:['复制链接清单','复制 Markdown 清单'],state:'ready',icon:'download',style:'download',source:'内置',version:'1.0.0',runtime:'Python'},
+ {id:'proxy',name:'GitHub 公开链接镜像',description:'为公开下载链接添加自选镜像前缀。',group:'下载',where:'下载解析',steps:['下载','输入公开 GitHub 链接','下载解析'],actions:['改写公开资源链接'],state:'setup',icon:'link',style:'download',source:'内置',version:'1.0.0',runtime:'Python',field:'镜像前缀',setting:'',optIn:false},
+ {id:'docs',name:'文档搜索',description:'从速启搜索常用的开发文档。',group:'速启',where:'关键词 docs',steps:['速启','输入 docs 与搜索词'],actions:['打开文档搜索结果'],state:'ready',icon:'search',style:'',source:'本地',version:'1.0.0',keyword:'docs'},
+ {id:'notify',name:'下载完成提醒',description:'在下载任务完成后显示一条提醒。',group:'下载',where:'完成后触发',steps:['下载','任务完成后','显示提醒'],actions:['显示任务完成提醒'],state:'trust',icon:'download',style:'download',source:'本地示例',version:'1.1.0',runtime:'PowerShell',automation:true,event:true},
+ {id:'folders',name:'项目目录捷径',description:'一键打开常用的项目目录。',group:'其他工具',where:'扩展详情',steps:['扩展','项目目录捷径','命令与工具'],actions:['打开项目目录'],state:'off',icon:'tool',style:'tool',source:'本地示例',version:'1.0.0'}
+];
+const events = [
+ {time:'14:32',id:'proxy',mode:'自动 · 下载解析',message:'未填写镜像前缀，仍使用原始链接。',state:'失败',tone:'bad',action:'完成设置',page:'settings'},
+ {time:'14:27',id:'clip',mode:'手动 · 格式化 JSON',message:'生成了 1 条剪贴板记录，原文保留。',state:'完成',tone:'ok',action:'查看调用',page:'log'},
+ {time:'14:10',id:'notify',mode:'自动 · 下载完成',message:'上次运行超时；当前版本更换后需重新信任。',state:'失败',tone:'bad',action:'检查信任',page:'overview'},
+ {time:'13:48',id:'links',mode:'手动 · 复制链接清单',message:'复制了 3 条下载链接。',state:'完成',tone:'ok',action:'查看调用',page:'log'}
+];
+const demoPackage = {id:'sample',name:'文本行排序',description:'按字母顺序排列文本行，保留原文。',group:'剪贴板',where:'条目菜单',steps:['剪贴板','选中文本','扩展处理'],actions:['按字母排序'],state:'trust',icon:'clip',style:'clip',source:'本地 ZIP',version:'1.0.0',runtime:'Python'};
+const titleFor = {ready:'可用',setup:'待设置',trust:'待信任',off:'未启用',paused:'自动触发已暂停'};
+function importCandidate(){
+ if(packageCase==='new')return {...demoPackage};
+ return {id:'links',name:'下载链接清单',description:'复制所选下载任务的原始链接。',group:'下载',where:'任务菜单',steps:['下载','选择任务','扩展动作'],actions:['复制链接清单','复制 Markdown 清单'],state:'trust',icon:'download',style:'download',source:'本地 ZIP',version:packageCase==='replace'?'1.1.0':'1.0.0',runtime:'Python'};
+}
+const toneFor = {ready:'ok',setup:'warn',trust:'warn',off:'',paused:'bad'};
+const tabs = [['installed','已安装'],['attention','待处理'],['activity','调用记录']];
+let tab = 'installed', selected = null, panelPage = 'overview', activeEvent = null, modal = null, packageCase = 'new', failedOnly = false;
+const drafts = new Map();
+let feedbackTimer;
+const needs = item => ['setup','trust','paused'].includes(item.state);
+const status = item => `<span class="tag ${toneFor[item.state]}">${titleFor[item.state]}</span>`;
+const btn = (text, data, style='', ic='') => `<button type="button" class="btn ${style}" ${data}>${ic?icon(ic):''}${text}</button>`;
+function notify(message){ clearTimeout(feedbackTimer); $('feedback').textContent=message; $('feedback').hidden=false; feedbackTimer=setTimeout(()=>{$('feedback').hidden=true},2700); }
+function updateTheme(){const dark=document.documentElement.dataset.theme==='dark';$('theme').innerHTML=icon(dark?'sun':'moon')+`<span>${dark?'切换浅色':'切换深色'}</span>`;$('theme').setAttribute('aria-label',dark?'切换浅色':'切换深色');}
+function setTab(value, reset=false){tab=value;if(reset){$('query').value='';$('category').value='all';} $('content').scrollTop=0;render();}
+function render(){
+ const n=items.filter(needs).length;
+ $('tabs').innerHTML=tabs.map(([key,label])=>`<button type="button" data-tab="${key}" ${key===tab?'aria-current="page"':''}>${label}${key==='installed'||key==='attention'?`<span class="count">${key==='installed'?items.length:n}</span>`:''}</button>`).join('');
+ $('attention').hidden=tab!=='installed'||n===0;
+ $('attention').innerHTML=`<span class="symbol">${icon('inbox')}</span><div><strong>${n} 项需要处理</strong><p>${[['setup','项待设置'],['trust','项待信任'],['paused','项自动触发暂停']].map(([state,label])=>[items.filter(x=>x.state===state).length,label]).filter(([count])=>count).map(([count,label])=>`${count} ${label}`).join('，')}</p></div>${btn('查看待处理','data-tab="attention" data-reset')}`;
+ const showActivity=tab==='activity'; $('filters').hidden=showActivity; $('results').hidden=showActivity; $('activity').hidden=!showActivity;
+ if(showActivity){renderActivity();return;}
+ const term=$('query').value.trim().toLocaleLowerCase();const cat=$('category').value;
+ const shown=items.filter(x=>(tab!=='attention'||needs(x))&&(cat==='all'||x.group===cat)&&[x.name,x.description,x.group,x.where,...x.actions].join(' ').toLocaleLowerCase().includes(term));
+ $('result-count').textContent=`${shown.length} 项`;
+ if(!shown.length){const clear=term||cat!=='all';const title=clear?'没有匹配的扩展':tab==='attention'?'目前没有待处理事项':'还没有安装扩展';const desc=clear?'试试名称、功能、入口，或清除筛选。':tab==='attention'?'需要配置、确认信任或恢复时，会出现在这里。':'导入本地 ZIP 后，可以检查用途并决定是否启用。';$('results').innerHTML=`<div class="empty"><div><h2>${title}</h2><p>${desc}</p>${clear?btn('清除筛选','data-clear'):tab==='attention'?btn('返回已安装','data-tab="installed"'):btn('导入扩展','data-import','primary')}</div></div>`;return;}
+ $('results').innerHTML=`<div class="tiles">${shown.map(x=>`<button type="button" class="tile" data-open="${x.id}"><div class="tile-head"><span class="app-icon ${x.style}">${icon(x.icon)}</span><strong>${e(x.name)}</strong></div><p>${e(x.description)}</p><div class="tile-foot"><span class="route">${e(x.group)} · ${e(x.where)}</span>${status(x)}${icon('chevron')}</div></button>`).join('')}</div>`;
+}
+function renderActivity(){
+ const shown=events.filter(x=>!failedOnly||x.state==='失败');
+ $('activity').innerHTML=`<div class="activity-bar"><div><h2>本次会话</h2><p class="muted">手动与自动调用按时间排列，不显示原始输入。</p></div><label><input id="failed-only" type="checkbox" ${failedOnly?'checked':''}> 只看失败</label></div><div class="activity-list">${shown.map(x=>{const item=items.find(i=>i.id===x.id);return `<article class="event"><time>${x.time}</time><div><strong><span class="tag ${x.tone}">${x.state}</span>${e(item?.name??'已移除扩展')} · ${x.mode}</strong><p>${x.message}</p></div>${item?btn(x.action,`data-event="${events.indexOf(x)}"`):'<span class="muted">已移除</span>'}</article>`;}).join('')||'<div class="empty"><h2>没有匹配的调用记录</h2></div>'}</div>`;
+}
+let returnTo = '';
+function openItem(id,page='overview',event=null){selected=items.find(x=>x.id===id);if(!selected)return;returnTo=event?`[data-event="${events.indexOf(event)}"]`:`[data-open="${id}"]`;panelPage=page;activeEvent=event;renderSheet();if(!$('sheet').open)$('sheet').showModal();$('sheet-title').focus();}
+function renderSheet(){
+ const x=selected;if(!x)return;
+ const panes=[['overview','怎么用'],...(x.field?[['settings','设置']]:[]),...(x.event?[['auto','自动触发']]:[]),['source','来源']];
+ if(panelPage==='log')panes.push(['log','调用详情']);
+ let html='', footer=btn('关闭','data-close-sheet');
+ if(panelPage==='overview'){
+ const pending=x.state==='setup'?['填写扩展设置','保存镜像前缀后即可使用，原链接不会被修改。','去设置','data-page="settings"']:x.state==='trust'?['尚未信任此扩展','先检查来源和运行环境，再决定是否授权。','检查信任','data-review-trust']:x.state==='off'?['扩展尚未启用','启用不会执行动作，也不会打开自动触发。','启用扩展','data-enable']:x.state==='paused'?['自动触发已暂停','检查失败原因后恢复；不会重放旧事件。','查看自动触发','data-page="auto"']:null;
+ if(pending){html+=`<section class="notice warn"><strong>${pending[0]}</strong>${pending[1]}</section>`;footer+=btn(pending[2],pending[3],'primary');}
+ html+=`<section><h3 class="subhead">在哪使用</h3><div class="use-route"><div class="steps">${x.steps.map((step,i)=>`${i?icon('chevron'):''}<span class="step">${e(step)}</span>`).join('')}</div></div></section><section><h3 class="subhead">可以做什么</h3><div class="use-route">${x.actions.map(a=>`<div>${e(a)}</div>`).join('')}</div></section>`;
+ if(!pending)html+=`<p class="muted">打开详情不会执行扩展。</p>`;
+ if(x.id==='proxy'&&x.state==='ready'&&!x.optIn)html+='<div class="notice">未授权第三方镜像，将继续使用原始链接。</div>';
+ }else if(panelPage==='settings'){
+ const draft=drafts.get(x.id)??{value:x.setting,optIn:x.optIn};
+ html=`<section class="field"><label for="setting-field">${e(x.field)}（必填）</label><input id="setting-field" type="text" autocomplete="off" placeholder="https://…" value="${e(draft.value)}" aria-describedby="setting-help setting-error"><small id="setting-help">只处理明确公开的 GitHub 资源，不转发登录凭据。</small><div class="notice bad" role="alert" id="setting-error" hidden></div></section><label class="inline"><input id="mirror-opt-in" type="checkbox" ${draft.optIn?'checked':''}> 同意将公开链接交给第三方镜像</label><p class="muted">镜像能看到链接和内容。关闭时继续使用原始链接。</p>`;
+ if(activeEvent)html=`<div class="notice warn"><strong>最近失败</strong>${e(activeEvent.message)}</div>`+html;
+ footer=btn('取消修改','data-cancel-settings')+btn('保存设置','data-save','primary');
+ }else if(panelPage==='auto'){
+ html=`<div class="use-route inline split"><div><strong>下载任务完成时</strong><p>此项和「启用扩展」分开保存。</p></div><label><input type="checkbox" id="automatic" ${x.subscribed?'checked':''} ${x.state!=='ready'?'disabled':''}> 自动触发</label></div>${x.state==='paused'?'<div class="notice bad">连续三次失败，已暂停。恢复只等待下一次事件。</div>':''}`;
+ if(x.state==='paused')footer+=btn('恢复自动触发','data-resume','primary');
+ }else if(panelPage==='log'&&activeEvent){html=`<div class="notice ${activeEvent.tone}"><strong>${activeEvent.state} · ${activeEvent.time}</strong>${e(activeEvent.message)}</div><p class="muted">${e(activeEvent.mode)}</p>`;}
+ else{html=`<dl class="meta"><dt>来源</dt><dd>${e(x.source)}</dd><dt>版本</dt><dd>${e(x.version)}</dd><dt>运行环境</dt><dd>${e(x.runtime||'声明式，无需解释器')}</dd></dl>${x.runtime?'<div class="notice warn">脚本以当前用户权限运行。作者的权限声明不是系统访问限制。</div>':''}<section class="section-rule inline split"><span class="muted">扩展管理</span><div class="inline">${x.state==='ready'||x.state==='setup'||x.state==='paused'?btn('停用扩展','data-disable'):''}${btn('移除','data-remove','danger')}</div></section>`;}
+ $('sheet').innerHTML=`<header class="panel-header"><div><h2 id="sheet-title" tabindex="-1">${e(x.name)}</h2><p>${status(x)}　${e(x.group)} · ${e(x.where)}</p></div><button type="button" class="btn icon" aria-label="关闭详情" data-close-sheet>${icon('close')}</button></header><nav class="tabs panel-tabs" aria-label="扩展详情">${panes.map(([key,label])=>`<button type="button" data-page="${key}" ${key===panelPage?'aria-current="page"':''}>${label}</button>`).join('')}</nav><div class="panel-body">${html}</div><footer class="panel-footer">${footer}</footer>`;
+}
+function renderModal(){
+ let title='',text='',actions=''; const cancel=btn('取消','data-close-dialog');
+ if(modal==='choose'){
+ title='导入扩展'; text=`<div class="notice">请选择一个本地 ZIP 扩展包。原型用下列示例演示检查结果。</div><div class="seg" aria-label="导入示例">${[['new','新扩展'],['same','相同内容'],['replace','不同版本'],['broken','无效 ZIP']].map(([key,label])=>btn(label,`data-case="${key}" aria-pressed="${packageCase===key}"`)).join('')}</div><div class="use-route"><strong>${e(packageCase==='new'?'文本行排序.zip':packageCase==='broken'?'缺少清单.zip':packageCase==='same'?'下载链接清单-1.0.0.zip':'下载链接清单-1.1.0.zip')}</strong><p>检查不会运行程序或修改已安装的扩展。</p></div>`;actions=cancel+btn('检查扩展包','data-preview','primary');
+ }else if(modal==='review'){
+ const candidate=importCandidate();const match=items.find(x=>x.id===candidate.id);const existing=Boolean(match);const identical=existing&&match.version===candidate.version;const invalid=packageCase==='broken';
+ title=invalid?'无法导入扩展':identical?'扩展已安装':!existing?'确认导入':'确认替换';
+ if(invalid){text='<div class="notice bad" role="alert"><strong>ZIP 缺少 extension.json</strong>请向作者取得有效的扩展包，再重新选择。</div>';actions=cancel+btn('重新选择','data-rechoose','primary');}
+ else if(identical){text=`<div class="notice ok"><strong>${e(match.name)} ${e(match.version)}</strong>扩展内容相同，无需替换。现有配置不变。</div>`;actions=btn('关闭','data-close-dialog','primary');}
+ else {text=`<div><h3 class="subhead">${e(candidate.name)}</h3><p class="version">${existing?`${e(match.version)} → `:''}${e(candidate.version)}</p></div>${existing?'<div class="notice warn"><strong>替换后的变化</strong>扩展将停用并要求重新信任。普通设置恢复为新包默认值；如果有自动订阅，需要重新开启。扩展持久数据保留。</div>':'<div class="notice">导入后保持停用；导入不等于信任或启用。</div>'}<dl class="meta"><dt>来源</dt><dd>本地 ZIP</dd><dt>使用位置</dt><dd>${e(candidate.group)} · ${e(candidate.where)}</dd><dt>运行环境</dt><dd>Python</dd></dl><div class="notice warn">脚本信任后可使用当前用户权限；作者声明不是系统访问限制。</div>`;actions=cancel+btn(!existing?'导入扩展':'替换扩展','data-commit-import','primary');}
+ }else if(modal==='trust'){
+ title='检查来源与信任';text=`<dl class="meta"><dt>扩展</dt><dd>${e(selected.name)}</dd><dt>来源</dt><dd>${e(selected.source)}</dd><dt>运行环境</dt><dd>${e(selected.runtime)}（示例：已找到）</dd></dl><div class="notice warn">脚本可使用当前用户权限。请仅在确认来源和代码可信时继续。</div>`;actions=cancel+btn('确认信任','data-trust','primary');
+ }else if(modal==='remove'){
+ title='移除扩展';text=`<div class="notice warn">移除「${e(selected.name)}」后，它不再出现在使用入口中。扩展数据默认保留。</div><label><input id="clear-data" type="checkbox"> 同时清除扩展数据</label>`;actions=cancel+btn('移除扩展','data-confirm-remove','primary');
+ }else{
+ const copy={runtime:['运行环境','Python 3.12（示例）','集中查看解释器路径和探测结果；单个扩展仍可选择专用路径。'],chains:['下载解析链','当前没有手动配置的解析链','在此按域名指定解析器及其顺序；修改需明确保存。'],data:['保留数据','没有已保留的数据','移除扩展后选择保留的数据会显示在这里。']};const row=copy[modal];title=row[0];text=`<div class="use-route"><strong>${row[1]}</strong><p>${row[2]}</p></div>`;actions=btn('关闭','data-close-dialog');
+ }
+ $('dialog').innerHTML=`<header class="panel-header"><h2 id="dialog-title" tabindex="-1">${title}</h2><button type="button" class="btn icon" aria-label="关闭窗口" data-close-dialog>${icon('close')}</button></header><div class="dialog-body">${text}</div><footer class="dialog-footer">${actions}</footer>`;
+}
+function openModal(which){modal=which;renderModal(); if(!$('dialog').open)$('dialog').showModal();$('dialog-title').focus();}
+function setTools(open){$('tools').setAttribute('aria-expanded',String(open));$('tools-menu').hidden=!open;if(open)$('tools-menu').querySelector('button').focus();}
+function takeAction(ev){const t=ev.target.closest('button');if(!t)return;const d=t.dataset;
+ if(d.tab){setTab(d.tab,'reset' in d);$('tabs').querySelector('[aria-current]').focus();}
+ else if(d.open)openItem(d.open);
+ else if(d.event){const event=events[Number(d.event)];openItem(event.id,event.page,event);}
+ else if(d.page){panelPage=d.page;renderSheet();$('sheet').querySelector('[aria-current]')?.focus();}
+ else if('closeSheet' in d)$('sheet').close();
+ else if('import' in d){packageCase='new';openModal('choose');}
+ else if('clear' in d){$('query').value='';$('category').value='all';render();$('query').focus();}
+ else if(d.menu){setTools(false);$('tools').focus();openModal(d.menu);}
+ else if('closeDialog' in d)$('dialog').close();
+ else if(d.case){packageCase=d.case;renderModal();$('dialog').querySelector('[aria-pressed=true]').focus();}
+ else if('preview' in d)openModal('review');
+ else if('rechoose' in d)openModal('choose');
+ else if('commitImport' in d){const candidate=importCandidate();const index=items.findIndex(x=>x.id===candidate.id);if(index<0)items.push(candidate);else if(items[index].version!==candidate.version)items[index]=candidate;$('dialog').close();setTab('installed',true);notify('扩展已登记，尚未启用。');}
+ else if('reviewTrust' in d)openModal('trust');
+ else if('trust' in d){selected.state='off';$('dialog').close();render();renderSheet();$('sheet-title').focus();}
+ else if('enable' in d){selected.state=selected.field&&!selected.setting?'setup':'ready';render();renderSheet();$('sheet-title').focus();notify('已启用；没有执行扩展。');}
+ else if('disable' in d){selected.state='off';render();renderSheet();$('sheet-title').focus();notify('扩展已停用。');}
+ else if('resume' in d){selected.state='ready';render();renderSheet();$('sheet-title').focus();notify('已恢复自动触发，不会重放旧事件。');}
+ else if('cancelSettings' in d){drafts.delete(selected.id);panelPage='overview';renderSheet();$('sheet-title').focus();}
+ else if('save' in d){const field=$('setting-field');let valid=false;try {const url=new URL(field.value.trim());valid=url.protocol==='https:'&&Boolean(url.hostname)&&field.value.trim().endsWith('/');} catch{} if(!valid){$('setting-error').textContent='请输入以 / 结尾的完整 HTTPS 地址。';$('setting-error').hidden=false;field.setAttribute('aria-invalid','true');field.focus();return;} selected.setting=field.value.trim();selected.optIn=$('mirror-opt-in').checked;drafts.delete(selected.id);if(selected.state==='setup')selected.state='ready';render();panelPage='overview';activeEvent=null;renderSheet();$('sheet-title').focus();notify(selected.optIn?'设置已保存。':'设置已保存；未授权镜像，仍使用原始链接。');}
+ else if('remove' in d)openModal('remove');
+ else if('confirmRemove' in d){items.splice(items.indexOf(selected),1);drafts.delete(selected.id);const clear=$('clear-data').checked;$('dialog').close();$('sheet').close();render();$('query').focus();notify(clear?'扩展已移除，示例数据已清除。':'扩展已移除，数据保留。');}
+}
+$('import').innerHTML=icon('plus')+'导入扩展';$('import').dataset.import='';
+$('tools').innerHTML=icon('more')+'<span class="tools-label">管理</span>';$('tools').setAttribute('aria-label','扩展管理');
+$('tools-menu').innerHTML=[['runtime','运行环境','tool'],['chains','下载解析链','link'],['data','保留数据','box']].map(([key,label,i])=>`<button type="button" data-menu="${key}">${icon(i)}${label}</button>`).join('');
+$('rail-nav').innerHTML=[['download','下载'],['search','速启'],['clip','剪贴板'],['puzzle','扩展'],['box','归档'],['tool','其他工具']].map(([key,label])=>`<div class="nav-item ${key==='puzzle'?'current':''}" ${key==='puzzle'?'aria-current="page"':''}>${icon(key)}<span>${label}</span></div>`).join('');
+$('search-wrap').insertAdjacentHTML('afterbegin',icon('search'));
+$('theme').addEventListener('click',()=>{document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark';updateTheme();});
+$('tools').addEventListener('click',()=>setTools($('tools-menu').hidden));
+$('query').addEventListener('input',render);$('category').addEventListener('change',render);
+document.addEventListener('click',ev=>{if(!ev.target.closest('.menu-wrap')&&!$('tools-menu').hidden)setTools(false);takeAction(ev);});
+document.addEventListener('input',ev=>{if(['setting-field','mirror-opt-in'].includes(ev.target.id))drafts.set(selected.id,{value:$('setting-field').value,optIn:$('mirror-opt-in').checked});});
+document.addEventListener('change',ev=>{if(ev.target.id==='failed-only'){failedOnly=ev.target.checked;renderActivity();$('failed-only').focus();}if(ev.target.id==='automatic'){selected.subscribed=ev.target.checked;notify(selected.subscribed?'自动触发已开启，等待下次事件。':'自动触发已关闭。');}});
+document.addEventListener('keydown',ev=>{if(ev.key==='Escape'&&!$('tools-menu').hidden){setTools(false);$('tools').focus();}if((ev.ctrlKey||ev.metaKey)&&ev.key.toLowerCase()==='f'&&!$('dialog').open&&!$('sheet').open){ev.preventDefault();if(tab==='activity')setTab('installed');$('query').focus();}});
+$('sheet').addEventListener('close',()=>{selected=null;const trigger=$('content').querySelector(returnTo)||$('tabs').querySelector('[aria-current]');trigger?.focus({preventScroll:true});});
+updateTheme();render();
+</script>
+</body>
+</html>

@@ -289,8 +289,8 @@ Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch/search.rs`,
 `repo:rust/apps/nxtools-desktop/src/downloads/new_download_view.rs`,
 `repo:rust/apps/nxtools-desktop/src/ui/components/settings.rs`.
 ### 3. Contracts
-Current nonempty local results publish even while index pending. Empty pending preserves rows;
-final empty clears. Keep original 65ms coalescing, generations, IME and old-result execution guard.
+Ordinary launcher publication follows the current complete-provider contract below: pending
+preserves inert rows and final empty clears; generations, IME and stale-action guards remain.
 Attached InputGroup/source rails remain36DIP each; root border adds2DIP to requested height.
 Source row and wrapper use min-width0/full available width: child-in-overflowing-parent is not
 root containment. Native placement/focus/readback remain original C# responsibilities.
@@ -461,50 +461,70 @@ slot takes ownership -> existing retirement releases; stale/failed completion re
 
 ## Scenario: Current Quick Launch result availability
 ### 1. Scope / Trigger
-Current local, indexed and extension search results arrive while another provider is still running.
+User-approved2026-11-17 alignment follows Listary6.3.5.94 normal launcher input/provider/completion
+behavior, superseding ordinary-launcher65ms debounce and terminal-or150ms/stable-append publication.
 Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch.rs`,
-`repo:rust/apps/nxtools-desktop/src/quick_launch/search.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/panel.rs`,
 `repo:rust/apps/nxtools-desktop/src/quick_launch/extension_providers.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/normal_search_tests.rs`,
+`repo:rust/apps/nxtools-desktop/src/quick_launch/provider_completion_tests.rs`,
 `repo:docs/reference-code/quick-launch-research.md`.
 ### 2. Signatures
-`handle_indexer_notification` accepts current batches then calls original `refresh_indexed_results`
-for nonempty nonterminal or terminal batches. `search_update_pending` tracks lack of usable current
-rows; `IndexSearchSession.complete` separately tracks terminal provider completion.
-`apply_extension_batch` publishes trusted current rows without importing retained prior-query rows.
+`QuickLaunchPanel::schedule_search` defers current-generation work to the next application turn
+without a timer. `search_and_request_icons` begins selected providers and returns pending until
+the indexed provider and `extension_search_in_progress` both finish. `handle_indexer_notification`
+accumulates index batches; `apply_extension_batch` accumulates trusted current extension rows;
+`finish_extension_provider` and index terminal delivery call `refresh_indexed_results`.
 ### 3. Contracts
-Current nonempty local/merged/extension results are immediately visible and actionable; do not wait
-for all providers or their terminal batch. Keep the existing65ms input coalescer, matching/ranking,
-final merge, provider execution revalidation and once-only close-on-acceptance behavior. During a
-new query, retained old rows are visual continuity only: Enter, shortcut, pointer and action mode
-cannot execute them. Empty current pending batches preserve that noninteractive presentation; current
-nonempty batches replace it and enable only current rows. Old generation/session/Input, hidden or
-closed windows, disconnect and retired extension providers retain their original guards.
-Existing correlated provider/publication diagnostics distinguish row availability from complete;
-no query/payload logging or per-keystroke diagnostic stream. Desktop readiness does not establish
-indexed-service computation latency.
+Changed ordinary input starts search without a fixed debounce; extension invocation has no fixed
+startup sleep. Preserve original InputState/IME, deferred cross-entity effects, generation/query/open
+checks and the existing bounded IPC admission. Replacing Search supersedes prior service work;
+clear/hide retires the exact old request through asynchronous cancellation. Retired extension
+tokens are cancelled and stale completion cannot release the current generation's provider count.
+Keep the previous committed collection while current providers run, but disable Enter, shortcut,
+pointer execution, preview and action entry for it. Partial indexed/extension batches only update
+the current query's accumulation. Elapsed time never authorizes partial publication. The last
+current provider completion performs the existing merged ranking and one result replacement;
+an empty complete set clears the previous collection. Do not preserve an obsolete displayed rank
+by appending a better current result. Keep matching, history, explicit selection and native actions.
+Action mode freezes presentation; current unpublished completion is applied on the original deferred
+return path. A Ready-triggered retry also retains inert rows until its current provider set ends.
+Indexer disconnect invalidates old generations, removes indexed candidates and completes that
+provider; remaining current extension work still controls the combined commit. Failure ends its
+provider, discards its indexed candidates and joins the same completion boundary in either order.
+Keep the query-scoped error through final publication; new queries clear that failure state.
+No second timeout or scheduling owner is added.
+The attached file-dialog search is a separate mode and retains its local65ms/150ms cadence and
+stable merge. Ordinary launcher evidence does not change its native placement/navigation/focus.
+Reuse correlated provider/publication/cancellation diagnostics with generation/count/state only;
+no query payloads or high-frequency frame/byte logging. Compiled fixtures do not prove native
+engine equivalence or installed input-to-visible latency.
 ### 4. Validation & Error Matrix
 | Condition | Required result |
 | --- | --- |
-| Current local row, index provider unfinished | Visible/actionable; complete remains false |
-| Current nonterminal index batch has rows | Publish/rank now; real Enter/action works |
-| Current empty pending batch / retained old rows | Keep readable prior content and first-row selection paint; no stale action |
-| Current nonempty extension batch | Only current merged rows enabled, no retained ordinary rows |
-| Old generation / closed panel / retired provider | No publication or action |
-| Current terminal empty batch / disconnect | Original final-clear/error lifecycle |
+| Changed input, no time advanced | Current typed Search is admitted on the next app turn |
+| Nonempty local/index/extension result, another provider pending | Keep old collection inert; no early commit |
+| Index terminal before extensions | Wait for last current extension completion |
+| Extensions finish before index | Wait for current index terminal |
+| Current complete empty set | Clear previous rows and end pending |
+| Old generation / closed panel / retired provider | No current publication or action |
+| Index failure/disconnect | Retire failed provider, preserve error/remaining-provider ownership |
 ### 5. Good/Base/Bad Cases
-Good: a local command launches before index completion; a current received index row opens before
-terminal transport. Base: terminal results merge with original ordering and selection identity.
-Bad: accepted=1/visible=0 until complete, or enabling retained rows merely because a provider runs.
+Good: local and partial rows remain private until the current providers complete, then one merged
+ranked collection replaces the previous query. Base: local-only search completes on the next turn.
+Bad: fixed65ms input sleep,150ms partial publication, per-batch replacement, stale action execution
+or treating one provider's completion as completion of the entire query.
 ### 6. Tests Required
-`search_latency_ready_indexed_rows_publish_before_terminal_batch` drives actual Input/coalescer/
-command/nonterminal batch/list bounds/action mode/Enter dispatch and old-row rejection.
-`ux_repair_real_panel_publishes_local_command_while_index_is_pending` uses actual pointer dispatch;
-`real_panel_late_batches_keep_identity_and_current_input_retires_actions` covers extension freshness.
-Retain existing generation, IME, close, ranking, current-selection and action regressions. Controlled
-publication timings are not live service, physical keyboard or installed-product performance.
+`normal_search_dispatches_without_delay_and_commits_only_complete_results` drives real InputState,
+typed Search, held partial batches, terminal submission and replaced-query rejection without a
+debounce clock. `normal_mode_keeps_partial_index_batches_private_until_terminal` and
+`normal_terminal_commits_once_and_rejects_retired_query_notifications` cover production batch/panel
+boundaries. Retain provider completion-order/retirement, queue-full cancel, clear/hide/reopen, IME,
+ranking, selection, native action, geometry and attached-search regressions. Full Desktop, strict
+lint/workspace and source gates are not installed/physical-input/native/visual acceptance.
 ### 7. Wrong vs Correct
-Wrong: search_pending means any provider has unfinished work. Correct: current rows establish
-availability; complete tracks provider termination; stale retained rows grant no execution authority.
+Wrong: nonempty current partial rows make a pending query actionable. Correct: only completion
+of the selected current provider set authorizes the merged normal-launcher replacement.
 
 ## Scenario: Quick Launch continuous refresh and default selection
 ### 1. Scope / Trigger
@@ -516,13 +536,16 @@ Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch/panel.rs`,
 Original `QuickLaunchPanel::{schedule_search,run_search,replace_results,select_result,move_selection}`
 owns `selection_explicit` and `committed_query`; existing immutable `QuickLaunchResults` owns display text.
 ### 3. Contracts
-New input resets default selection to rank zero before dispatch. Default selection follows the first
-ranked row across current batches. Explicit pointer/keyboard choice follows identity within that query,
+New input resets default selection to rank zero before dispatch. One complete ranked collection
+establishes the query's default; no interim rank or stable late append is published. Explicit
+pointer/keyboard choice follows identity on legitimate later refreshes within that query,
 including choosing the already-selected first row; disappearance falls back to default-first.
 Extension publication delegates selection to the same panel, without a second selected-ID restore.
-Retained prior-query rows keep normal foreground, committed-query highlights and first-row background;
-they remain disabled for execution, action mode and preview. Pending arrows/shortcuts cannot move the
-old selection. Current nonempty results stay immediately usable under the availability contract above.
+Retained prior-query rows keep normal foreground and committed-query highlights without the active
+selection background or shortcut hints. They remain disabled for execution, action mode and preview.
+Pending arrows/shortcuts cannot move the old selection. Only a current generation still waiting at
+150ms shows the compact input-suffix search cue; reduced motion uses static copy. Completion, error,
+clear and hide retire the cue without changing dispatch, result publication, focus or window size.
 Application rows without explicit subtitles render one centered16DIP title; other rows use15DIP
 titles and12DIP parent-path/description text. Normal launcher bodies are52DIP with32DIP icons;
 compact action and attached-dialog metrics remain40DIP. Retain4-or0external gap and620DIP width.
@@ -546,16 +569,17 @@ icon completion, selection and virtualization do not replay motion. New query/hi
 None and reduced/unknown policy settle immediately and retain no frame/timer owner. Diagnostics
 remain bounded generation/count/state events; no query/payload/frame logging.
 ### 4. Validation & Error Matrix
-New query -> default-first/old actions inert; current reordered batch -> rank zero unless explicit;
-explicit identity removed -> first; pending empty -> retained paint; error -> existing status and
-old-row rejection; app subtitle absent -> no second line; explicit subtitle -> preserve verbatim.
+New query -> default-first/old actions inert; current intermediate batch -> accumulate privately;
+last provider terminal -> replace with one complete ranked collection; explicit identity removed
+-> first; pending empty -> retained paint; error -> existing status and old-row rejection;
+app subtitle absent -> no second line; explicit subtitle -> preserve verbatim.
 ### 5. Good/Base/Bad Cases
-Good: a better late result becomes default-first but cannot steal a deliberate choice. Base: ordinary
-Enter opens a current result once. Bad: gray/clear every retained row or preserve default identity
-across queries, or enable stale rows solely to avoid their disabled appearance.
+Good: final rank determines the default before any current row becomes actionable.
+Base: ordinary Enter opens a current result once. Bad: gray/clear every retained row or preserve
+default identity across queries, or enable stale rows solely to avoid their disabled appearance.
 ### 6. Tests Required
 `repo:rust/apps/nxtools-desktop/src/quick_launch/refresh_tests.rs` drives actual Input, batch replacement,
-explicit first/keyboard selection, pending selected paint and application/file row bounds; also
+explicit first/keyboard selection, inert retained paint and application/file row bounds; also
 0/1/many publication sizes, overflow last-row visibility, error footer, Unicode middle truncation,
 both gap styles and coalesced native command/closed-session behavior. TestWindow resize requires
 simulate_resize to deliver the native viewport event and device-pixel assertions use its real scale.
@@ -566,8 +590,8 @@ reduced/None modes, real paint offsets/opacity and finite idle settling. Header 
 original input/focus and unclipped34DIP text.
 Compiled synthetic paint/command boundaries are separate from physical HWND/DPI/user acceptance.
 ### 7. Wrong vs Correct
-Wrong: every selected index means deliberate choice, and pending removes selection paint.
-Correct: explicit intent controls identity preservation; pending controls execution, not text opacity.
+Wrong: every selected index means deliberate choice, or painting an actionable state on a stale row.
+Correct: explicit intent controls identity preservation; stale rows retain legible text without actionable cues.
 
 ## Scenario: Asynchronous download batches and destination conflict actions
 ### 1. Scope / Trigger
@@ -813,21 +837,21 @@ Real Explorer/Registry/installed/physical/DPI/user acceptance requires separate 
 Wrong: parallel creation engine or ordinary painted settings controls. Correct: original Job/draft/save
 owners with released official compounds and selection-aware Explorer commands.
 
-## Scenario: Explicit link-panel download intake (B2 REF-04)
+## Scenario: External link-panel download intake (B2 REF-04)
 ### 1. Scope / Trigger
 Named 使用 NxTools 下载 for admitted HTTP(S) links. This extends B1's two-action panel, not its ordinary-row copy-only/auto-open routing or independent Copy/Open.
 ### 2. Signatures
 `ClipboardApplication::{bind_downloads,take_link_panel_download_owner}`; `DownloadApplication::{admits_link_download,open_link_download,open_new_download_window_with_request}`; `NewDownloadInitialSource::Url`; original `NewDownloadView::{clipboard_prefill_eligible,prefill_clipboard_url}`. Evidence: `repo:rust/apps/nxtools-desktop/src/tools/link_panel.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/browser_handoff_impl.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/new_download_view.rs`.
 ### 3. Contracts
-Keep420DIP panel/28DIP rows, released ListItem/Label/StatusBar and XSmall ghost named Buttons with real name/action hit bounds. Local close precedes deferred original-panel validation and original DownloadApplication update; no synchronous leased-owner bounce. URL-only source fills the original InputState without browser auto-probe, clipboard read, task or HTTP work. Original Continue/confirmation, placement, focus/IME/paste and fixed handoff remain. Reuse one original Root/view/window; next-turn fill rechecks current window and pristine blank draft. Populated/edited-then-cleared/external/active drafts are preserved; explicit URL retires the old blank-window clipboard request. Carry original action correlation into native window commands; started/finished diagnostics have fixed outcome/elapsed, never URL/path/text.
+Keep420DIP panel/28DIP rows, released ListItem/Label/StatusBar and XSmall ghost named Buttons with real name/action hit bounds. Local close precedes deferred original-panel validation and original DownloadApplication update; no synchronous leased-owner bounce. External Url source fills the original InputState and defers original begin_probe automatically without clipboard read or task creation. Manual None/clipboard-prefill/Paste still await Continue. Original confirmation, placement, focus/IME/paste and fixed handoff remain. Reuse one original Root/view/window; next-turn fill rechecks current window and pristine blank draft, and begins probing only after accepted prefill. Populated/edited-then-cleared/external/active drafts are preserved; explicit URL retires the old blank-window clipboard request. Carry original action correlation into native window commands; started/finished diagnostics have fixed outcome/elapsed, never URL/path/text. [Controlled browser lifecycle and source-driven resolution](../../browser-extension/controlled-handoff.md).
 ### 4. Validation & Error Matrix
 HTTP(S) -> URL-only intake. Local/unsupported target -> no action/rejected owner input. Duplicate -> activate/reuse, no overwrite of dirty draft. Replaced/closed source or missing owner -> retired terminal/no new intake. Late clipboard reply -> no draft mutation. Window failure -> original notification and fixed failed outcome.
 ### 5. Good / Base / Bad Cases
-Good: actual named action fills one original input and awaits Continue. Base: duplicate preserves an existing draft. Bad: route through Download source's auto-probe, replace the original form/controller, or dispatch a retired panel action into another draft.
+Good: actual named action automatically parses on the original owner into fixed confirmation without creating a task. Base: duplicate preserves an existing draft. Bad: require Continue for an external URL, automatically submit the parsed task, replace the original form/controller, or dispatch a retired panel action into another draft.
 ### 6. Tests Required
-`repo:rust/apps/nxtools-desktop/src/downloads/new_download_link_tests.rs` drives actual pointer/semantic Tab/Enter/Space, stable input/window, localhost no-HTTP and engine no-task observations, pending clipboard retirement, user edit/clear, close-observer replacement and local/unsupported targets. Keep B1 REF-01/Copy and original intake suites. Current source/owned-fixture results: `repo:.trellis/tasks/11-10-reference-b2-intake-control/ref04-outcomes.md`; native/physical/IME/DPI/provider/visual/installed acceptance is separate.
+`repo:rust/apps/nxtools-desktop/src/downloads/new_download_link_tests.rs` drives actual pointer/semantic Tab/Enter/Space, stable input/window, localhost HTTP parsing and engine no-task observations, pending clipboard retirement, user edit/clear, close-observer replacement and local/unsupported targets. Floating-assistant and manual intake suites distinguish automatic external parsing from explicit manual clipboard/Paste. Keep B1 Copy and original intake suites. Native/physical/IME/DPI/provider/visual/installed acceptance is separate.
 ### 7. Wrong vs Correct
-Wrong: Some(Download(request)) followed by automatic begin_probe. Correct: Url-only source on the original owner, one deferred identity/draft-guarded fill and explicit Continue.
+Wrong: Url source waits for Continue or automatic probe creates a task. Correct: source-driven deferred begin_probe after original construction/guarded prefill, then explicit confirmation on the original owner.
 
 ## Scenario: Deliberate speed-limit editing (B2 REF-06)
 ### 1. Scope / Trigger
@@ -846,3 +870,56 @@ Good: typing100 applies neither1 nor10; Enter+Blur saves100KiB/s once. Base:0 re
 `ref06_acceptance_global_{one_byte,sub_kib,fractional_kib}_survives_unrelated_apply` drives actual Settings Apply and SQLite reopen for1/1023/1537B/s. `ref06_acceptance_task_compact_refresh_tracks_authoritative_rate` uses typed engine commands and original compact/progress refreshes with no global ceiling and a128KiB/s ceiling; it observes the actual capabilities accessibility label, stable clean input, invalid dirty/error preservation, Escape to latest applied intent and window/SQLite reopen.
 ### 7. Wrong vs Correct
 Wrong: per-keystroke mutation, converting an untouched rounded display back to bytes, or replacing current full task intent with compact None. Correct: draft-only Change, deferred identity-scoped Enter/Blur with one pending UUID, exact untouched-byte persistence and current full task projection at the original window update boundary.
+
+## Scenario: Download Header draft reset and paused-source confirmation (B4)
+### 1. Scope / Trigger
+Original Download Settings Header editor and explicit paused task 更换链接. Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/settings_view.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/paused_url.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/task_windows_impl.rs`.
+### 2. Signatures
+`DownloadSettingsDraft.baseline`; original `current_draft/save/apply_settings`; `PausedUrlDraft`; `DownloadTaskWindowView::source_window_lifetime`; `DownloadEngine::paused_url_replacement_revision`; `DownloadEngine::replace_paused_url_with_control`.
+### 3. Contracts
+Show Core's effective Header as actual editable Textarea text. Adjacent direct official Small outlined 重置 edits only the same TextareaState draft and restores its focus on the next turn. Preserve Apply/Cancel/error transaction and untouched exact-byte/runtime leaves. Paused relink uses the original keyed440px window, temporary400DIP client height, official Dialog/Form/Field/Medium Input/footer and one deferred on_ok. Keep stable Input/draft ID across refusal/retry; each explicit confirmation reads current task-owned revision outside render and sends it with a fresh attempt ID. Gate replies by source window, generation and draft. Close signals the existing control's host watch directly; keyed registration retirement and cross-owner refresh defer beyond active entity leases. Candidate cancellation never cancels the task or claims physical drain from an ACK.
+### 4. Validation & Error Matrix
+Blank Header -> effective default after Apply/reopen; failed save -> retained draft and previous runtime. Incompatible/probe-failed relink -> old source/checkpoints/artifact plus original draft/error. Cancel/Escape -> candidate cancellation and restored original size/focus. Closed/stale window -> no late reply into a replacement window. Durable success -> clear draft and restore bounds before programmatic close.
+### 5. Good/Base/Bad Cases
+Good: first focused Enter/Space follows the same sole deferred confirmation as pointer. Base: Cancel changes no saved Header/task URL. Bad: rebuild Textarea, save immediately on Reset, synchronously read an application from native-close callback, or treat programmatic close as an on_close event.
+### 6. Tests Required
+Desktop `b4_headers_`, `b4_ref08_actual_` and `b4_e2_` drive production Root controls and real HTTP/SQLite/writer. Hold an actual candidate probe, invoke the original TestPlatform native-close callback, await socket and lease retirement, reopen the same task and reject old-window effects while retaining URL/plan/checkpoints/artifact/queue. Retain Settings failure/rollback, REF-06, actual close/reopen stale identity and original keyboard/IME lifecycle gates. TestPlatform resize callbacks must model the actual native client, not click an occluded compact surface. Physical OS-close/IME/DPI and human visual acceptance are separate.
+### 7. Wrong vs Correct
+Wrong: cache-hit cross-entity writeback inside a leased callback or candidate ACK interpreted as cleanup complete. Correct: local draft mutation, next-turn owner work, original generation/control and actual terminal drain.
+
+## Scenario: Local integer URL templates and actual written coverage (B4)
+### 1. Scope / Trigger
+Original new-download Input/action template intake and original expanded task details. Evidence: `repo:rust/apps/nxtools-desktop/src/downloads/new_download_view/template.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/range_coverage.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/window_support.rs`.
+### 2. Signatures
+`try_template_preview`, `TemplatePreview`, `submit_template`; original `BrowserBatchSubmit`/`MAX_BROWSER_BATCH_ITEMS`; `DownloadSegmentProgress { segment_index, start_byte:Option<u64>, total_bytes:Option<u64>, downloaded_bytes }`; `range_segments`, `persisted_range_progress`, `RangeCoverage`, `apply_progress_to_task_detail`.
+### 3. Contracts
+Recognize one ascending inclusive unsigned integer brace range before ordinary probe; fixed step1 and supplied zero padding. Check count before materialization; maximum32, no hidden batches. Freeze the original request/context and URL-only clones; official Checkbox rows show exact sources and local count, with zero preview HTTP/tasks. Same window requests640×560 through its original bounds owner; Dialog608, bounded scrolling body and Medium footer restore original Input/size on dismiss. Submit selected stable handoff IDs once through original BrowserBatchSubmit; ordered partial results remain, no whole-batch retry. After confirmation, focus stays within stable dialog content when the action disables; repeated keys and Escape retain the official Dialog action path.
+Coverage uses actual segment start/length and written prefix, never allocation or aggregate-progress guesses. Live progress replaces current range layout after rebalance. Original TaskDetail supplies persisted ranges on open and status transition outside render; one open-time read also supplies final-artifact metadata. Paused/reopened windows use that cache, including resumed Downloading state before the first nonempty live range projection. Missing fields in an actual live projection remain unknown rather than borrowing an incompatible old layout. Merge overlap and cap Plot marks to visible width and2048bins; no per-byte elements, render IO, new clock or scheduler. Released no-id Plot/PlotElement is the custom-data seam, retaining original aggregate Progress,440×184/280 budget, theme, Server/metrics/limit editor, scrollable segment table and fixed actions.
+### 4. Validation & Error Matrix
+Malformed/letters/multiple/step/descending/overflow/>32 -> local rejection before HTTP/admission. None selected -> disabled/no submission. Original naming/URL conflict -> original per-item result. Retired preview/window -> no reply mutation; admitted tasks remain authoritative. Unknown total -> no coverage ratio. Missing range -> unrecorded, not zero/completed. Rebalance -> current real bounds, no index-inferred offset.
+### 5. Good/Base/Bad Cases
+Good: `{001..003}` deselects002 and admits only001/003 once. Base: Escape preview creates nothing; pause/reopen preserves real checkpoint prefixes. Bad: expand combinations, silently split33items, retry all partially accepted entries, or paint whole allocated segments as downloaded.
+### 6. Tests Required
+Production `b4_ref09_actual_` input/preview/Checkbox/pointer/first Enter/Space/repeat/Escape,32boundary/invalid/duplicate/partial/all-unselected/frozen-context/narrow-long tests. Real `b4_coverage_contract` parallel writer/rebalance/exact bytes; `b4_ref10_` sparse/overlap/large/unknown model, original paused written window/cache/reopen/first-event fallback/narrow layout and current detail projection. The real parallel-event regression drives the original application event pump into the same production window through rebalance, checks true ranges and retained controls, exact final bytes and owned worker/listener drain. Retain original detail disclosure/table scrolling/Server/REF-06/input/theme tests. Source/TestPlatform/HTTP evidence does not certify physical or installed acceptance.
+### 7. Wrong vs Correct
+Wrong: admit during preview or derive range start from segment index/aggregate percentage. Correct: local bounded frozen preview, original once-only batch admission and actual live/persisted range facts in a passive official Plot.
+
+## Scenario: Task and queue completion intentions (B5)
+### 1. Scope / Trigger
+REF-07/REF-11 at the original task window, Settings and completion coordinator. Evidence: `repo:rust/apps/nxtools-desktop/src/completion_actions.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/completion_shutdown_impl.rs`, `repo:rust/apps/nxtools-desktop/src/downloads/queue_completion_settings.rs`.
+### 2. Signatures
+`CompletionActionCoordinator::from_snapshot/evaluate_completion_in_slot(snapshot,now,action_slot_available)`; ShutdownCountdown carries correlation/action/generation/work_revision. Original Task/Queue SetCompletionIntention uses command12; queue baseline is optional/default-compatible. Original countdown tick/cancel/execute/result methods remain the sole transient owner. `DesktopRuntime::shutdown_downloads_and_wait(engine,correlation_id)` owns ordered Download engine/IPC cleanup.
+### 3. Contracts
+Task intention survives presentation close/reopen without admission or status changes. Original440×184 rail retains Small Checkbox and adds official Small outlined Button/DropdownMenu in Toolbar.content. Queue drafts use original SettingItem::render slot, Form::vertical/Field, Small dropdown/Checkbox/outlined Save; only successful original SQLite transaction publishes changes, failure retains draft/error. Named450×200 DialogContent/DialogFooter countdown exposes explicit Cancel/Escape/native close. Every cross-entity effect defers to the next turn; render has no store/network query.
+Old terminal snapshots seed observed history, not current round membership. New rounds include fresh attempts/current nonterminal work, retaining completed members only while their existing round continues. Nonempty current rounds require every member Completed; waiting/scheduled/failed/cancelled/removal are not success. Retry uses fresh attempt; completed-record queue assignment is not a new completion. One priority is Shutdown > Hibernate > Sleep > ExitApplication; directory feedback uses original case-insensitive max3 batch. New accepted work cancels the countdown through original state events/revision, including fast terminal work; duplicate receipts/drafts/probes do not. Check identity before clearing; execution rechecks facts and consumes authority before request. The original pending native command occupies the action slot: observe new facts but do not start a second countdown until matching result/timeout closes its executing window and reevaluates. Cancel/native failure cannot replay the same completed attempt. Normal Exit calls cx.quit, then original runtime joins Download work and IPC before existing extension/clipboard cleanup and runtime release; close request is not resource drain or physical exit.
+Queue rounds consume the original engine's bounded queue_invalidations and task accepted_revision, not a reconstructed history of UI snapshots. Removal or assignment out aborts the old round even if the member set is restored before observation; only genuinely later acceptance can begin a new successful round. Post-terminal task intention commands are rejected by the original domain owner. Durable stopped-queue retry publishes the original accepted event and completion facts show Waiting, so the pump cancels existing authority without a refresh/timer and does not consume the new attempt as Failed. Original schedule start and actual writer success can then authorize once; late callbacks retain identity guards.
+At coordinator initialization, current nonterminal members and the existing cutoff form the baseline. Initial cutoff history does not reject that initial current round; subsequent cutoff changes abort it. An already seeded member's first dispatch advances attempt 0→1 only with the same queue/cutoff, never a new acceptance revision. Existing terminal rows never seed actionable membership.
+### 4. Validation & Error Matrix
+Save failure -> retained draft/old persisted intent. Native unsupported/denied/failure -> visible failure with truthful code, no substitute/retry. Shutdown retains its bounded acknowledgement timeout; Sleep/Hibernate keep the original in-flight slot through suspension until the correlated native terminal. Disconnect retires the matching executing window and visibly reports an unconfirmed result, never native rejection/success. Stale timeout/correlation/generation/result -> no current-window or authority mutation. Restart old terminal -> no countdown.
+### 5. Good/Base/Bad Cases
+Good: independent queues merge to one stable action and bounded directory feedback. Base: window close changes presentation only. Bad: last visible window decides queue intent, a failed queue satisfies all(), or stale cancel clears a newer countdown.
+### 6. Tests Required
+Real task/queue/SQLite reload, actual local HTTP writer success, multiqueue waiting/arbitration, failed/cancelled/empty/retry/removal/switch/restart, explicit/new-work/stale cancellation and original typed feedback. Held Sleep/Hibernate outlive Shutdown's deadline; original typed disconnect closes executing presentation with unconfirmed feedback and ignores late success. Production TestPlatform pointer/first Enter/Space/Escape/repeats/close-reopen/minimum bounds and save rollback retain task identity/Input/focus. Inject native results at the original typed boundary; physical power/Exit/OS-close/IME/DPI/Shell/human visual/installed acceptance remain separate.
+Production-pump regressions hold UI observation across accept/remove, out/back and success-before-intention-command using real HTTP/writer/SQLite, then require no countdown/native request. Stopped retry coverage requires immediate event-driven cancellation, no worker while stopped, stable admission/attempt on duplicate, later real success and exactly one typed fake action; no direct coordinator updates or extra sampling loop substitute for the pump.
+### 7. Wrong vs Correct
+Wrong: persist countdown authority or infer successful cleanup from cx.quit. Correct: persist intention only, consume successful attempt/round once, and verify each original resource owner separately.

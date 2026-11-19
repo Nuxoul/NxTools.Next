@@ -37,6 +37,7 @@ fn mount(
     paths: &[&str],
 ) -> (Entity<ArchiveApplication>, Vec<Uuid>, VisualTestContext) {
     let (owner, _endpoint) = super::super::tests::setup(cx);
+    cx.update(crate::theme::apply_component_theme);
     owner.update(cx, |app, cx| {
         for path in paths {
             app.open_canonical(PathBuf::from(path), 0, vec![], cx);
@@ -105,6 +106,35 @@ fn icon_layout_official_tab_prefix_has_balanced_edge_insets(cx: &mut TestAppCont
     );
     assert_eq!(tab.right() - close_button.right(), px(13.));
     assert_eq!(icon.center().y, close_button.center().y);
+    close(&owner, &mut surface);
+}
+
+#[gpui_kit::test]
+fn narrow_tree_folder_name_stays_on_one_line_inside_fixed_row(cx: &mut TestAppContext) {
+    let (owner, ids, mut surface) = mount(cx, &[r"C:\synthetic\folders.zip"]);
+    let view = owner.read_with(&surface, |app, _| {
+        app.windows[&ids[0]].view.upgrade().expect("live browser")
+    });
+    surface.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            let entry = serde_json::from_value(serde_json::json!({
+                "ordinal":0,"name":"data/flutter_assets/child.txt","kind":"File","size":3,
+                "packed_size":null,"encrypted":false,"warning_codes":[],
+                "provenance":"Utf8Flag","codepage":65001
+            }))
+            .expect("synthetic long folder name");
+            view.install(Uuid::new_v4(), vec![entry], "Zip".into(), window, cx);
+            view.navigate("data/flutter_assets".into(), window, cx);
+        });
+    });
+    draw(&mut surface);
+    let label = bounds(&mut surface, "archive-tree-label-data/flutter_assets");
+    let icon = bounds(&mut surface, "archive-tree-icon-data/flutter_assets");
+    assert!(
+        label.size.height <= px(24.),
+        "folder label must not wrap under the 32DIP tree row: {label:?}"
+    );
+    assert_eq!(icon.center().y, label.center().y);
     close(&owner, &mut surface);
 }
 
@@ -550,16 +580,18 @@ fn icon_layout_tree_icon_and_text_still_enter_original_held_native_drag(cx: &mut
             panic!("original virtual drag");
         };
         assert_eq!(command.source_window_handle, 917);
-        let items = command.items.expect("original immutable descriptors");
-        if selector.ends_with("folder") {
-            assert_eq!(command.action, "start");
-            assert!(items.iter().any(|item| item.name == "folder/deep/file.txt"));
-        } else {
-            // Root drags the archive-named folder; the receiver's copy locates the extraction.
-            assert_eq!(command.action, "locate");
-            assert_eq!(items.len(), 1);
-            assert!(items[0].directory && items[0].name == "drag");
-        }
+        let items = command.items.expect("receiver folder");
+        assert_eq!(command.action, "locate");
+        assert_eq!(items.len(), 1);
+        assert!(items[0].directory && items[0].entry.ordinal.is_none());
+        assert_eq!(
+            items[0].name,
+            if selector.ends_with("folder") {
+                "folder"
+            } else {
+                "drag"
+            }
+        );
         close(&owner, &mut surface);
     }
 }

@@ -545,13 +545,53 @@ pub(crate) async fn run_dash_task(
             crate::dash::DashTrackKind::Audio => audio_paths.push(path),
         }
     }
+    let mut video_total = 0_u64;
+    let mut concat_total = 0_u64;
+    for path in &video_paths {
+        video_total += tokio::fs::metadata(path).await?.len();
+    }
+    concat_total += video_total;
+    for path in &audio_paths {
+        concat_total += tokio::fs::metadata(path).await?.len();
+    }
+    publish_finishing_progress(
+        &inner,
+        task_id,
+        DownloadFinishingProgress {
+            stage: DownloadFinishingStage::Concatenating,
+            completed: 0,
+            total: Some(concat_total),
+        },
+        true,
+    );
+    info!(event = "download.dash_finalize.stage", %correlation_id, ?task_id, stage = "concatenating", "DASH finalization stage changed");
     if selected_track_count == 1 {
         let paths = if video_paths.is_empty() {
             &audio_paths
         } else {
             &video_paths
         };
-        match concatenate_dash_fragments(paths, &temporary_path, &control).await {
+        match concatenate_dash_fragments(
+            paths,
+            &temporary_path,
+            &control,
+            0,
+            concat_total,
+            |done, force| {
+                publish_finishing_progress(
+                    &inner,
+                    task_id,
+                    DownloadFinishingProgress {
+                        stage: DownloadFinishingStage::Concatenating,
+                        completed: done,
+                        total: Some(concat_total),
+                    },
+                    force,
+                );
+            },
+        )
+        .await
+        {
             Ok(crate::media::MediaProcessOutcome::Completed) => {}
             Ok(outcome) => {
                 return complete_dash_finalize_stop(
@@ -584,7 +624,27 @@ pub(crate) async fn run_dash_task(
     } else {
         let video_track_path = working_directory.join("video.track");
         let audio_track_path = working_directory.join("audio.track");
-        match concatenate_dash_fragments(&video_paths, &video_track_path, &control).await {
+        match concatenate_dash_fragments(
+            &video_paths,
+            &video_track_path,
+            &control,
+            0,
+            concat_total,
+            |done, force| {
+                publish_finishing_progress(
+                    &inner,
+                    task_id,
+                    DownloadFinishingProgress {
+                        stage: DownloadFinishingStage::Concatenating,
+                        completed: done,
+                        total: Some(concat_total),
+                    },
+                    force,
+                );
+            },
+        )
+        .await
+        {
             Ok(crate::media::MediaProcessOutcome::Completed) => {}
             Ok(outcome) => {
                 return complete_dash_finalize_stop(
@@ -614,7 +674,27 @@ pub(crate) async fn run_dash_task(
                 return Err(error);
             }
         }
-        match concatenate_dash_fragments(&audio_paths, &audio_track_path, &control).await {
+        match concatenate_dash_fragments(
+            &audio_paths,
+            &audio_track_path,
+            &control,
+            video_total,
+            concat_total,
+            |done, force| {
+                publish_finishing_progress(
+                    &inner,
+                    task_id,
+                    DownloadFinishingProgress {
+                        stage: DownloadFinishingStage::Concatenating,
+                        completed: done,
+                        total: Some(concat_total),
+                    },
+                    force,
+                );
+            },
+        )
+        .await
+        {
             Ok(crate::media::MediaProcessOutcome::Completed) => {}
             Ok(outcome) => {
                 return complete_dash_finalize_stop(
@@ -731,12 +811,49 @@ pub(crate) async fn run_dash_task(
             }
         }
         ffmpeg_version_status = "detected";
+        let mux_total = selected_manifest
+            .tracks
+            .iter()
+            .find(|track| track.kind == crate::dash::DashTrackKind::Video)
+            .or_else(|| selected_manifest.tracks.first())
+            .and_then(|track| {
+                let duration = track
+                    .segments
+                    .iter()
+                    .map(|segment| segment.duration_millis)
+                    .sum::<u64>();
+                (duration > 0).then_some(duration.saturating_mul(1000))
+            });
+        publish_finishing_progress(
+            &inner,
+            task_id,
+            DownloadFinishingProgress {
+                stage: DownloadFinishingStage::Muxing,
+                completed: 0,
+                total: mux_total,
+            },
+            true,
+        );
+        info!(event = "download.dash_finalize.stage", %correlation_id, ?task_id, stage = "muxing", "DASH finalization stage changed");
+        let mux_inner = inner.clone();
         match crate::media::mux_dash_tracks(
             &ffmpeg_resolution.executable,
             &video_track_path,
             &audio_track_path,
             &temporary_path,
             &control,
+            move |micros, force| {
+                publish_finishing_progress(
+                    &mux_inner,
+                    task_id,
+                    DownloadFinishingProgress {
+                        stage: DownloadFinishingStage::Muxing,
+                        completed: micros,
+                        total: mux_total,
+                    },
+                    force,
+                )
+            },
         )
         .await
         {
@@ -826,6 +943,17 @@ pub(crate) async fn run_dash_task(
         inner.persist(state)?;
     }
 
+    publish_finishing_progress(
+        &inner,
+        task_id,
+        DownloadFinishingProgress {
+            stage: DownloadFinishingStage::Publishing,
+            completed: 0,
+            total: None,
+        },
+        true,
+    );
+    info!(event = "download.dash_finalize.stage", %correlation_id, ?task_id, stage = "publishing", "DASH finalization stage changed");
     if let Err(error) = http
         .commit_prepared(PreparedDownload {
             temporary_path,
@@ -994,6 +1122,9 @@ pub(crate) async fn concatenate_dash_fragments(
     fragments: &[PathBuf],
     output_path: &Path,
     control: &DownloadTransferControl,
+    offset: u64,
+    total: u64,
+    mut progress: impl FnMut(u64, bool),
 ) -> Result<crate::media::MediaProcessOutcome, DownloadEngineError> {
     if fragments.is_empty() {
         return Err(HttpDownloadError::InvalidDashManifest(
@@ -1007,6 +1138,8 @@ pub(crate) async fn concatenate_dash_fragments(
         .write(true)
         .open(output_path)
         .await?;
+    let mut copied = 0_u64;
+    progress(offset, true);
     for fragment in fragments {
         let mut input = tokio::fs::File::open(fragment).await?;
         // Every tokio::fs read/write hops to the blocking pool; a 64 KiB
@@ -1028,9 +1161,12 @@ pub(crate) async fn concatenate_dash_fragments(
                 break;
             }
             output.write_all(&buffer[..read]).await?;
+            copied += read as u64;
+            progress(offset + copied, false);
             tokio::task::yield_now().await;
         }
     }
+    progress((offset + copied).min(total), true);
     output.flush().await?;
     output.sync_all().await?;
     Ok(crate::media::MediaProcessOutcome::Completed)

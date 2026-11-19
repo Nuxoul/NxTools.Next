@@ -1,0 +1,3 @@
+{"file":".trellis/spec/nxtools-download/backend/quality-guidelines.md","reason":"Actual writer/HTTP/checkpoint and limiter acceptance"}
+{"file":".trellis/spec/shared/verification.md","reason":"Serial Cargo resource limits and no implicit commit"}
+{"file":".trellis/tasks/11-13-download-disk-backpressure/prd.md","reason":"Exact bytes, pause/reopen and genuine slow-network behavior"}

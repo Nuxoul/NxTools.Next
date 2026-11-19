@@ -1,0 +1,207 @@
+{
+  "oracle": "independent Python EGG Appendix A arithmetic grammar / stdlib codecs / format CRC",
+  "python": "3.13.2 (tags/v3.13.2:4f8bb39, Feb  4 2025, 15:23:48) [MSC v.1942 64 bit (AMD64)]",
+  "fixtures": [
+    {
+      "fixture": "azo.egg",
+      "origin": "unchanged pinned CC0",
+      "files": 1,
+      "bytes": 1602,
+      "members": [
+        {
+          "index": 0,
+          "name": "azo_fix.sys",
+          "size": 1602,
+          "crc32": "4a2ab0d2",
+          "blocks": [
+            {
+              "header": 72,
+              "offset": 94,
+              "method": 3,
+              "level": 1,
+              "packed": 53,
+              "expanded": 1602,
+              "crc32": "4a2ab0d2",
+              "azo_blocks": [
+                {
+                  "expanded": 1602,
+                  "x86_changes": 0,
+                  "packed": 27,
+                  "read_bits": 242,
+                  "lookahead_bits": 26,
+                  "literals": 22,
+                  "matches": 1,
+                  "max_distance": 20
+                }
+              ]
+            }
+          ],
+          "expected": "azo.egg-0.bin.gz"
+        }
+      ]
+    },
+    {
+      "fixture": "optimal5.egg",
+      "origin": "unchanged pinned CC0",
+      "files": 5,
+      "bytes": 9401,
+      "members": [
+        {
+          "index": 0,
+          "name": "empty.txt",
+          "size": 0,
+          "crc32": "00000000",
+          "blocks": [],
+          "expected": "optimal5.egg-0.bin.gz"
+        },
+        {
+          "index": 1,
+          "name": "precompressed.gz",
+          "size": 95,
+          "crc32": "6a94d1bc",
+          "blocks": [
+            {
+              "header": 129,
+              "offset": 151,
+              "method": 0,
+              "level": 0,
+              "packed": 95,
+              "expanded": 95,
+              "crc32": "6a94d1bc",
+              "azo_blocks": []
+            }
+          ],
+          "expected": "optimal5.egg-1.bin.gz"
+        },
+        {
+          "index": 2,
+          "name": "prog.sys",
+          "size": 2060,
+          "crc32": "b54ccab2",
+          "blocks": [
+            {
+              "header": 297,
+              "offset": 319,
+              "method": 3,
+              "level": 1,
+              "packed": 43,
+              "expanded": 2060,
+              "crc32": "b54ccab2",
+              "azo_blocks": [
+                {
+                  "expanded": 2060,
+                  "x86_changes": 0,
+                  "packed": 17,
+                  "read_bits": 164,
+                  "lookahead_bits": 28,
+                  "literals": 11,
+                  "matches": 2,
+                  "max_distance": 5
+                }
+              ]
+            }
+          ],
+          "expected": "optimal5.egg-2.bin.gz"
+        },
+        {
+          "index": 3,
+          "name": "random.bin",
+          "size": 4096,
+          "crc32": "1bb92dfc",
+          "blocks": [
+            {
+              "header": 415,
+              "offset": 437,
+              "method": 1,
+              "level": 5,
+              "packed": 4101,
+              "expanded": 4096,
+              "crc32": "1bb92dfc",
+              "azo_blocks": []
+            }
+          ],
+          "expected": "optimal5.egg-3.bin.gz"
+        },
+        {
+          "index": 4,
+          "name": "text.txt",
+          "size": 3150,
+          "crc32": "7a553a9d",
+          "blocks": [
+            {
+              "header": 4589,
+              "offset": 4611,
+              "method": 2,
+              "level": 4,
+              "packed": 140,
+              "expanded": 3150,
+              "crc32": "7a553a9d",
+              "azo_blocks": []
+            }
+          ],
+          "expected": "optimal5.egg-4.bin.gz"
+        }
+      ]
+    },
+    {
+      "fixture": "spec_egg_azo_multiblock.egg",
+      "origin": "project-owned CC0-specification arithmetic encoder and literal data",
+      "files": 1,
+      "bytes": 159176,
+      "members": [
+        {
+          "index": 0,
+          "name": "azo-owned.bin",
+          "size": 159176,
+          "crc32": "65e834fb",
+          "blocks": [
+            {
+              "header": 74,
+              "offset": 96,
+              "method": 3,
+              "level": 0,
+              "packed": 95267,
+              "expanded": 159176,
+              "crc32": "65e834fb",
+              "azo_blocks": [
+                {
+                  "expanded": 90001,
+                  "x86_changes": 2,
+                  "packed": 90001,
+                  "stored": true
+                },
+                {
+                  "expanded": 69160,
+                  "x86_changes": 264,
+                  "packed": 5201,
+                  "read_bits": 41634,
+                  "lookahead_bits": 26,
+                  "literals": 66560,
+                  "matches": 10,
+                  "max_distance": 65539
+                },
+                {
+                  "expanded": 15,
+                  "x86_changes": 1,
+                  "packed": 15,
+                  "stored": true
+                }
+              ]
+            }
+          ],
+          "expected": "spec_egg_azo_multiblock.egg-0.bin.gz"
+        }
+      ]
+    }
+  ],
+  "max_lookahead_bits": 28,
+  "cross_format_equal": true,
+  "owned_encoder_stats": {
+    "packed": 5201,
+    "read_bits": 41634,
+    "lookahead_bits": 26,
+    "literals": 66560,
+    "matches": 10,
+    "max_distance": 65539
+  }
+}

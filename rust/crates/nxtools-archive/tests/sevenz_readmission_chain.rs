@@ -155,6 +155,7 @@ fn original_sevenz_coordinator_waits_for_cleanup_and_readmits_once_with_same_int
                         browser: serde_json::from_value(context["browser"].clone())
                             .expect("original source context"),
                         ordinals: vec![0],
+                        strip_prefix: None,
                     }),
                 });
             }

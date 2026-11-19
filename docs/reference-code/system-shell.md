@@ -49,6 +49,30 @@ tray Exit
   -> close without applying hide policy
 ```
 
+### About entry and first-run setup
+
+The legacy tree has no About or update-check window in `Views`, `ViewModels`, or `Services`.
+`App.axaml.cs::OnFrameworkInitializationCompleted` assigns the constructed `Views/MainWindow.axaml.cs::MainWindow`
+to the classic desktop lifetime; its Avalonia `Window.OnOpened` starts runtime after show,
+`TitleBar_PointerPressed` calls `BeginMoveDrag` / toggles maximize, and `OnClosing` cancels only
+for the main window's tray policy. Avalonia's native base implementation was not inspected.
+
+NxTools Next keeps the main caption, settings, and tray owners unchanged. Its startup-only
+integration guide is offered by `main.rs` for a visible normal launch and gated by the persisted
+dismissal in `main_window/integration_setup.rs`; finishing, skipping or closing dismisses it.
+The About entry opens a separate centered, fixed 420 × 480 DIP window on a deferred turn.
+Repeat activation reuses it; a close releases it. Kit 0.8.0 `TitleBar` keeps its platform control
+areas with a transparent background. Content uses a one-column `DescriptionList`, and direct
+styled `Button` slots (version pill and 32 DIP action row) without `Toolbar.child` adaptation.
+The overview budgets its fixed footer against the actual GPUI viewport (the Windows client can
+be shorter than the requested window bounds). Only the brand and technical detail area can scroll;
+the action row, update result, author `@Nuxoul`, and copyright stay visible. The brand artwork uses
+the original GPUI `img` assets in a fixed hit area with clearance for the full tilt. Enter, pointer
+retargeting, and leave interpolate from the current pose on GPUI frame callbacks. Motion stops
+at the target; reduced motion uses the static pose. The overview scroll owner remains unchanged.
+Copy feedback and update work are window-scoped; a failed or unavailable release query does not
+claim the running build is current. No installer, update broker, or main-window focus policy changes.
+
 ## Zed / GPUI rendering findings
 
 - Zed's Windows title bar selects one actual installed icon font (`Segoe Fluent Icons` on Windows
@@ -285,10 +309,11 @@ Production entry chains:
   STA `Run` performs OLE initialization and drains requests. Menu enumeration reaches
   `ShellMenuIconStager.Stage`, whose `CreateBitmapSourceFromHBitmap`/PNG path can associate the same
   WPF Dispatcher with this independently owned worker thread.
-- `UiaOneCommanderWindowOperations.WarmUpFocusTracker` starts one MTA tracker. `Run` installs the
-  global UIA focus-change handler and immediately samples current focus; `RememberFocus` reads the
-  sender `ProcessId` and rejects non-OneCommander processes before `FindTopLevelWindowHandle` can
-  walk up to 64 raw-view ancestors.
+- `WindowsPlatformAdapter` and `ElevatedDirectoryNavigationHelper.Run` acquire a third-party
+  directory lifetime without UIA startup. `OneCommanderUiaSession` activates CUIAutomation8 on the
+  existing MTA only for a directory-source observation or explicit OneCommander request. Ordinary
+  observation uses existing foreground/destroy events and the enabled directory features; helper
+  capture is explicit and occurs before panel publication through the original authenticated pipe.
 
 Reference behavior:
 
@@ -307,6 +332,9 @@ Reference behavior:
 - The searched `D:\Code\NxTools` checkout contains no OneCommander entry. Listary evidence remains
   its managed plugin/host boundary only; no Listary native engine implementation was available.
 
+Shell image-list resolution was rechecked at `csharp/NxTools.PlatformHost/Windows/ShellIconExtractor.cs::ExtractOnSta/Extract/ExtractShellIcon/ExtractHighResolutionShellIcon`: one bounded STA enters `SHGetFileInfo(SHGFI_SYSICONINDEX)` then owns one `SHGetImageList` reference and returned HICON. A 48px request uses SHIL_EXTRALARGE; >48 uses jumbo unless the alpha-covered artwork fits48×48, when a new extra-large HICON replaces it. Both handles and the COM pointer retain their original release ownership. `IconCache::TryGetOrCreate` updates disk recency on access; this changes no window show/hide, DPI placement, focus or cross-entity callback.
+Cold concurrent image-list requests first share one `Lazy` initialization on the original STA using a fixed attribute-only generic file target. After initialization, each query owns its own image-list reference and HICON as before; max-eight admission, cancellation and actual worker cleanup are unchanged. `ArchiveTypeIconTests.ParallelPngExtractionKeepsNativeImageListReferences` starts with48cold requests at concurrency8, without fixture prewarming.
+
 Lifecycle contract:
 
 1. **Lifecycle**: a thread owner shuts down only an already-associated WPF Dispatcher, on that same
@@ -318,17 +346,27 @@ Lifecycle contract:
    requests keep their 5-second wait, cancellation and warm-session cache. Timeout/cancellation does
    not terminate an uncooperative Shell/UIA/native call; the active name/worker remains owned until
    that call really exits and thread-final cleanup runs.
-3. **Focus**: the global subscription and per-window last-focus history remain. The sender UIA
-   `ProcessId` rejects unrelated applications before any raw-tree ascent. OneCommander elements with
-   `NativeWindowHandle == 0` remain valid anchors because process identity comes from the element and
-   the existing ascent can still resolve the OneCommander top-level ancestor. Capture after summon
-   continues to reuse this saved element and successful navigation/explicit close keeps the existing
-   host-focus restoration chain.
+3. **Focus**: OneCommander events, cached anchors, queries, raw walkers, conditions, comparisons
+   and ValuePattern use native IUIAutomation, not System.Windows.Automation. Native focus registration
+   is global while enabled; cached PID/HWND reject unrelated senders before traversal. It is removed
+   when target demand ends. HWND-less WPF children remain strong anchors; capture freezes the nearest
+   CurrentPathGet/CurrentPathSet pane before the overlay, including elevated capture. Request panes
+   outlive focus-cache replacement but retire on consume, failure, expiry, capacity, window or scope
+   retirement. Successful navigation retains original native activation/focus restoration.
 4. **Placement/layout**: C# thread and focus ownership does not change window placement, panel
    selection, menu layout or GPUI rendering.
 5. **Failure**: dispatcher cleanup failure is contained at the owning thread boundary and cannot be
    reported as a successful early thread release. Existing typed timeout/cancel/native failures stay
    unchanged; no result claims a blocked third-party call was forcibly stopped.
+
+OneCommander native resources stay on one originating MTA. Named120ms capture/1500ms navigation
+STA callers hand over one bounded operation and keep their physical admission until it returns.
+Callbacks coalesce one pending focus reference; there is no unbounded event/work queue or replacement
+thread. Stop closes generation/admission, unregisters and drains, releases native cache/panes/local
+interfaces, balances COM initialization and exits the owner. A500ms wait can report retirement_pending,
+not physical completion. Direct pointers, cache requests, BSTR/VARIANT and native handler roots have
+explicit release boundaries in NativeUiAutomation/OneCommanderUiaSession. Source implementation is
+separate from compiled/native/physical acceptance; validation is user-owned for this repair.
 
 ## Demand service lifetime — 2026-11-06
 
@@ -339,3 +377,9 @@ Current implementation: IndexerServiceInstaller registers Demand and the normal 
 TrustedUpdateBroker remains a protected executor, but is not resident: normal requests validate enrollment/package before demand start. One accepted update, rejection, maintenance probe, EOF or finite handshake timeout ends its invocation. BrokerService then reports a normal Stop and exits; an already accepted transaction settles or rolls back before stopping. Registration does not start it. Existing approved Auto updater registrations enter the original installer confirmation/same-key bootstrap-maintenance path; ordinary Request cannot replace the protected bootstrap or grant itself configuration rights. No service registration is deleted and no trust/recovery ledger is reset.
 
 Source owners: `repo:rust/apps/nxtools-indexer/src/windows_service_host.rs`, `repo:rust/apps/nxtools-indexer/src/desktop_lifetime.rs`, `repo:csharp/NxTools.PlatformHost/Windows/IndexerServiceInstaller.Lifetime.cs`, `repo:csharp/NxTools.PlatformHost/Windows/TrustedUpdateBroker.cs`, `repo:installer/bootstrap-migration.ps1`. Task: `.trellis/tasks/11-06-demand-service-lifetime/`. Owned-process/pipe tests are distinct from packaged LocalSystem exit/restart/search acceptance.
+
+## Human authorization versus machine command deadlines
+
+Quick Launch's built-in Run Elevated maps to `OpenShellTarget(RunElevated) -> WindowsPlatformAdapter::OpenShellTargetAsync -> ClipboardShellTarget::LaunchCore -> Process.Start(Verb=runas)`. User-configured administrator commands map to `LaunchProcess(run_as_admin=true) -> WindowsPlatformAdapter::LaunchProcess -> Process.Start`. Keep their original command IDs until the native authorization/launch result or connection retirement; a machine timeout must not precede the person's authorization decision. Ordinary Open/Reveal and non-elevated launch keep their existing machine policy. No new launcher, focus policy or native activation path is introduced.
+
+Service preparation follows `QuickLaunchApplication::ensure_indexer_service -> EnsureIndexerService -> IndexerServiceInstaller::EnsureAsync -> InstallAsync/ConfigureLifetimeWithAuthorizationAsync`. Rechecked `D:\Code\SwiftList-main\App\Services\ServiceManagement\ServiceInstallManager.cs::RunElevatedInstaller`: `Process.Start(runas)` precedes the finite installer-process wait. Next likewise starts its existing30-second helper-execution budget after Process.Start returns from authorization; keep that native execution budget while exempting the human-capable request from the shared IPC machine deadline. Source/deployment identity, protected tuple validation, SCM ownership and authorization-cancel failures remain unchanged. No legacy NxTools Quick Launch implementation or Listary native engine source is asserted. Existing correlated lifecycle/native error diagnostics remain payload-free.

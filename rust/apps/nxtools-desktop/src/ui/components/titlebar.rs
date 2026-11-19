@@ -8,8 +8,7 @@ use gpui_kit::{
 use crate::theme::Theme;
 use crate::ui::metrics::{MODULE_HEADER_HEIGHT, ordinary_rem};
 use crate::ui::typography::{
-    LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, TEXT_LABEL, TEXT_PAGE_TITLE, UI_FONT_FAMILY,
-    UI_MONO_FONT_FAMILY,
+    LINE_HEIGHT_LABEL, LINE_HEIGHT_PAGE_TITLE, TEXT_LABEL, TEXT_PAGE_TITLE, UI_MONO_FONT_FAMILY,
 };
 
 pub(crate) struct ModuleHeader {
@@ -71,7 +70,6 @@ impl ModuleHeader {
             .border_b_1()
             .border_color(theme.border_subtle)
             .bg(theme.canvas)
-            .font_family(UI_FONT_FAMILY)
             .flex()
             .items_center()
             .gap_2()
@@ -132,6 +130,7 @@ pub(crate) struct WindowCaption {
     close_id: &'static str,
     title: SharedString,
     prefix: Option<AnyElement>,
+    content: Option<AnyElement>,
     on_close: Option<CloseCaption>,
 }
 #[derive(Clone, Copy)]
@@ -165,6 +164,7 @@ pub(crate) fn controlled_titlebar(
         close_id,
         title: title.into(),
         prefix: None,
+        content: None,
         capabilities,
         on_close: Some(Box::new(on_close)),
     }
@@ -184,7 +184,27 @@ pub(crate) fn prefixed_controlled_titlebar(
         close_id,
         title: title.into(),
         prefix: Some(prefix.into_any_element()),
+        content: None,
         capabilities,
+        on_close: Some(Box::new(on_close)),
+    }
+    .into_any_element()
+}
+
+/// Caption content supplies its own empty drag area so interactive tabs and commands remain client hits.
+pub(crate) fn slotted_controlled_titlebar(
+    selector: &'static str,
+    close_id: &'static str,
+    content: impl IntoElement,
+    on_close: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> AnyElement {
+    WindowCaption {
+        selector,
+        close_id,
+        title: SharedString::default(),
+        prefix: None,
+        content: Some(content.into_any_element()),
+        capabilities: CaptionCapabilities::RESIZABLE,
         on_close: Some(Box::new(on_close)),
     }
     .into_any_element()
@@ -217,7 +237,7 @@ impl RenderOnce for WindowCaption {
                 .size_full()
                 .flex()
                 .items_center()
-                .child(
+                .child(self.content.unwrap_or_else(|| {
                     div()
                         .id("caption-drag-region")
                         .debug_selector(|| "caption-drag-region".into())
@@ -229,8 +249,9 @@ impl RenderOnce for WindowCaption {
                         .items_center()
                         .window_control_area(WindowControlArea::Drag)
                         .when_some(self.prefix, |bar, prefix| bar.gap_2().child(prefix))
-                        .child(div().min_w_0().truncate().child(self.title)),
-                )
+                        .child(div().min_w_0().truncate().child(self.title))
+                        .into_any_element()
+                }))
                 .when(controls.minimize, |bar| {
                     bar.child(caption_control(
                         "window-minimize",

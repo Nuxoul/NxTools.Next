@@ -8,7 +8,7 @@ use nxtools_protocol::{
     Message, PlatformCommand,
     archive_browser::{ArchiveBrowserContext, ArchiveSourceBinding},
 };
-use std::{cell::RefCell, collections::BTreeSet, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 fn mount(
     cx: &mut TestAppContext,
@@ -135,25 +135,20 @@ fn production_row_drag_threshold_freezes_selection_and_submits_before_release(
     };
     assert_eq!(command.source_window_handle, 917);
     assert_eq!(command.generation, 7);
-    let items = command.items.expect("whole frozen selection");
-    assert_eq!(
-        items
-            .iter()
-            .map(|item| item.entry.ordinal.expect("original ordinal"))
-            .collect::<Vec<_>>(),
-        vec![0, 2]
-    );
-    assert!(items.iter().all(|item| {
-        item.entry.codepage == 936
-            && item
-                .entry
-                .browser
-                .as_ref()
-                .expect("bound source")
-                .source
-                .native
-                == "v1:owned"
-    }));
+    assert_eq!(command.action, "locate");
+    let items = command.items.expect("file marker");
+    assert_eq!(items.len(), 1);
+    assert!(!items[0].directory && items[0].entry.ordinal.is_some());
+    view.read_with(&surface, |view, _| {
+        let selection = view
+            .frozen_drop_for_test()
+            .selection
+            .as_ref()
+            .expect("selected");
+        assert_eq!(selection.ordinals, vec![0, 2]);
+        assert!(selection.strip_prefix.is_none());
+        assert_eq!(selection.browser.source.native, "v1:owned");
+    });
     let session = view.read_with(&surface, |view, _| view.window_id);
     assert_eq!(command.session_id, session);
     movement(&mut surface, 0, 18., true);
@@ -294,7 +289,7 @@ fn production_row_drag_projection_before_threshold_never_delivers_old_selection(
 fn production_row_drag_mixed_unsupported_selection_rejects_whole_and_keeps_reason(
     cx: &mut TestAppContext,
 ) {
-    for mode in ["link", "encrypted", "too_large", "unsafe"] {
+    for mode in ["link", "unsafe"] {
         let (view, mut surface, endpoint) = mount(cx);
         let center = cx.new(|_| crate::notifications::NotificationCenter::default());
         cx.update(|cx| crate::notifications::register(&center, cx));
@@ -303,8 +298,6 @@ fn production_row_drag_mixed_unsupported_selection_rejects_whole_and_keeps_reaso
                 let model = view.model.as_mut().expect("model");
                 match mode {
                     "link" => model.entries[1].kind = "SymbolicLink".into(),
-                    "encrypted" => model.entries[1].encrypted = Some(true),
-                    "too_large" => model.entries[1].size = Some(i64::MAX as u64 + 1),
                     _ => model.entries[1].warning_codes = vec!["UnsafePath".into()],
                 }
                 model.reproject();
@@ -433,26 +426,19 @@ fn production_row_drag_tree_freezes_explicit_implicit_empty_and_unknown_from_sna
     down(&mut surface, 3, Modifiers::default(), 1);
     movement(&mut surface, 3, 12., true);
     let (_, command) = take_drag(&endpoint);
-    let items = serde_json::to_value(command.items.expect("whole tree")).expect("wire");
-    let items = items.as_array().expect("array");
-    assert_eq!(
-        items
-            .iter()
-            .map(|item| item["name"].as_str().expect("name"))
-            .collect::<Vec<_>>(),
-        vec![
-            "loose.txt",
-            "tree",
-            "tree/empty",
-            "tree/sub",
-            "tree/sub/deep.txt"
-        ]
-    );
-    assert_eq!(items[1]["directory"], true);
-    assert_eq!(items[2]["entry"]["ordinal"], 1);
-    assert!(items[3]["entry"].get("ordinal").is_none());
-    assert_eq!(items[4]["entry"]["ordinal"], 2);
-    assert!(items[4]["size"].is_null(), "unknown must not promise zero");
+    assert_eq!(command.action, "locate");
+    let items = command.items.expect("receiver folder");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].name, "source");
+    view.read_with(&surface, |view, _| {
+        let selection = view
+            .frozen_drop_for_test()
+            .selection
+            .as_ref()
+            .expect("selection");
+        assert_eq!(selection.ordinals, vec![0, 1, 2, 3]);
+        assert!(selection.strip_prefix.is_none());
+    });
     assert!(
         endpoint.try_receive_command_for_contract_test().is_err(),
         "no eager contents"
@@ -490,35 +476,26 @@ fn production_row_drag_tree_directory_pointer_freezes_or_rejects_hidden_member_w
             pressed_button: Some(MouseButton::Left),
             ..Default::default()
         });
-        if encrypted {
-            assert!(
-                endpoint.try_receive_command_for_contract_test().is_err(),
-                "hidden unsupported descendant cannot be excluded"
-            );
-            draw(&mut surface);
-            center.read_with(&surface, |center, _| {
-                assert!(
-                    center
-                        .items()
-                        .iter()
-                        .any(|notice| notice.message.contains("未拖出任何项目"))
-                )
-            });
-        } else {
-            let (_, command) = take_drag(&endpoint);
-            let items = command.items.expect("tree");
-            assert_eq!(
-                items.iter().map(|i| i.name.as_str()).collect::<Vec<_>>(),
-                vec!["tree", "tree/deep", "tree/deep/child.txt"]
-            );
-            assert_eq!(items[2].entry.ordinal, Some(7));
-            assert_eq!(items[2].size, None);
-        }
+        let (_, command) = take_drag(&endpoint);
+        assert_eq!(command.action, "locate");
+        assert!(command.authorization_id.is_none());
+        let items = command.items.expect("receiver folder");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "tree");
+        view.read_with(&surface, |view, _| {
+            let selection = view
+                .frozen_drop_for_test()
+                .selection
+                .as_ref()
+                .expect("selection");
+            assert_eq!(selection.ordinals, vec![7], "encrypted={encrypted}");
+            assert_eq!(selection.strip_prefix.as_deref(), Some("tree/"));
+        });
     }
 }
 
 #[gpui_kit::test]
-fn production_password_drag_locked_row_has_unlock_feedback_and_no_start(cx: &mut TestAppContext) {
+fn production_password_drag_locked_row_locates_without_preauthorization(cx: &mut TestAppContext) {
     let (view, mut surface, endpoint) = mount(cx);
     let center = cx.new(|_| crate::notifications::NotificationCenter::default());
     cx.update(|cx| crate::notifications::register(&center, cx));
@@ -533,20 +510,15 @@ fn production_password_drag_locked_row_has_unlock_feedback_and_no_start(cx: &mut
     draw(&mut surface);
     down(&mut surface, 0, Modifiers::default(), 1);
     movement(&mut surface, 0, 12., true);
+    let (_, command) = take_drag(&endpoint);
+    assert_eq!(command.action, "locate");
     assert!(
-        endpoint.try_receive_command_for_contract_test().is_err(),
-        "locked selection never enters OLE"
+        command.authorization_id.is_none(),
+        "ordinary extraction prompts after the drop"
     );
+    assert_eq!(command.items.expect("folder").len(), 1);
     draw(&mut surface);
-    center.read_with(&surface, |center, _| {
-        assert!(
-            center
-                .items()
-                .iter()
-                .any(|notice| notice.message.contains("解锁")),
-            "locked gesture must explicitly explain unlock first"
-        )
-    });
+    center.read_with(&surface, |center, _| assert!(center.items().is_empty()));
 }
 
 fn authorization_success(
@@ -630,8 +602,9 @@ fn production_password_drag_unlock_success_requires_fresh_gesture_and_revokes_ol
     down(&mut surface, 0, Modifiers::default(), 1);
     movement(&mut surface, 0, 12., true);
     let (_, drag) = take_drag(&endpoint);
-    assert_eq!(drag.authorization_id, Some(command.operation_id));
-    assert_eq!(drag.items.as_ref().expect("wholemixedselection").len(), 4);
+    assert_eq!(drag.action, "locate");
+    assert!(drag.authorization_id.is_none());
+    assert_eq!(drag.items.as_ref().expect("receiver folder").len(), 1);
     assert!(
         drag.items
             .expect("items")
@@ -788,24 +761,20 @@ fn production_tree_drag_icon_and_label_preserve_directory_without_list_navigatio
         let (_, command) = take_drag(&endpoint); // No mouse-up or deferred turn before enqueue.
         assert_eq!(command.source_window_handle, 917);
         assert_eq!(command.generation, 7);
-        let items = command.items.expect("whole subtree");
-        assert_eq!(
-            items
-                .iter()
-                .map(|item| item.name.as_str())
-                .collect::<Vec<_>>(),
-            vec!["tree", "tree/empty", "tree/sub", "tree/sub/deep.txt"]
-        );
-        assert_eq!(items[0].entry.ordinal, Some(10));
-        assert_eq!(items[1].entry.ordinal, Some(11));
-        assert_eq!(items[2].entry.ordinal, None);
-        assert_eq!(items[3].entry.ordinal, Some(12));
-        assert_eq!(items[3].size, None);
-        assert!(
-            items.iter().all(
-                |item| item.entry.browser.as_ref().expect("source").source.native == "v1:owned"
-            )
-        );
+        assert_eq!(command.action, "locate");
+        let items = command.items.expect("receiver folder");
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "tree");
+        assert!(items[0].directory && items[0].entry.ordinal.is_none());
+        view.read_with(&surface, |view, _| {
+            let selection = view
+                .frozen_drop_for_test()
+                .selection
+                .as_ref()
+                .expect("selection");
+            assert_eq!(selection.ordinals, vec![10, 11, 12]);
+            assert_eq!(selection.strip_prefix.as_deref(), Some("tree/"));
+        });
         view.read_with(&surface, |view, _| {
             let model = view.model.as_ref().expect("model");
             assert_eq!(model.folder, "tree/sub");
@@ -826,8 +795,6 @@ fn production_tree_root_drag_locates_receiver_folder_named_by_archive_stem(
     cx: &mut TestAppContext,
 ) {
     let (view, mut surface, endpoint) = mount(cx);
-    let center = cx.new(|_| crate::notifications::NotificationCenter::default());
-    cx.update(|cx| crate::notifications::register(&center, cx));
     install_tree(&view, &mut surface);
     view.update(&mut surface, |view, _| {
         view.path = PathBuf::from(r"C:\owned\Project.TAR.GZ")
@@ -835,52 +802,22 @@ fn production_tree_root_drag_locates_receiver_folder_named_by_archive_stem(
     draw(&mut surface);
     let origin = tree_down(&mut surface, "archive-tree-icon-");
     tree_move(&mut surface, origin, 12., true);
-    let (receipt, command) = take_drag(&endpoint);
+    let (_, command) = take_drag(&endpoint);
     command.validate().expect("same v1 wire");
     assert_eq!(command.action, "locate");
     assert!(command.authorization_id.is_none());
-    let items = command.items.expect("root wrapper");
-    assert_eq!(items.len(), 1, "no member is frozen or materialized for Root");
-    assert!(items[0].directory && items[0].name == "Project" && items[0].entry.ordinal.is_none());
-    assert!(endpoint.try_receive_command_for_contract_test().is_err());
-    let located = nxtools_protocol::PlatformCommandResult {
-        success: true,
-        error: None,
-        native_error_code: None,
-        data: Some(
-            r#"{"status":"located","drop_effect":1,"destination":"D:\\Downloads\\Project"}"#.into(),
-        ),
-    };
-    endpoint
-        .send_notification_for_contract_test(nxtools_ipc::PlatformNotification::CommandResult {
-            correlation_id: receipt,
-            result: located.clone(),
-        })
-        .expect("original transport observes native terminal");
-    let drop = view
-        .update(&mut surface, |view, cx| view.drag_result(receipt, &located, cx))
-        .expect("receiver-created folder starts the ordinary extraction");
-    assert_eq!(drop.destination, r"D:\Downloads\Project");
-    assert_eq!(drop.source, PathBuf::from(r"C:\owned\Project.TAR.GZ"));
-    view.read_with(&surface, |view, _| assert!(!view.native_drag_active()));
-
-    let origin = tree_down(&mut surface, "archive-tree-icon-");
-    tree_move(&mut surface, origin, 12., true);
-    let (receipt, _) = take_drag(&endpoint);
-    let unknown = nxtools_protocol::PlatformCommandResult {
-        success: false,
-        error: Some("drop_location_unknown".into()),
-        native_error_code: None,
-        data: None,
-    };
-    assert!(
-        view.update(&mut surface, |view, cx| view.drag_result(receipt, &unknown, cx))
-            .is_none()
-    );
-    draw(&mut surface);
-    center.read_with(&surface, |center, _| {
-        assert_eq!(center.items().len(), 1, "unlocated drop is reported")
+    let items = command.items.expect("receiver folder");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].name, "Project");
+    assert!(items[0].directory && items[0].entry.ordinal.is_none());
+    view.read_with(&surface, |view, _| {
+        assert!(view.frozen_drop_for_test().selection.is_none());
     });
+    tree_move(&mut surface, origin, 18., true);
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "one start/no preextract"
+    );
 }
 #[gpui_kit::test]
 fn production_tree_drag_disclosure_click_release_and_unheld_move_never_start(
@@ -957,18 +894,14 @@ fn production_tree_root_drag_rejects_empty_or_unsafe_and_locates_any_size_or_enc
         draw(&mut surface);
         let origin = tree_down(&mut surface, "archive-tree-label-");
         tree_move(&mut surface, origin, 12., true);
-        if matches!(
-            mode,
-            "files" | "roots" | "descriptors" | "bytes" | "encrypted"
-        ) {
-            // Root size/encryption never changes the gesture: the ordinary job owns the payload,
-            // limits and any password prompt after the receiver reports its folder.
+        if !matches!(mode, "empty" | "unsafe") {
             let (_, command) = take_drag(&endpoint);
-            command.validate().expect("locate wrapper");
+            command.validate().expect("root locate");
             assert_eq!(command.action, "locate", "{mode}");
             assert!(command.authorization_id.is_none(), "{mode}");
             let items = command.items.expect("wrapper");
-            assert!(items.len() == 1 && items[0].directory, "{mode}");
+            assert_eq!(items.len(), 1, "{mode}");
+            assert!(items[0].directory && items[0].name == "source", "{mode}");
         } else {
             assert!(
                 endpoint.try_receive_command_for_contract_test().is_err(),
@@ -1033,7 +966,17 @@ fn production_tree_drag_empty_directory_and_authorized_root_use_original_session
     assert_eq!(items.len(), 1);
     assert_eq!(items[0].name, "empty");
     assert!(items[0].directory && items[0].size.is_none());
-    assert_eq!(items[0].entry.ordinal, Some(11));
+    assert_eq!(command.action, "locate");
+    assert!(items[0].entry.ordinal.is_none());
+    view.read_with(&surface, |view, _| {
+        let selection = view
+            .frozen_drop_for_test()
+            .selection
+            .as_ref()
+            .expect("empty directory selection");
+        assert_eq!(selection.ordinals, vec![11]);
+        assert_eq!(selection.strip_prefix.as_deref(), Some("tree/empty/"));
+    });
     surface.update(|window, cx| {
         view.update(cx, |view, cx| view.command(Command::Refresh, window, cx))
     });
@@ -1045,57 +988,34 @@ fn production_tree_drag_empty_directory_and_authorized_root_use_original_session
         assert!(view.drag_matches(receipt), "cancel ACK not native cleanup");
     });
 
-    let (view, mut surface, endpoint) = mount(cx);
-    install_tree(&view, &mut surface);
-    view.update(&mut surface, |view, _| {
-        view.model.as_mut().expect("model").entries[2].encrypted = Some(true)
-    });
-    // Encrypted Root still locates at once; the ordinary extraction job asks for the password.
-    let root_origin = tree_down(&mut surface, "archive-tree-label-");
-    tree_move(&mut surface, root_origin, 12., true);
-    let (root_receipt, root) = take_drag(&endpoint);
-    assert_eq!(root.action, "locate");
-    assert!(root.authorization_id.is_none());
-    endpoint
-        .send_notification_for_contract_test(nxtools_ipc::PlatformNotification::CommandResult {
-            correlation_id: root_receipt,
-            result: success(),
-        })
-        .expect("original transport observes native terminal");
-    view.update(&mut surface, |view, cx| {
-        assert!(view.drag_result(root_receipt, &success(), cx).is_none())
-    });
-    // A member subtree with encrypted content keeps the unlock-then-fresh-gesture contract.
-    let origin = tree_down(&mut surface, "archive-tree-label-tree");
-    tree_move(&mut surface, origin, 12., true);
-    assert!(endpoint.try_receive_command_for_contract_test().is_err());
-    view.update(&mut surface, |view, cx| view.unlock_drag(cx));
-    let wire = endpoint
-        .try_receive_command_for_contract_test()
-        .expect("original explicit authorization");
-    let Message::PlatformCommand(PlatformCommand::ArchiveEntry(authorize)) = wire.message else {
-        panic!("authorize")
-    };
-    view.update(&mut surface, |view, cx| {
-        view.authorization_result(wire.id, &authorization_success(&authorize), cx)
-    });
-    tree_move(&mut surface, origin, 18., true);
-    assert!(
-        endpoint.try_receive_command_for_contract_test().is_err(),
-        "unlock never resumes prior gesture"
-    );
-    let fresh = tree_down(&mut surface, "archive-tree-icon-tree");
-    tree_move(&mut surface, fresh, 12., true);
-    let (_, subtree) = take_drag(&endpoint);
-    assert_eq!(subtree.action, "start");
-    assert_eq!(subtree.authorization_id, Some(authorize.operation_id));
-    assert!(
-        subtree
-            .items
-            .expect("complete subtree")
-            .iter()
-            .all(|item| !item.entry.password_interaction)
-    );
+    for (selector, prefix) in [
+        ("archive-tree-label-", None),
+        ("archive-tree-label-tree", Some("tree/")),
+    ] {
+        let (view, mut surface, endpoint) = mount(cx);
+        install_tree(&view, &mut surface);
+        view.update(&mut surface, |view, _| {
+            view.model.as_mut().expect("model").entries[2].encrypted = Some(true)
+        });
+        let origin = tree_down(&mut surface, selector);
+        tree_move(&mut surface, origin, 12., true);
+        let (receipt, command) = take_drag(&endpoint);
+        assert_eq!(command.action, "locate");
+        assert!(command.authorization_id.is_none());
+        view.update(&mut surface, |view, cx| {
+            let result = located_success(r"D:\out\tree");
+            let drop = view
+                .drag_result(receipt, &result, cx)
+                .expect("ordinary extraction intent");
+            assert_eq!(
+                drop.selection
+                    .as_ref()
+                    .and_then(|selection| selection.strip_prefix.as_deref()),
+                prefix
+            );
+        });
+        draw(&mut surface);
+    }
 }
 
 #[gpui_kit::test]
@@ -1171,24 +1091,19 @@ fn normal_drag_optional_metadata_and_resolvable_names_keep_every_selected_file(
         command
             .validate()
             .expect("one valid original native command");
-        let items = command.items.expect("all selected entries");
-        assert_eq!(items.len(), 4, "{mode}: never drop a selected ordinal");
-        assert_eq!(
-            items
-                .iter()
-                .filter_map(|item| item.entry.ordinal)
-                .collect::<BTreeSet<_>>(),
-            BTreeSet::from([0, 1, 2, 3])
-        );
-        assert_eq!(
-            items
-                .iter()
-                .map(|item| item.name.to_lowercase())
-                .collect::<BTreeSet<_>>()
-                .len(),
-            4
-        );
-        assert!(items.iter().all(|item| item.size.is_none()));
+        assert_eq!(command.action, "locate");
+        assert_eq!(command.items.expect("one receiver folder").len(), 1);
+        view.read_with(&surface, |view, _| {
+            assert_eq!(
+                view.frozen_drop_for_test()
+                    .selection
+                    .as_ref()
+                    .expect("complete selected intent")
+                    .ordinals,
+                vec![0, 1, 2, 3],
+                "{mode}: never drop an ordinal"
+            );
+        });
         assert!(
             endpoint.try_receive_command_for_contract_test().is_err(),
             "no eager extraction"
@@ -1259,28 +1174,20 @@ fn ordinary_directory_drag_held_row_enqueues_all_256_files_before_release(cx: &m
         .validate()
         .expect("complete ordinary directory command");
     assert_eq!(command.source_window_handle, 917);
-    let items = command.items.expect("all frozen descriptors");
-    assert_eq!(items.len(), 257, "one directory and all 256 files");
-    assert_eq!(items.iter().filter(|item| !item.directory).count(), 256);
-    assert_eq!(
-        items
-            .iter()
-            .filter_map(|item| item.entry.ordinal)
-            .collect::<BTreeSet<_>>(),
-        (0..256).collect::<BTreeSet<_>>()
-    );
-    assert!(items.iter().all(|item| {
-        item.entry.path.as_deref() == Some(r"C:\owned\source.zip")
-            && item.entry.codepage == 936
-            && item
-                .entry
-                .browser
-                .as_ref()
-                .expect("source binding")
-                .source
-                .native
-                == "v1:owned"
-    }));
+    assert_eq!(command.action, "locate");
+    let items = command.items.expect("receiver folder");
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].name, "ordinary");
+    assert!(items[0].directory);
+    view.read_with(&surface, |view, _| {
+        let drop = view.frozen_drop_for_test();
+        assert_eq!(drop.codepage, 936);
+        assert_eq!(drop.source, PathBuf::from(r"C:\owned\source.zip"));
+        let selection = drop.selection.as_ref().expect("whole subtree");
+        assert_eq!(selection.ordinals, (0..256).collect::<Vec<_>>());
+        assert_eq!(selection.strip_prefix.as_deref(), Some("ordinary/"));
+        assert_eq!(selection.browser.source.native, "v1:owned");
+    });
     assert!(
         endpoint.try_receive_command_for_contract_test().is_err(),
         "one enqueue, no eager extraction"
@@ -1306,10 +1213,19 @@ fn ordinary_directory_drag_shared_source_context_fits_existing_transport(cx: &mu
     else {
         panic!("expected original virtual drag route")
     };
-    assert_eq!(
-        command.items.as_ref().expect("complete selection").len(),
-        257
-    );
+    assert_eq!(command.action, "locate");
+    assert_eq!(command.items.as_ref().expect("receiver folder").len(), 1);
+    view.read_with(&surface, |view, _| {
+        assert_eq!(
+            view.frozen_drop_for_test()
+                .selection
+                .as_ref()
+                .expect("complete selection")
+                .ordinals
+                .len(),
+            256
+        )
+    });
     assert!(endpoint.try_receive_command_for_contract_test().is_err());
 }
 
@@ -1322,7 +1238,8 @@ fn production_drag_rejection_uses_deferred_notification_without_resizing_browser
     cx.update(|cx| crate::notifications::register(&center, cx));
     surface.update(|_, cx| {
         view.update(cx, |view, _| {
-            view.model.as_mut().expect("model").entries[0].encrypted = Some(true);
+            view.model.as_mut().expect("model").entries[0].warning_codes =
+                vec!["UnsafePath".into()];
         })
     });
     let before = surface
@@ -1346,7 +1263,7 @@ fn production_drag_rejection_uses_deferred_notification_without_resizing_browser
             notices[0].level,
             crate::notifications::NotificationLevel::Error
         );
-        assert!(notices[0].message.contains("加密文件"));
+        assert!(notices[0].message.contains("不允许解压"));
     });
     movement(&mut surface, 0, 18., true);
     draw(&mut surface);
@@ -1380,4 +1297,135 @@ fn production_native_drag_failure_notifies_once_without_inline_feedback(cx: &mut
     });
     assert!(surface.debug_bounds("archive-drag-feedback").is_none());
     view.read_with(&surface, |view, _| assert!(!view.native_drag_active()));
+}
+
+#[gpui_kit::test]
+fn production_selected_drop_uses_one_locate_folder_before_ordinary_extraction(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface, endpoint) = mount(cx);
+    view.update(&mut surface, |view, _| {
+        let model = view.model.as_mut().expect("snapshot");
+        model.selected.extend([
+            RowId::Entry(model.snapshot, 0),
+            RowId::Entry(model.snapshot, 2),
+        ]);
+    });
+    draw(&mut surface);
+    down(&mut surface, 0, Modifiers::default(), 1);
+    movement(&mut surface, 0, 12., true);
+    let (_, command) = take_drag(&endpoint);
+    assert_eq!(
+        command.action, "locate",
+        "all selected drops use ordinary extraction after location"
+    );
+    assert!(command.authorization_id.is_none());
+    let items = command.items.expect("file marker");
+    assert_eq!(
+        items.len(),
+        1,
+        "one marker file locates the receiver parent"
+    );
+    assert_eq!(items[0].name, "selected-files");
+    assert!(!items[0].directory && items[0].entry.ordinal.is_some());
+}
+
+fn located_success(destination: &str) -> nxtools_protocol::PlatformCommandResult {
+    nxtools_protocol::PlatformCommandResult {
+        data: Some(
+            serde_json::json!({"status":"located","destination":destination,"drop_effect":1})
+                .to_string(),
+        ),
+        ..success()
+    }
+}
+
+#[gpui_kit::test]
+fn production_selected_drop_receipt_preserves_frozen_selection_and_ignores_retired(
+    cx: &mut TestAppContext,
+) {
+    for cancel in [false, true] {
+        let (view, mut surface, endpoint) = mount(cx);
+        down(&mut surface, 0, Modifiers::default(), 1);
+        movement(&mut surface, 0, 12., true);
+        let (receipt, command) = take_drag(&endpoint);
+        view.update(&mut surface, |view, cx| {
+            let model = view.model.as_mut().expect("model");
+            model.selected.clear();
+            model.selected.insert(RowId::Entry(model.snapshot, 3));
+            if cancel {
+                view.invalidate_drag();
+            }
+            let drop = view.drag_result(receipt, &located_success(r"D:\out\source (2)"), cx);
+            if cancel {
+                assert!(drop.is_none(), "retired locate never starts extraction");
+            } else {
+                let drop = drop.expect("current located drop");
+                assert_eq!(drop.operation, command.operation_id);
+                assert_eq!(drop.source, PathBuf::from(r"C:\owned\source.zip"));
+                assert_eq!(drop.codepage, 936);
+                assert_eq!(drop.destination, r"D:\out\source (2)");
+                assert_eq!(drop.selection.expect("frozen selection").ordinals, vec![0]);
+            }
+            assert!(
+                view.drag_result(receipt, &located_success(r"D:\out\duplicate"), cx)
+                    .is_none()
+            );
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn production_nested_list_drop_strips_only_current_folder_and_keeps_every_selected_member(
+    cx: &mut TestAppContext,
+) {
+    let (view, mut surface, endpoint) = mount(cx);
+    install_tree(&view, &mut surface);
+    surface.update(|window, cx| {
+        view.update(cx, |view, cx| {
+            view.navigate("tree/sub".into(), window, cx);
+        })
+    });
+    draw(&mut surface);
+    // Original ordinal 12 belongs to the nested list, regardless of the fixture position helper.
+    let origin = surface
+        .debug_bounds("archive-entry-12")
+        .expect("nested name")
+        .center();
+    surface.simulate_event(MouseDownEvent {
+        position: origin,
+        button: MouseButton::Left,
+        click_count: 1,
+        ..Default::default()
+    });
+    tree_move(&mut surface, origin, 12., true);
+    let (receipt, command) = take_drag(&endpoint);
+    assert_eq!(command.action, "locate");
+    view.update(&mut surface, |view, cx| {
+        let drop = view
+            .drag_result(receipt, &located_success(r"D:\out\source"), cx)
+            .expect("located");
+        let selection = drop.selection.expect("selected");
+        assert_eq!(selection.ordinals, vec![12]);
+        assert_eq!(selection.strip_prefix.as_deref(), Some("tree/sub/"));
+    });
+}
+
+#[gpui_kit::test]
+fn production_selected_drop_reconnected_receipt_cannot_start_extraction(cx: &mut TestAppContext) {
+    let (view, mut surface, endpoint) = mount(cx);
+    down(&mut surface, 0, Modifiers::default(), 1);
+    movement(&mut surface, 0, 12., true);
+    let (receipt, _) = take_drag(&endpoint);
+    let replacement = endpoint.open_connection_for_contract_test();
+    view.update(&mut surface, |view, cx| {
+        assert!(
+            view.drag_result(receipt, &located_success(r"D:\out\source"), cx)
+                .is_none()
+        );
+    });
+    assert!(
+        replacement.try_recv().is_err(),
+        "old location cannot enqueue work on replacement pipe"
+    );
 }

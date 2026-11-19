@@ -735,6 +735,7 @@ pub(crate) fn quick_launch_action_available(
         }
         QuickLaunchAction::RunElevated => {
             result.opens_target()
+                && !is_settings_target(result)
                 && (result.entry.source == ApplicationSource::System
                     || PathBuf::from(&result.entry.target)
                         .extension()
@@ -780,7 +781,7 @@ pub(crate) struct QuickLaunchResultCapabilities {
 pub(crate) fn quick_launch_result_capabilities(
     result: &SearchResult,
 ) -> QuickLaunchResultCapabilities {
-    let uses_native_file_integration = result.opens_target();
+    let uses_native_file_integration = result.opens_target() && !is_settings_target(result);
     QuickLaunchResultCapabilities {
         preview: uses_native_file_integration,
         shell_actions: uses_native_file_integration
@@ -789,6 +790,10 @@ pub(crate) fn quick_launch_result_capabilities(
         shell_icon: uses_native_file_integration
             || result.entry.source == ApplicationSource::CustomCommand,
     }
+}
+
+fn is_settings_target(result: &SearchResult) -> bool {
+    result.entry.source == ApplicationSource::System && result.entry.target == "ms-settings:"
 }
 
 pub(crate) fn shell_action_for(
@@ -946,7 +951,8 @@ pub(crate) fn next_window_activation_step(
         PreTopmost(attempt) if !success && attempt < 1 => Some(PreTopmost(attempt + 1)),
         PreTopmost(_) => Some(Activate(0)),
         Activate(attempt) if !success && attempt < 1 => Some(Activate(attempt + 1)),
-        Activate(_) => Some(ConfirmTopmost(0)),
+        Activate(_) if success => Some(ConfirmTopmost(0)),
+        Activate(_) => None,
         ConfirmTopmost(_) if success => None,
         ConfirmTopmost(attempt) if attempt < 2 => Some(ConfirmTopmost(attempt + 1)),
         ConfirmTopmost(_) => None,

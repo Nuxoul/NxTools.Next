@@ -163,7 +163,7 @@ fn mapped_publication_scan_reopens_exact_file_and_rebuilds_search_rows() {
     service.rebuild_with(|mount| {
         scan_volume_and_persist_with(
             mount,
-            |_| Ok(scanned(200)),
+            |_, _| Ok(scanned(200)),
             |snapshot| {
                 let MftBase::Owned(entries) = &snapshot.base else {
                     panic!("scan starts owned")
@@ -328,7 +328,7 @@ fn mapped_publication_scan_reopen_failure_keeps_last_good_and_reports_failure() 
     service.rebuild_with(|mount| {
         let outcome = scan_volume_and_persist_with(
             mount,
-            |_| Ok(scanned(200)),
+            |_, _| Ok(scanned(200)),
             |snapshot| {
                 persist_at(snapshot, &path)?;
                 fs::write(&path, [0_u8; 8])?;
@@ -364,7 +364,7 @@ fn mapped_publication_first_scan_reopen_failure_does_not_claim_ready() {
     service.rebuild_with(|mount| {
         scan_volume_and_persist_with(
             mount,
-            |_| Ok(scanned(200)),
+            |_, _| Ok(scanned(200)),
             |snapshot| {
                 persist_at(snapshot, &path)?;
                 fs::remove_file(&path)?;

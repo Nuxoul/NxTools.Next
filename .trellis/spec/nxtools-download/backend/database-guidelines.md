@@ -2,7 +2,9 @@
 
 Evidence: `repo:rust/crates/nxtools-download/src/storage.rs#SqliteDownloadStore`, `repo:rust/crates/nxtools-download/tests/storage_contract.rs`, `repo:rust/crates/nxtools-download/tests/engine_contract.rs`.
 
-Mutex<Connection> owns schema version13 and parameterized transactions; reject newer schema, set WAL only when needed, bounded open retry, quarantine zero-byte file only without WAL/SHM. Commit before memory/events; writer sync before checkpoint, close/rename before Completed. Redownload marker/queue/transfer operations remain store-atomic. No UI SQL shortcuts. Migration/reopen/crash-window tests use temp store. [Engineering](../../shared/engineering.md), [verification](../../shared/verification.md); retain scenarios below.
+Mutex<Connection> owns schema version15 and parameterized transactions; reject newer schema, set WAL only when needed, bounded open retry, quarantine zero-byte file only without WAL/SHM. Commit before memory/events; writer sync before checkpoint, close/rename before Completed. Redownload marker/queue/transfer operations remain store-atomic. No UI SQL shortcuts. Migration/reopen/crash-window tests use temp store. [Engineering](../../shared/engineering.md), [verification](../../shared/verification.md); retain scenarios below. Controlled browser task/queue/receipt admission is one transaction; [Held/Commit/Abort contract](../../browser-extension/controlled-handoff.md) governs every start route and restart.
+
+Optional `DownloadRequest.source_page` is flattened into existing `download_tasks.request_json` and selected-task detail; no schema change or bulk backfill is needed. Missing legacy metadata stays None and is omitted on serialization so existing receipt fingerprints/replay remain byte-identical. Page provenance does not identify remote bytes: `resolution_resource_fingerprint` clears it, while submitted URL, redirect probe/final URL, frozen Referer/Cookie and user-edited filename/destination retain their separate owners. The framed BrowserHost-to-engine SQLite-reopen test and controlled acceptance identity contract cover this boundary.
 
 ## Scenario: Redownload and compact snapshot consistency
 

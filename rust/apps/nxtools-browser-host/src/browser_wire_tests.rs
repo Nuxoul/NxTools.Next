@@ -36,6 +36,7 @@ fn l6_legacy_and_reduced_protocol_two_payloads_share_the_original_projection() {
     assert!(request.headers.is_empty());
     assert!(request.cookie.is_none());
     assert!(request.referrer.is_none());
+    assert!(request.source_page.is_none());
 }
 
 #[test]
@@ -66,6 +67,64 @@ fn l6_single_cookie_batch_passes_native_framing_and_host_intake_without_limit_ch
     .expect("32 item intake");
     assert!(
         matches!(command.command, DownloadCommand::BrowserBatchSubmit { submissions } if submissions.len() == 32)
+    );
+}
+
+#[test]
+fn source_page_fields_are_bounded_and_batch_uses_the_shared_builder() {
+    let page_title = "文".repeat(1024);
+    let payload: BrowserDownloadPayload = serde_json::from_value(json!({
+        "handoffId": Uuid::new_v4(), "url": "https://files.example.test/archive.zip",
+        "sourcePageUrl": "https://pages.example.test/article", "sourcePageTitle": page_title,
+    }))
+    .expect("native page facts");
+    let request = build_browser_download_request(
+        payload.clone(),
+        &AppConfig::default(),
+        std::env::temp_dir(),
+    )
+    .expect("1024 captured Chinese characters fit 4096 bytes");
+    assert_eq!(
+        request.source_page.as_ref().expect("page").title,
+        page_title
+    );
+    let command = build_browser_batch_command(
+        BrowserBatchDownloadPayload {
+            items: vec![payload.clone()],
+        },
+        &AppConfig::default(),
+        std::env::temp_dir(),
+        Uuid::new_v4(),
+    )
+    .expect("batch projection");
+    let DownloadCommand::BrowserBatchSubmit { submissions } = command.command else {
+        panic!("batch")
+    };
+    assert_eq!(submissions[0].request.source_page, request.source_page);
+    let oversized: BrowserDownloadPayload = serde_json::from_value(json!({
+        "url": "https://files.example.test/archive.zip", "sourcePageTitle": "x".repeat(4097)
+    }))
+    .expect("decode oversized title");
+    assert!(
+        build_browser_download_request(oversized, &AppConfig::default(), std::env::temp_dir())
+            .is_err()
+    );
+    let oversized_url: BrowserDownloadPayload = serde_json::from_value(json!({
+        "url": "https://files.example.test/archive.zip", "sourcePageUrl": "x".repeat(MAX_URL_BYTES + 1)
+    })).expect("decode oversized URL");
+    assert!(
+        build_browser_download_request(oversized_url, &AppConfig::default(), std::env::temp_dir())
+            .is_err()
+    );
+    let title_only: BrowserDownloadPayload = serde_json::from_value(json!({
+        "url": "https://files.example.test/archive.zip", "sourcePageTitle": "orphan title"
+    }))
+    .expect("missing page URL");
+    assert!(
+        build_browser_download_request(title_only, &AppConfig::default(), std::env::temp_dir())
+            .expect("title without URL")
+            .source_page
+            .is_none()
     );
 }
 
@@ -264,6 +323,129 @@ fn b1_durable_queue_only_receipt_and_replay_are_not_transport_admission() {
         assert_eq!(frame["data"]["handoffState"], "persisted");
         assert_eq!(frame["data"]["reason"], "desktop_accepted");
     }
+}
+
+#[test]
+fn source_page_survives_framed_intake_and_sqlite_reopen() {
+    use nxtools_download::{
+        DownloadResolutionControl, DownloadResolutionMode, DownloadResolutionOptions,
+    };
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("local redirect listener");
+    let address = listener.local_addr().expect("local address");
+    listener
+        .set_nonblocking(true)
+        .expect("bounded fixture listener");
+    let server = std::thread::spawn(move || {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while Instant::now() < deadline {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream
+                        .set_nonblocking(false)
+                        .expect("blocking accepted stream");
+                    stream
+                        .set_read_timeout(Some(Duration::from_secs(2)))
+                        .expect("read deadline");
+                    let mut bytes = [0u8; 4096];
+                    let length = stream.read(&mut bytes).expect("fixture request");
+                    let request = String::from_utf8_lossy(&bytes[..length]);
+                    let response = if request.contains(" /original ") {
+                        "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned()
+                    } else {
+                        "HTTP/1.1 200 OK\r\nContent-Length: 16\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n0123456789abcdef".to_owned()
+                    };
+                    stream
+                        .write_all(response.as_bytes())
+                        .expect("fixture response");
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(Duration::from_millis(10))
+                }
+                Err(error) => panic!("fixture accept: {error}"),
+            }
+        }
+    });
+    let root = std::env::temp_dir().join(format!("browser-source-page-{}", Uuid::new_v4()));
+    let paths = browser_fixture_paths(&root);
+    let database = root.join("downloads.sqlite3");
+    let engine = nxtools_download::DownloadEngine::open(&database).expect("temporary store");
+    let pipe = start_browser_fixture_host(engine.clone());
+    let handoff_id = Uuid::new_v4();
+    let source_url = format!("http://{address}/original");
+    let final_url = format!("http://{address}/final");
+    let page_url = "https://pages.example.test/article?chapter=3";
+    let referrer = "https://referrer.example.test/";
+    let mut frame = Vec::new();
+    write_native_message(&mut frame, &json!({
+        "protocolVersion": BROWSER_PROTOCOL_VERSION, "type": "create_task", "requestId": Uuid::new_v4(),
+        "payload": { "handoffId": handoff_id, "url": source_url, "fileName": "original.bin",
+            "referrer": referrer, "cookie": "fixture=secret", "sourcePageUrl": page_url,
+            "sourcePageTitle": "来源页面", "startImmediately": false, "openDialog": false }
+    })).expect("framed browser payload");
+    let bytes = read_native_message(&mut frame.as_slice())
+        .expect("read frame")
+        .expect("frame");
+    let wire: BrowserRequest = serde_json::from_slice(&bytes).expect("browser request");
+    let receipt = submit_download_with_client(
+        wire.request_id,
+        wire.payload,
+        &paths,
+        |_, _| DownloadIpcClient::connect(&pipe, Duration::from_secs(2)),
+        |client, command, _| client.command(command),
+    )
+    .expect("owned pipe admission");
+    assert!(receipt.accepted);
+    let task_id = DownloadTaskId::from_uuid(
+        Uuid::parse_str(receipt.task_id.as_deref().expect("task ID")).expect("UUID"),
+    );
+    drop(engine);
+    let reopened = nxtools_download::DownloadEngine::open(&database).expect("reopen SQLite store");
+    let detail = reopened
+        .task(task_id)
+        .expect("selected task detail")
+        .expect("persisted task");
+    let mut request = detail.task.request().clone();
+    assert_eq!(
+        serde_json::to_value(&request).expect("serialize stored request")["source_page"],
+        json!({ "url": page_url, "title": "来源页面" })
+    );
+    let selected = reopened.handle_command(command_envelope(
+        Uuid::new_v4(),
+        DownloadCommand::TaskDetail { task_id },
+        RequestOrigin::Browser,
+    ));
+    let DownloadCommandOutcome::TaskDetail(selected) = selected.outcome else {
+        panic!("selected TaskDetail must contain the full request")
+    };
+    assert_eq!(
+        selected.task.task.request().source_page,
+        request.source_page
+    );
+    assert_eq!(request.source_url, source_url);
+    assert_eq!(request.referrer.as_deref(), Some(referrer));
+    assert_eq!(request.cookie.as_deref(), Some("fixture=secret"));
+    request.file_name = Some("user-edited.bin".into());
+    request.save_directory = root.join("chosen");
+    let probe = reopened
+        .probe_with_resolution(
+            request.clone(),
+            DownloadResolutionOptions {
+                operation_id: Uuid::new_v4(),
+                mode: DownloadResolutionMode::Bypass,
+            },
+            DownloadResolutionControl::default(),
+        )
+        .expect("probe follows real redirect");
+    assert_eq!(probe.final_url, final_url);
+    assert_eq!(request.file_name.as_deref(), Some("user-edited.bin"));
+    assert_eq!(
+        serde_json::to_value(&request).expect("edited request")["source_page"]["url"],
+        page_url
+    );
+    server.join().expect("redirect fixture");
 }
 
 #[test]
@@ -626,6 +808,8 @@ fn b1_production_extension_cookie_context_and_ownership_roundtrip() {
         .take_browser_dialog_receiver()
         .expect("attach synthetic confirmation consumer");
     let pipe = start_browser_fixture_host(engine.clone());
+    let controlled = std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+    let pending_controlled = controlled.clone();
     let consumer = std::thread::spawn(move || {
         for expected in [
             "session=firefox-container-2",
@@ -635,11 +819,19 @@ fn b1_production_extension_cookie_context_and_ownership_roundtrip() {
             let dialog = dialogs
                 .recv_blocking()
                 .expect("real extension confirmation request");
-            let nxtools_download::BrowserDownloadDialogSource::Download(request) = &dialog.source
-            else {
-                panic!("HTTP extension download must retain the original request source");
-            };
-            assert_eq!(request.cookie.as_deref(), Some(expected));
+            match dialog.source {
+                nxtools_download::BrowserDownloadDialogSource::ControlledDownload(request) => {
+                    assert_eq!(request.cookie.as_deref(), Some(expected));
+                    pending_controlled
+                        .lock()
+                        .expect("pending confirmation")
+                        .insert(dialog.handoff_id, *request);
+                }
+                nxtools_download::BrowserDownloadDialogSource::Download(request) => {
+                    assert_eq!(request.cookie.as_deref(), Some(expected));
+                }
+                _ => panic!("HTTP extension request source required"),
+            }
             dialog
                 .completion
                 .send(Ok(()))
@@ -672,12 +864,79 @@ fn b1_production_extension_cookie_context_and_ownership_roundtrip() {
         let wire: BrowserRequest =
             serde_json::from_value(raw).expect("production extension request");
         let response = match wire.kind.as_str() {
+            "prepare_browser_handoff" => controlled_handoff::prepare_with_client(
+                wire.request_id,
+                wire.payload,
+                &paths,
+                |_, _| DownloadIpcClient::connect(&pipe, Duration::from_secs(2)),
+            )
+            .expect("controlled preparation through real host"),
+            "get_browser_handoff" | "commit_browser_handoff" | "abort_browser_handoff" => {
+                let handoff =
+                    Uuid::parse_str(wire.payload["handoffId"].as_str().expect("handoff UUID"))
+                        .expect("UUID");
+                if wire.kind == "get_browser_handoff"
+                    && let Some(request) = controlled
+                        .lock()
+                        .expect("pending confirmations")
+                        .remove(&handoff)
+                {
+                    let accepted = engine.handle_command(command_envelope(
+                        handoff,
+                        DownloadCommand::BrowserAcceptHandoff {
+                            handoff_id: handoff,
+                            request,
+                            mode: DownloadSubmitMode::QueueOnly,
+                            resolution: nxtools_download::DownloadResolutionOptions {
+                                operation_id: handoff,
+                                mode: nxtools_download::DownloadResolutionMode::Bypass,
+                            },
+                        },
+                        RequestOrigin::Browser,
+                    ));
+                    assert!(matches!(
+                        accepted.outcome,
+                        DownloadCommandOutcome::BrowserHandoff {
+                            state: nxtools_download::BrowserHandoffState::Held,
+                            ..
+                        }
+                    ));
+                }
+                controlled_handoff::operate_with_client(
+                    wire.request_id,
+                    &wire.kind,
+                    wire.payload,
+                    || DownloadIpcClient::connect(&pipe, Duration::from_secs(2)),
+                )
+                .expect("controlled ownership through real host")
+            }
+            "create_tasks" => {
+                let payload = serde_json::from_value(wire.payload).expect("batch payload");
+                let config = AppConfig::load_or_create(&paths).expect("fixture config");
+                let command = build_browser_batch_command(
+                    payload,
+                    &config,
+                    PathBuf::from(&config.download.default_directory),
+                    correlation_id(&wire.request_id).expect("batch UUID"),
+                )
+                .expect("original batch command");
+                let result = engine.handle_command(command);
+                let DownloadCommandOutcome::BrowserBatchAccepted { results } = result.outcome
+                else {
+                    panic!("batch receipt")
+                };
+                BrowserResponse::batch_accepted(wire.request_id, results)
+            }
             "create_task" => {
-                if requests < 3 {
-                    assert_eq!(wire.payload["openDialog"], true);
-                    assert!(engine.tasks().expect("confirmation task count").is_empty());
+                if wire.payload["openDialog"] == true {
+                    assert_eq!(
+                        engine
+                            .tasks()
+                            .expect("only controlled tasks before manual confirmation")
+                            .len(),
+                        2
+                    );
                 } else {
-                    assert_eq!(wire.payload["openDialog"], false);
                     assert_eq!(wire.payload["startImmediately"], false);
                 }
                 submit_download_with_client(
@@ -744,13 +1003,28 @@ fn b1_production_extension_cookie_context_and_ownership_roundtrip() {
         completed,
         "extension completed its ownership and Cookie assertions"
     );
-    assert_eq!(requests, 7);
+    assert!(
+        requests >= 12,
+        "real controlled status/commit plus manual/batch/compensation frames"
+    );
     consumer.join().expect("confirmation consumer completed");
-    let tasks = engine.tasks().expect("one original compensated task");
-    assert_eq!(tasks.len(), 1);
+    let tasks = engine
+        .tasks()
+        .expect("controlled, batch and compensated tasks");
+    assert_eq!(tasks.len(), 5);
     assert_eq!(
-        tasks[0].task.status(),
-        nxtools_download::DownloadStatus::Cancelled
+        tasks
+            .iter()
+            .filter(|entry| entry.task.status() == nxtools_download::DownloadStatus::Cancelled)
+            .count(),
+        1
+    );
+    assert_eq!(
+        tasks
+            .iter()
+            .filter(|entry| entry.task.status() == nxtools_download::DownloadStatus::Created)
+            .count(),
+        4
     );
 }
 

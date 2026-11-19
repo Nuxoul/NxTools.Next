@@ -614,6 +614,22 @@ Consumers must not save the same rules again. Diagnostics use UUID, counts, bool
 stage and elapsed time, never application names/paths or clipboard payload. No clipboard history,
 paste, hotkey, preview, retention or native protocol policy changes are part of this amendment.
 
+## Global fullscreen panel summon policy (2026-11-16)
+
+The global Application Blacklist page owns the shared fullscreen summon switch. Exclusive D3D
+and borderless foreground fullscreen suppress both Clipboard and Quick Launch before native
+panel-event publication; ordinary framed/maximized windows and desktop do not. The foreground
+window's monitor supplies complete device-pixel bounds. Clipboard capture, history, paste,
+preview and per-process capture exclusions remain independent and unchanged.
+
+Legacy `ClipboardHotKeyService::HandleHotKeyMessage` and `ClipboardHistoryPopupWindow` constructor,
+PrepareForPopupShow, HidePopup and passive-preview teardown were rechecked through public base
+Hide; Avalonia native base source is unavailable. Existing debounce/recording, target snapshot,
+show/hide/focus and one passive preview remain the original owners. One durable global save
+defers both consumers; Cancel and failed save publish no policy. Missing global values inherit
+the legacy Quick Launch choice, while explicit global false remains authoritative. See
+[shared policy/source map](quick-launch-research.md#global-fullscreen-summon-policy-2026-11-16).
+
 ## Feature-first workbench layout migration
 Rechecked legacy MainWindow.axaml calling/storage/archive/retention controls, MainWindow.axaml.cs original/copy/plain/hide-before-target flow, ClipboardHistoryPopupWindow constructor/open/show/search/hide/one preview and ClipboardPreviewWindow passive style/clamp. Zed list_item stable start/end slots is visual precedent only. New main settings projection keeps every action/limit/modifier/hotkey/storage/archive callback in a non-shrinking scrollable group stack; no new controller/transaction. History source/name/time/management share stable slots, original actions unchanged; compact300x440/default/user resize and passive preview owner retained. Management Button intentionally prevents pointer focus; real Tab/KeyUp path tested rather than a second activation handler. Actual native owned scroll-to-storage reveals export/import/backup/compact/migrate; no real data operation performed. Full installed/DPI/native-preview acceptance separate.
 
@@ -814,6 +830,12 @@ Evidence: .trellis/tasks/10-14-installed-feedback-actions/ui-outcomes.md.
   in the same transaction, then returns the stable existing/new row ID.
 - `Services\ClipboardPasteService.cs:13-33,35-52` resolves full content through the existing
   history delegates; copy does not activate a target or invoke the paste hide callback.
+- `Services\ClipboardRepository.cs:231-246` reads a full active row with `Get(id)` and
+  `WHERE id = $id AND is_deleted = 0`; it does not depend on history order or categories.
+- Next extension snapshots (`clipboard_worker.rs::extension_get_async`) and derived-source
+  checks (`ClipboardWriteRequest::Capture`) use `nxtools-clipboard/src/lib.rs::active_item`
+  on the existing worker connection. Exact ID, full payload and deleted/missing rejection
+  are independent of the panel's cursor pagination; the read does not mark the item used.
 
 Invariants for the narrow Next seam: one serialized worker/history and one native capture
 listener; notify only after required asset promotion and history commit; failed persistence
@@ -825,6 +847,10 @@ formats. Cross-owner effect dispatch and completion callbacks run on a later app
 never inside capture callbacks or database transactions. This adds no popup/preview placement,
 focus, show/hide or script-runtime ownership; parent composition still owns trust, cancellation,
 event opt-in and causality routing.
+
+### Composable history search
+
+Legacy `ClipboardRepository.cs::LoadPopupPage` and `BuildPopupWhereClause` keep copied content search distinct from source-app metadata; the popup constructor/prepare/show/hide and passive preview remain those described above. TieZ `src/shared/lib/searchQuery.ts::parseSearchQuery` uses typed intent for tag/note, not app or date filtering. Next combines unchanged plain keyword/scope and active category with an optional exact source process and a half-open capture-time interval. The existing worker, one SQL predicate for count/offset/cursor, current generation, and summary/full-by-ID boundary remain. A compact Kit0.8.0 XSmall outlined Button with DropdownMenu/PopupMenu exposes the two independent choices; Empty/EmptyContent presents a local next action. No separate window or native placement, focus, cancellation, preview, action/persistence owner changes. Source and query text are not logged.
 
 ## Manual extension feedback recheck (2026-10-15)
 User-approved `.trellis/tasks/10-15-extension-action-feedback/` adds usage and local one-shot feedback, not a new native popup owner. Re-read old `Views/ClipboardHistoryPopupWindow.axaml.cs` constructor/Open/Activated/Deactivated, PrepareForPopupShow and HidePopup through Avalonia Window.Show/Hide; old `Services/ClipboardRepository.cs` Save/GetPopup ordering/duplicate revival. Preserve explicit show/search focus, original hide/deactivate/outside-pointer and separate passive preview boundaries. There is no equivalent cross-feature plugin feedback in that old chain; new behavior is explicitly requested. Next `ui/history.rs` -> original `ClipboardItemAction` callback -> deferred manual chooser -> per-run application/runtime -> original adapter/worker commit observation -> explicit `ui/extension_feedback.rs` exact-ID location. `nxtools-clipboard/src/query.rs::page_containing_item` uses the same store/order and bounded SQLite snapshot. Dialog close does not cancel/replay; one Escape belongs to the owning transient layer. No reference binary, live clipboard or user script executed.
@@ -1006,3 +1032,25 @@ or cancelled native call retains its charge until it actually returns; no replac
 This changes neither event/pipe queue capacities nor their existing frame/session cleanup.
 The bound covers charged tail payload, not the producer's current capture, CLR object overhead,
 native/IO buffers, downstream metadata or process working set.
+
+## Administrator-target paste input
+
+Verified legacy chain: `ClipboardPasteService` writes/flushes the selected representation, invokes
+the pre-restore callback, restores the original target/focus through `ClipboardWindowService`
+native activation with bounded input-thread attachment, verifies foreground and sends paste input.
+`ClipboardHistoryPopupWindow.HidePopup` cancels the current preview/outside-monitor lifetime before
+the actual Hide boundary. Next retains its existing failure-retry popup and success-only history use.
+
+Administrator input extends the existing authenticated `ElevatedDirectoryNavigationHelper.Run`
+channel, not the desktop privilege. `WindowsPasteCoordinator` writes clipboard data locally once,
+then delegates only target/focus HWND and correlation to input-only execution for elevated targets.
+Validate same-session elevated target and focus ancestry. Recheck foreground after settling and
+modifier release before Ctrl+V; WM_PASTE alone remains unconfirmed failure. An unavailable helper
+before dispatch permits the ordinary path; unknown results after dispatch never replay input.
+No clipboard representation, content or paths cross into the elevated input request.
+
+## Administrator outside-click dismissal
+
+Rechecked legacy `Views/ClipboardHistoryPopupWindow.axaml.cs:127-167,206-259,430-507`: Open/Activated focuses search, Deactivated and the45ms outside-pointer monitor hide through HidePopup -> preview/menu retirement -> inherited Window.Hide. Native Avalonia internals are unavailable. Next's original chain is ordinary `EventWindow::MonitorPointerPress -> GlobalPointerPressedEvent -> ClipboardApplication::handle_platform_event -> ClipboardPanel::handle_pointer_pressed -> close_with_reason -> native visibility acknowledgement`. A same-session administrator window can remain foreground after a failed popup activation; another click on it creates no ForegroundChanged fallback, and the ordinary mouse-state sampler can miss that press.
+
+Use the existing authenticated elevated helper's message window to observe primary/secondary press transitions on administrator targets and forward the sampled root HWND, helper identity and original timestamp. Ordinary EventWindow validates the current helper/configuration, converts the original sample time and assigns the original platform event sequence before the same pointer event dispatch. No clipboard data, pointer-movement stream, new worker or global mouse hook is needed. Keep pin/menu/pending-paste/current-popup/preview and stale-sample guards in Rust; press release/held state cannot repeatedly dismiss. The same private helper channel may activate only the currently connected Desktop peer's windows, with final foreground/focus readback; ordinary windows and unavailable-before-dispatch fallback retain their original path. No whole-desktop elevation or protected deployment change is implied.

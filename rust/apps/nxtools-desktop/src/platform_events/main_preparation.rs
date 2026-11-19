@@ -15,6 +15,7 @@ pub(crate) struct MainWindowPreparation {
     buffered: VecDeque<PlatformNotification>,
     ready: Option<Ready>,
     started: Instant,
+    keep_application_on_failure: bool,
 }
 impl MainWindowPreparation {
     pub(crate) fn new(window_handle: i64, ready: impl FnOnce(&mut App) + 'static) -> Self {
@@ -30,7 +31,13 @@ impl MainWindowPreparation {
             buffered: VecDeque::new(),
             ready: Some(Box::new(ready)),
             started: Instant::now(),
+            keep_application_on_failure: false,
         }
+    }
+
+    pub(crate) fn keep_application_on_failure(mut self) -> Self {
+        self.keep_application_on_failure = true;
+        self
     }
 }
 impl PlatformEventDispatcher {
@@ -125,6 +132,14 @@ impl PlatformEventDispatcher {
     ) {
         if let Some(preparation) = self.main_preparation.take() {
             warn!(event="product.main_window.prepare.failed", command_id=?preparation.pending, reason, ?native_error_code, elapsed_ms=preparation.started.elapsed().as_millis());
+            if preparation.keep_application_on_failure {
+                // A document launch does not publish an unprepared main HWND.
+                self.main_window_handle = 0;
+                for buffered in preparation.buffered {
+                    self.forward(buffered, cx);
+                }
+                return;
+            }
             self.main_preparation_failed = true;
             // Fail hidden: do not publish a default-sized HWND or enable a native reveal path.
             cx.quit();

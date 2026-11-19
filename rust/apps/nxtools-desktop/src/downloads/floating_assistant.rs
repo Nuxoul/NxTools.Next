@@ -64,6 +64,7 @@ impl DownloadApplication {
                 headers: Vec::new(),
                 cookie: None,
                 referrer: None,
+                source_page: None,
                 certificate_policy: Default::default(),
                 connection_limit: Some(self.default_connection_limit()),
                 speed_limit_bytes_per_second: None,
@@ -108,6 +109,7 @@ mod tests {
                         headers: Vec::new(),
                         cookie: None,
                         referrer: None,
+                        source_page: None,
                         certificate_policy: Default::default(),
                         connection_limit: Some(1),
                         speed_limit_bytes_per_second: None,
@@ -178,6 +180,7 @@ mod tests {
             bytes_per_second: speed,
             active_connections: 1,
             segments: Vec::new(),
+            finishing: None,
         }
     }
 
@@ -251,9 +254,16 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn floating_add_download_reuses_blank_and_prefill_requires_normal_probe_and_confirmation(
+    fn floating_add_download_reuses_blank_and_auto_opens_fixed_confirmation(
         cx: &mut TestAppContext,
     ) {
+        use gpui_kit::VisualTestContext;
+        use std::io::{Read as _, Write as _};
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+        };
+
         let (application, directory) = fixture(cx, "floating-add");
         application.update(cx, |app, cx| {
             app.open_floating_download(None, cx).expect("blank form")
@@ -275,9 +285,39 @@ mod tests {
             application.read_with(cx, |app, _| app.new_download_window),
             Some(first_window)
         );
-        let url = "http://127.0.0.1:9/floating.bin";
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("floating probe server");
+        let address = listener.local_addr().expect("floating fixture address");
+        listener
+            .set_nonblocking(true)
+            .expect("bounded floating listener");
+        let server_stop = Arc::new(AtomicBool::new(false));
+        let worker_stop = Arc::clone(&server_stop);
+        let worker = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while Instant::now() < deadline && !worker_stop.load(Ordering::Acquire) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        stream
+                            .set_nonblocking(false)
+                            .expect("accepted blocking fixture");
+                        stream
+                            .set_read_timeout(Some(Duration::from_secs(1)))
+                            .expect("bounded fixture read");
+                        let mut request = [0_u8; 4096];
+                        let _ = stream.read(&mut request);
+                        let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\nfixture!");
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::sleep(Duration::from_millis(5));
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+        let url = format!("http://{address}/floating.bin");
         let conflict = application.update(cx, |app, cx| {
-            app.open_floating_download(Some(url.into()), cx)
+            app.open_floating_download(Some(url.clone()), cx)
         });
         assert!(
             conflict.is_err(),
@@ -287,35 +327,51 @@ mod tests {
             view.read_with(cx, |view, cx| view.url.read(cx).value().to_string()),
             ""
         );
-        // Close the old window through the normal GPUI owner before opening another.
         let _ = first_window.update(cx, |_, window, _| window.remove_window());
         application.update(cx, |app, cx| {
-            app.open_floating_download(Some(url.into()), cx)
-                .expect("prefill form")
+            app.open_floating_download(Some(url.clone()), cx)
+                .expect("external floating intake")
         });
-        let view = application.read_with(cx, |app, _| {
-            app.new_download_view.clone().expect("prefill view")
+        let source = application.read_with(cx, |app, _| {
+            app.new_download_window.expect("floating source window")
         });
-        assert_eq!(
-            view.read_with(cx, |view, cx| view.url.read(cx).value().to_string()),
-            url
-        );
-        assert_eq!(
-            view.read_with(cx, |view, _| view
-                .external_request
-                .as_ref()
-                .map(|r| r.source_url.clone())),
-            Some(url.into()),
-            "ordinary Add Download receives the URL as an initial draft"
-        );
+        let deadline = Instant::now() + Duration::from_secs(4);
+        let (target, view) = loop {
+            cx.run_until_parked();
+            let intake = application.read_with(cx, |app, _| {
+                app.new_download_window.zip(app.new_download_view.clone())
+            });
+            if let Some((target, view)) = intake
+                && target != source
+                && view.read_with(cx, |view, _| !view.probing && view.probe.is_some())
+            {
+                break (target, view);
+            }
+            assert!(
+                Instant::now() < deadline,
+                "floating external URL reaches fixed confirmation"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(source.update(cx, |_, _, _| {}).is_err());
+        view.read_with(cx, |view, cx| {
+            assert_eq!(view.url.read(cx).value().as_ref(), url.as_str());
+            assert!(view.external_request.is_some());
+            assert!(!view.submitting);
+        });
+        application.read_with(cx, |app, _| {
+            assert!(app.engine.tasks().expect("original task store").is_empty());
+        });
+        let mut surface = VisualTestContext::from_window(target, cx);
+        surface.refresh().expect("floating fixed confirmation");
         assert!(
-            view.read_with(cx, |view, _| view.probe.is_none()),
-            "probe/confirmation have not silently submitted"
+            surface
+                .debug_bounds("download-new-confirmed-form")
+                .is_some()
         );
-        assert!(
-            application.read_with(cx, |app, _| app.tasks.is_empty()),
-            "prefill never submits"
-        );
+        assert!(surface.debug_bounds("download-new-footer").is_some());
+        server_stop.store(true, Ordering::Release);
+        worker.join().expect("bounded floating fixture");
         let _ = std::fs::remove_dir_all(directory);
     }
 }

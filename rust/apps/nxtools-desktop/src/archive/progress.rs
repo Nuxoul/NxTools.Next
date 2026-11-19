@@ -1457,7 +1457,6 @@ impl Render for JobProgressView {
             .flex_col()
             .bg(theme.colors.background)
             .text_color(theme.colors.foreground)
-            .font_family(crate::ui::typography::UI_FONT_FAMILY)
             .min_h_0()
             .child(crate::ui::components::titlebar::controlled_titlebar(
                 "archive-progress-titlebar",

@@ -6,7 +6,7 @@ namespace NxTools.PlatformHost.Windows;
 
 // One durable owner: signed staging -> deploy -> publish. Bootstrap runs separately from replaced binaries.
 internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKey,
-    TrustedUpdateTransaction.IDeployment deployment, IPlatformLog log)
+    TrustedUpdateTransaction.IDeployment deployment, IPlatformLog log, byte[]? legacyPublicKey = null)
 {
     internal interface IDeployment
     {
@@ -160,8 +160,17 @@ internal sealed class TrustedUpdateTransaction(string directory, byte[] publicKe
         return next;
     }
 
-    private VerifiedRelease VerifySnapshot(string path, State expected) =>
-        TrustedReleaseManifest.VerifyRecoverySnapshot(path, publicKey, expected.Sequence, expected.ReleaseId, expected.ManifestSha256);
+    private VerifiedRelease VerifySnapshot(string path, State expected)
+    {
+        try
+        {
+            return TrustedReleaseManifest.VerifyRecoverySnapshot(path, publicKey, expected.Sequence, expected.ReleaseId, expected.ManifestSha256);
+        }
+        catch (Exception) when (legacyPublicKey is not null)
+        {
+            return TrustedReleaseManifest.VerifyRecoverySnapshot(path, legacyPublicKey, expected.Sequence, expected.ReleaseId, expected.ManifestSha256);
+        }
+    }
 
     private static T Read<T>(string path)
     {

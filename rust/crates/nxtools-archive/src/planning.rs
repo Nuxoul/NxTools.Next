@@ -83,6 +83,7 @@ pub struct ExtractionPlan {
     files: Vec<PlannedFile>,
     directories: Vec<String>,
     pub(crate) explicit_directories: Vec<EntryId>,
+    output_prefix: Option<String>,
     subfolder: Option<String>,
     total: Option<u64>,
     full_archive: bool,
@@ -123,6 +124,10 @@ impl ExtractionPlan {
                 .subfolder
                 .as_ref()
                 .map_or(0, |name| name.capacity() as u64)
+            + self
+                .output_prefix
+                .as_ref()
+                .map_or(0, |prefix| prefix.capacity() as u64)
     }
     /// One original ordinal into a fresh private cache lease, never a general extraction target.
     pub(crate) fn browser_entry(
@@ -144,6 +149,7 @@ impl ExtractionPlan {
             directories: (1..parts.len()).map(|end| parts[..end].join("/")).collect(),
             explicit_directories: Vec::new(),
             subfolder: None,
+            output_prefix: None,
             total: entry.size,
             full_archive: false,
             skipped_special: 0,
@@ -156,8 +162,82 @@ impl ExtractionPlan {
         self.subfolder = Some(validate_stem(name)?);
         Ok(())
     }
+    /// Project only output names; source IDs and the immutable catalog stay unchanged.
+    pub fn strip_output_prefix(&mut self, prefix: &str) -> Result<()> {
+        let root = prefix.strip_suffix('/').ok_or(ArchiveError::UnsafePath)?;
+        crate::path_policy::validate_relative(root)?;
+        for file in &self.files {
+            let relative = file
+                .relative
+                .strip_prefix(prefix)
+                .ok_or(ArchiveError::SourceChanged)?;
+            crate::path_policy::validate_relative(relative)?;
+        }
+        for id in &self.explicit_directories {
+            let entry = self
+                .projection
+                .get(id.ordinal as usize)
+                .filter(|entry| entry.id == *id)
+                .ok_or(ArchiveError::SourceChanged)?;
+            let name = entry.display_path.replace('\\', "/");
+            let name = name.trim_end_matches('/');
+            if name != root && !name.starts_with(prefix) {
+                return Err(ArchiveError::SourceChanged);
+            }
+        }
+        for file in &mut self.files {
+            file.relative = file.relative[prefix.len()..].to_owned();
+        }
+        self.directories = self
+            .directories
+            .iter()
+            .filter_map(|name| name.strip_prefix(prefix).map(str::to_owned))
+            .collect();
+        self.output_prefix = Some(prefix.to_owned());
+        Ok(())
+    }
+    /// The receiver owns the exact selected root; it has no child metadata path.
+    pub(crate) fn directory_output_path(
+        &self,
+        entry: &crate::ArchiveEntry,
+    ) -> Result<Option<String>> {
+        let name = entry.display_path.replace('\\', "/");
+        let name = name.trim_end_matches('/');
+        let name = if let Some(prefix) = &self.output_prefix {
+            if name == prefix.trim_end_matches('/') {
+                return Ok(None);
+            }
+            name.strip_prefix(prefix)
+                .ok_or(ArchiveError::SourceChanged)?
+        } else {
+            name
+        };
+        Ok(Some(self.subfolder.as_ref().map_or_else(
+            || name.to_owned(),
+            |root| format!("{root}/{name}"),
+        )))
+    }
     pub fn files(&self) -> &[PlannedFile] {
         &self.files
+    }
+    #[cfg(feature = "isolated-codecs")]
+    pub(crate) fn original_file_path(&self, file: &PlannedFile) -> Result<String> {
+        if self.output_prefix.is_none() {
+            return Ok(file.relative.clone());
+        }
+        let entry = self
+            .projection
+            .get(file.id.ordinal as usize)
+            .filter(|entry| entry.id == file.id)
+            .ok_or(ArchiveError::SourceChanged)?;
+        Ok(entry.display_path.replace('\\', "/"))
+    }
+    #[cfg(feature = "isolated-codecs")]
+    pub(crate) fn original_directory_path(&self, relative: &str) -> String {
+        self.output_prefix.as_ref().map_or_else(
+            || relative.to_owned(),
+            |prefix| format!("{prefix}{relative}"),
+        )
     }
     pub fn directories(&self) -> &[String] {
         &self.directories
@@ -262,6 +342,7 @@ impl ExtractionPlan {
         let mut total = Some(0u64);
         let mut skipped_special = 0;
         let mut plan_bytes = 0u64;
+        let mut collision_candidates = Vec::new();
         let mut projection_work = SelectionWork::default();
         let result = expand_selection(
             &snapshot.entries,
@@ -285,7 +366,26 @@ impl ExtractionPlan {
                     return Err(ArchiveError::UnsafePath);
                 }
                 if entry.warnings.contains(&EntryWarning::OutputCollision) {
-                    return Err(ArchiveError::OutputCollision);
+                    if full_archive {
+                        return Err(ArchiveError::OutputCollision);
+                    }
+                    if matches!(entry.kind, EntryKind::File | EntryKind::Directory) {
+                        reserve_plan(
+                            &mut plan_bytes,
+                            2 * std::mem::size_of::<crate::ArchiveEntry>() as u64
+                                + entry.raw_name.len() as u64
+                                + entry.display_path.len() as u64
+                                + (entry.warnings.len() * std::mem::size_of::<EntryWarning>())
+                                    as u64,
+                            credit,
+                            reservation,
+                        )?;
+                        let mut candidate = entry.clone();
+                        candidate
+                            .warnings
+                            .retain(|warning| *warning != EntryWarning::OutputCollision);
+                        collision_candidates.push(candidate);
+                    }
                 }
                 if matches!(entry.kind, EntryKind::Link | EntryKind::Special) {
                     skipped_special += 1;
@@ -347,6 +447,20 @@ impl ExtractionPlan {
         );
         *work += projection_work;
         result?;
+        if !collision_candidates.is_empty() {
+            crate::path_policy::annotate(
+                &mut collision_candidates,
+                &crate::OperationControl::with_operation_id(snapshot.session),
+                plan_bytes,
+                credit,
+            )?;
+            if collision_candidates
+                .iter()
+                .any(|entry| entry.warnings.contains(&EntryWarning::OutputCollision))
+            {
+                return Err(ArchiveError::OutputCollision);
+            }
+        }
         let empty = files.is_empty() && directories.is_empty();
         let subfolder = if empty {
             None
@@ -374,6 +488,7 @@ impl ExtractionPlan {
             explicit_directories,
             subfolder,
             total,
+            output_prefix: None,
             full_archive,
             skipped_special,
             session: snapshot.session,

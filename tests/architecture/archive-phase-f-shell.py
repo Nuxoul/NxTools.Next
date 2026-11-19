@@ -39,6 +39,19 @@ assert service.count("class ArchiveIntegrationTransaction") == 0, "no second tra
 assert "DeleteSubKeyTree" not in store and "DeleteSubKeyTree" not in service
 assert "key.ValueCount != 0 || key.SubKeyCount != 0" in store, "owned key removal only when empty"
 assert "UserChoice" in store, "store validation rejects UserChoice targets"
+# Apply replaces an earlier revision through the same exact uninstall; no manual revert step.
+assert "ArchiveIntegrationTransaction.Uninstall(_store, existing)" in service
+assert "ArchiveShellIntegrationStates.RevertRequired, command.DesiredRevision" not in service
+# The Explorer choice is written only by the explicit default claim, after facts (including the
+# original choices) persist, and is read back through the live association before success.
+claim = read(host / "WindowsArchiveDefaultClaim.cs")
+proof = read(host / "UserChoiceHash.cs")
+assert "command.SetDefault && _defaultClaim is not null" in service
+assert service.index("PriorUserChoices = priors") < service.index("_ledger.Save(facts)") < service.index("_defaultClaim.Set(extension, ArchiveIntegrationPlan.ProgId)")
+assert "RestoreChoices(facts, [], correlationId)" in service, "Revert writes the original choice back"
+assert "AssocQueryString" in claim and "RegQueryInfoKey" in claim and "DeleteSubKeyTree" not in claim
+assert "Microsoft.Win32" not in proof and "File.Read" not in proof, "proof computation stays pure"
+assert "Software\\Microsoft" not in plan, "pure value plan stays under Software\\Classes; the Explorer choice has its own owner"
 assert "Registry.LocalMachine" not in store + service + future
 for token in ("Registry.CurrentUser", "Microsoft.Win32", "SHChangeNotify", "LocalServer32"):
     assert token not in plan, "pure P206 plan must stay pure: " + token

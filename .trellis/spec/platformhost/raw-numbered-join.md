@@ -4,7 +4,7 @@ Evidence: `repo:rust/apps/nxtools-desktop/src/tools/raw_join.rs`, `repo:rust/cra
 
 ## 1. Scope / Trigger
 
-Explicit Other Tools ordinary `.001/.002/...` byte concatenation. This is not archive opening, extraction, repair, conversion or split-set editing. Signature-bound ZIP/7z entrances remain separate; `.z01` is not a raw numeric part. Generic raw sets cannot establish whether an unknown final part is missing.
+Explicit Archive Browser File/Open-menu ordinary `.001/.002/...` byte concatenation beside “新建压缩包”. This is not archive opening, extraction, repair, conversion or split-set editing. Signature-bound ZIP/7z entrances remain separate; `.z01` is not a raw numeric part. Generic raw sets cannot establish whether any part, including an unknown final part, is missing.
 
 ## 2. Signatures
 
@@ -25,7 +25,7 @@ The original pipe session owns one active operation/frozen preview. Synchronous 
 
 Original IPC installs pending before enqueue, binds origin_generation and reserves one physical operation. Inspect/Start have no ordinary10second timeout. Exact Cancel has coalesced reserved fair delivery even when the ordinary queue is full. Cancel ACK never releases pending/slot; only the original Inspect/Start CommandResult or connection retirement does. Generic send cannot bypass origin-bound admission.
 
-Desktop owns only this slice's stable inputs and operation state. Original tool-window map, sole platform forwarder, Files/Save picker and native HWND remain. Both first-open and existing-window activation defer beyond MainWindow's lease. Replies defer through weak window/entity and validate pending ID/session/generation/connection. Source edits invalidate preview; official Dialog requires explicit confirmation before Start. Close during work requests Cancel and waits for actual cancelled/cleanup-complete terminal. Failure/late success stays visible; disconnect reports unknown output rather than fabricated cleanup.
+Desktop owns only this slice's stable inputs and operation state. The original single raw-join window/global weak target, sole platform forwarder, Files/Save picker and native HWND remain. Archive PopupMenu callbacks and both first-open/existing-window activation defer beyond the menu/browser lease. Replies defer through weak window/entity and validate pending ID/session/generation/connection. Source edits invalidate preview; official Dialog requires explicit confirmation before Start. Close during work requests Cancel and waits for actual cancelled/cleanup-complete terminal. Failure/late success stays visible; disconnect reports unknown output rather than fabricated cleanup.
 
 The actual official Medium32 confirmation Button dispatches public `dialog::Confirm { secondary:false }` only for `ClickEvent::is_keyboard()`. DialogAction retains pointer Confirm ownership. Both routes reach the original deferred generation-scoped on_ok, the sole Start continuation. No product KeyDown/KeyUp handler or vendor change is needed.
 
@@ -49,7 +49,7 @@ Diagnostics use original operation/session/generation IDs: accepted, inspecting/
 
 ## 5. Good / Base / Bad Cases
 
-Good: select `.003`, review numerically ordered `.001/.002/.003` names/count/output and unknown-final-part limitation, explicitly confirm, then stream to a new file while Ping/other commands remain responsive.
+Good: choose “合并分卷文件（.001）…” beside “新建压缩包”, select `.003`, review the numerically ordered observed `.001/.002/.003` names/count/output and the explicit inability to determine completeness, confirm, then stream to a new file while Ping/other commands remain responsive.
 Base: cancel the confirmation dialog; no Start/output command exists.
 Bad: infer completeness from a contiguous discovered suffix, concatenate `.z01`, replace an existing file, or release a worker/window on Cancel ACK.
 
@@ -57,7 +57,7 @@ Bad: infer completeness from a contiguous discovered suffix, concatenate `.z01`,
 
 - Protocol `ref18_strict_shapes_identity_and_metadata_bounds`: strict shapes, redacted Debug, native metadata, ordinal/generation rejection.
 - IPC `ref18_original_router_reserves_cancel_and_waits_for_actual_terminal`: full queue, fair/coalesced Cancel, no long timeout, ACK preserves reservation, actual terminal releases, old origin rejects.
-- Desktop `tools::raw_join::tests::ref18_`: actual inputs/buttons/Dialog/IME, first Enter and first Space after observed semantic Confirm focus, Escape/back/no-Start, repeat/no-duplicate, stale/deferred reply, picker/focus, minimum viewport/footer, caption close/cleanup/late success and real catalog cache-hit/reopen.
+- Desktop `tools::raw_join::tests::ref18_`: actual Archive Browser PopupMenu entry and absent Other Tools tile, default menu semantics, inputs/buttons/Dialog/IME, first Enter and first Space after observed semantic Confirm focus, Escape/back/no-Start, repeat/no-duplicate, stale/deferred reply, picker/focus, minimum viewport/footer, caption close/cleanup/late success and real menu cache-hit/reopen.
 - C# exact reviewed `--fixtures "raw numbered join"` LIST then identical RUN: later-part byte-exact readback; family/source/output refusals with zero preflight content IO; >buffer streaming/read-write maxima/one content pass; cancellation/write112/cleanup/handle reopen; original serial reader Ping/clipboard-parse response and physical drain.
 
 Owned TestPlatform/native fixtures do not establish physical IME/DPI/provider, human visual, installed/Release or full-workspace acceptance. Never execute joined output.

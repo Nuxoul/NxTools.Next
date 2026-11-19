@@ -1,0 +1,6 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Exact nonzero LIST/RUN, resource joins, quality and acceptance levels"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Bounded cleanup, low-noise diagnostics and protected original owners"}
+{"file":".trellis/tasks/11-11-native-memory-connection-experiments/design.md","reason":"Before-relative baseline, protected reports, integration and remaining acceptance"}
+{"file":".trellis/tasks/11-11-platformhost-uia-memory/design.md","reason":"Native evidence and sustained thresholds before B6 timing"}
+{"file":".trellis/tasks/11-11-reference-b6-connection-experiments/design.md","reason":"Independent adoption criteria, raw timing/cost metrics and retained invariants"}
+{"file":".trellis/tasks/11-11-reference-b5-completion-intentions/coordinator-acceptance.md","reason":"Read-only accepted B1-B5 preservation boundary, not whole-HEAD attribution"}

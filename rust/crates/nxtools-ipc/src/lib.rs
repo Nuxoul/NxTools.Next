@@ -3,6 +3,7 @@ pub mod archive_job;
 pub mod archive_read;
 mod archive_virtual_drag;
 pub mod desktop_archive_intent;
+pub mod desktop_markdown_intent;
 mod floating_cleanup;
 pub mod raw_numbered_join;
 use std::collections::HashMap;
@@ -182,12 +183,34 @@ impl CommandRouter {
         let command_id = envelope.id;
         let timeout = match &envelope.message {
             Message::PlatformCommand(PlatformCommand::FloatingAssistant(command))
-                if command.operation
-                    == nxtools_protocol::floating_assistant::FloatingAssistantOperation::Retire =>
+                if matches!(
+                    command.operation,
+                    nxtools_protocol::floating_assistant::FloatingAssistantOperation::Retire
+                        | nxtools_protocol::floating_assistant::FloatingAssistantOperation::PickImage
+                ) =>
             {
                 None
             }
-            Message::PlatformCommand(PlatformCommand::RawNumberedJoin(_)) => None,
+            Message::PlatformCommand(PlatformCommand::OpenShellTarget(command))
+                if matches!(
+                    command.action,
+                    nxtools_protocol::ShellOpenAction::OpenWith
+                        | nxtools_protocol::ShellOpenAction::RunElevated
+                ) =>
+            {
+                None
+            }
+            Message::PlatformCommand(PlatformCommand::LaunchProcess(command))
+                if command.run_as_admin =>
+            {
+                None
+            }
+            Message::PlatformCommand(
+                PlatformCommand::RawNumberedJoin(_)
+                | PlatformCommand::InvokeShellAction(_)
+                | PlatformCommand::EnsureIndexerService
+                | PlatformCommand::BeginFileDrag(_),
+            ) => None,
             Message::PlatformCommand(
                 PlatformCommand::ArchivePicker(_)
                 | PlatformCommand::PickArchivePath(_)
@@ -195,11 +218,17 @@ impl CommandRouter {
                 | PlatformCommand::PickClipboardStorageDirectory(_)
                 | PlatformCommand::PickDirectory(_)
                 | PlatformCommand::PickProgram(_)
+                | PlatformCommand::PickMarkdownDocument(_)
+                | PlatformCommand::PickMarkdownExport(_)
                 | PlatformCommand::PickExtensionManifest(_)
                 | PlatformCommand::PickExtensionRuntime(_)
                 | PlatformCommand::PickExtensionSettingPath(_)
                 | PlatformCommand::PickBrowserExtensionExportPath(_),
             ) => None,
+            // The native PDF STA has a 30-second deadline; allow the result to return after it.
+            Message::PlatformCommand(PlatformCommand::PrintMarkdownPdf(_)) => {
+                Some(Duration::from_secs(35))
+            }
             _ => Some(PENDING_COMMAND_TIMEOUT),
         };
         let active = self
@@ -296,6 +325,7 @@ pub struct PlatformServerEndpoint {
     primary_connection_lock: Arc<AsyncMutex<()>>,
     archive: Arc<archive_read::ArchiveTransport>,
     archive_intents: Option<desktop_archive_intent::ArchiveIntentEndpoint>,
+    markdown_intents: Option<desktop_markdown_intent::MarkdownIntentEndpoint>,
 }
 
 pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoint) {
@@ -326,6 +356,7 @@ pub fn platform_bridge(capacity: usize) -> (PlatformBridge, PlatformServerEndpoi
             primary_connection_lock,
             archive,
             archive_intents: None,
+            markdown_intents: None,
         },
     )
 }
@@ -338,6 +369,15 @@ impl PlatformServerEndpoint {
         self.archive_intents = Some(endpoint);
         self
     }
+
+    pub fn with_markdown_intents(
+        mut self,
+        endpoint: desktop_markdown_intent::MarkdownIntentEndpoint,
+    ) -> Self {
+        self.markdown_intents = Some(endpoint);
+        self
+    }
+
     /// Pause only the original command consumer while a fixture fills its queue.
     #[doc(hidden)]
     pub fn pause_commands_for_contract_test(
@@ -949,6 +989,8 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
         | Message::IndexerCommand(_)
         | Message::DesktopArchiveIntent(_)
         | Message::DesktopArchiveReceipt(_)
+        | Message::DesktopMarkdownIntent(_)
+        | Message::DesktopMarkdownReceipt(_)
         | Message::IndexerEvent(_)
         | Message::Error(_) => return None,
     };
@@ -1017,7 +1059,7 @@ async fn handle_connection(
     endpoint: &PlatformServerEndpoint,
 ) -> Result<()> {
     use std::os::windows::io::AsRawHandle;
-    let archive_authorized =
+    let desktop_authorized =
         local_pipe::authorize_desktop_peer(server.as_raw_handle(), true).is_ok();
     info!("platform host connected");
     let (reader, mut writer) = tokio::io::split(server);
@@ -1035,7 +1077,16 @@ async fn handle_connection(
         return desktop_archive_intent::serve(
             handshake,
             endpoint.archive_intents.as_ref(),
-            archive_authorized,
+            desktop_authorized,
+            &mut writer,
+        )
+        .await;
+    }
+    if matches!(handshake.message, Message::DesktopMarkdownIntent(_)) {
+        return desktop_markdown_intent::serve(
+            handshake,
+            endpoint.markdown_intents.as_ref(),
+            desktop_authorized,
             &mut writer,
         )
         .await;
@@ -1112,6 +1163,11 @@ async fn handle_connection(
                     match &envelope.message {
                         Message::PlatformEvent(event) => {
                             if endpoint.is_active_generation(generation) {
+                                if matches!(event, PlatformEvent::ClipboardPanelRequested(_)) {
+                                    let correlation_id = envelope.correlation_id.unwrap_or(envelope.id);
+                                    info!(event = "clipboard.summon_received", %correlation_id, generation,
+                                        "clipboard panel request received");
+                                }
                                 endpoint
                                     .send_notification(PlatformNotification::Event(event.clone()))
                                     .await?;
@@ -1304,14 +1360,197 @@ mod tests {
         )))
     }
 
+    fn human_shell_commands() -> Vec<(&'static str, PlatformCommand)> {
+        use nxtools_protocol::{
+            BeginFileDragCommand, InvokeShellActionCommand, LaunchProcessCommand,
+            OpenShellTargetCommand, ShellOpenAction,
+        };
+        let shell = |action| {
+            PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                target: "C:/fixture/app.exe".into(),
+                action,
+            })
+        };
+        vec![
+            ("open_with", shell(ShellOpenAction::OpenWith)),
+            ("run_elevated", shell(ShellOpenAction::RunElevated)),
+            (
+                "admin_process",
+                PlatformCommand::LaunchProcess(LaunchProcessCommand {
+                    executable: "C:/fixture/app.exe".into(),
+                    arguments: vec![],
+                    working_directory: None,
+                    run_as_admin: true,
+                    run_silently: false,
+                }),
+            ),
+            (
+                "indexer_authorization",
+                PlatformCommand::EnsureIndexerService,
+            ),
+            (
+                "shell_invoke",
+                PlatformCommand::InvokeShellAction(InvokeShellActionCommand {
+                    session_id: uuid::Uuid::new_v4().to_string(),
+                    command_id: 1,
+                    owner_window_handle: 42,
+                }),
+            ),
+            (
+                "file_drag",
+                PlatformCommand::BeginFileDrag(BeginFileDragCommand {
+                    path: "C:/fixture/file.bin".into(),
+                    source_window_handle: 42,
+                }),
+            ),
+        ]
+    }
+
+    #[tokio::test]
+    async fn human_shell_commands_outlive_machine_deadlines_and_route_terminal_once() {
+        for (name, command) in human_shell_commands() {
+            for cancelled in [false, true] {
+                let (bridge, server) = platform_bridge(1);
+                let receiver = server.open_connection_for_contract_test();
+                let generation = bridge.connection_generation().expect("original connection");
+                let id = uuid::Uuid::new_v4();
+                bridge
+                    .send_command_with_id(command.clone(), id)
+                    .expect("admit human interaction");
+                let envelope = receiver.try_recv().expect("original command dispatch");
+                assert_eq!(envelope.id, id);
+                assert_eq!(envelope.message, Message::PlatformCommand(command.clone()));
+                let accepted = server.router.lock().expect("router").pending[&id].accepted_at;
+                for seconds in [11, 121, 601, 3601] {
+                    assert!(
+                        server
+                            .expire_pending_commands(
+                                generation,
+                                accepted + Duration::from_secs(seconds),
+                            )
+                            .is_empty(),
+                        "{name}: human wait must retain the original pending request"
+                    );
+                }
+                assert!(bridge.notification_receiver().try_recv().is_err());
+                assert!(server.complete_command(generation, id).is_some());
+                let terminal = PlatformCommandResult {
+                    success: !cancelled,
+                    error: None,
+                    native_error_code: None,
+                    data: Some(if cancelled { "cancelled" } else { "completed" }.into()),
+                };
+                server
+                    .send_notification(PlatformNotification::CommandResult {
+                        correlation_id: id,
+                        result: terminal.clone(),
+                    })
+                    .await
+                    .expect("forward original delayed terminal");
+                assert!(matches!(
+                    bridge.notification_receiver().try_recv(),
+                    Ok(PlatformNotification::CommandResult { correlation_id, result })
+                        if correlation_id == id && result == terminal
+                ));
+                assert!(server.complete_command(generation, id).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn human_shell_commands_retire_on_disconnect_without_consuming_replacement_results() {
+        for (name, command) in human_shell_commands() {
+            let (bridge, server) = platform_bridge(1);
+            let receiver = server.open_connection_for_contract_test();
+            let original = bridge.connection_generation().expect("original connection");
+            let id = bridge.send_command(command.clone()).expect("human command");
+            assert_eq!(receiver.try_recv().expect("original dispatch").id, id);
+            server.set_connected_for_contract_test(false);
+            assert!(!server.command_pending_for_contract_test(id), "{name}");
+            assert!(matches!(
+                bridge.notification_receiver().try_recv(),
+                Ok(PlatformNotification::Disconnected { generation, pending_command_ids })
+                    if generation == original && pending_command_ids == vec![id]
+            ));
+            let replacement = server.open_connection_for_contract_test();
+            let current = bridge
+                .connection_generation()
+                .expect("replacement connection");
+            bridge
+                .send_command_with_id(command, id)
+                .expect("replacement command");
+            assert_eq!(replacement.try_recv().expect("replacement dispatch").id, id);
+            assert!(server.complete_command(original, id).is_none(), "{name}");
+            assert!(server.command_pending_for_contract_test(id), "{name}");
+            assert!(server.complete_command(current, id).is_some(), "{name}");
+            assert!(server.complete_command(current, id).is_none(), "{name}");
+        }
+    }
+
+    #[tokio::test]
+    async fn machine_shell_commands_keep_their_original_timeout() {
+        use nxtools_protocol::{
+            LaunchProcessCommand, OpenShellTargetCommand, QueryShellActionsCommand,
+            QueryShellSubmenuCommand, ShellOpenAction,
+        };
+        let shell = |action| {
+            PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                target: "C:/fixture/app.exe".into(),
+                action,
+            })
+        };
+        let commands = [
+            shell(ShellOpenAction::Open),
+            shell(ShellOpenAction::SelectInExplorer),
+            PlatformCommand::LaunchProcess(LaunchProcessCommand {
+                executable: "C:/fixture/app.exe".into(),
+                arguments: vec![],
+                working_directory: None,
+                run_as_admin: false,
+                run_silently: false,
+            }),
+            PlatformCommand::QueryShellActions(QueryShellActionsCommand {
+                target: "C:/fixture/file.bin".into(),
+            }),
+            PlatformCommand::QueryShellSubmenu(QueryShellSubmenuCommand {
+                session_id: uuid::Uuid::new_v4().to_string(),
+                submenu_id: 1,
+            }),
+        ];
+        for command in commands {
+            let (bridge, server) = platform_bridge(1);
+            let receiver = server.open_connection_for_contract_test();
+            let generation = bridge.connection_generation().expect("machine connection");
+            let id = bridge.send_command(command).expect("machine command");
+            assert_eq!(receiver.try_recv().expect("machine dispatch").id, id);
+            let accepted = server.router.lock().expect("router").pending[&id].accepted_at;
+            let expired =
+                server.expire_pending_commands(generation, accepted + Duration::from_secs(11));
+            assert_eq!(expired.len(), 1);
+            assert_eq!(expired[0].id, id);
+            server
+                .send_timeout_results(expired)
+                .await
+                .expect("machine timeout");
+            assert!(matches!(
+                bridge.notification_receiver().try_recv(),
+                Ok(PlatformNotification::CommandResult { correlation_id, result })
+                    if correlation_id == id && !result.success
+                        && result.error.as_deref() == Some("platform command timed out")
+            ));
+            assert!(server.complete_command(generation, id).is_none());
+        }
+    }
+
     #[test]
     fn human_pickers_outlive_machine_deadlines_and_obey_generation() {
         use nxtools_protocol::{
-            ClipboardArchivePickerMode, ExportBrowserExtensionCommand, PickArchivePathCommand,
-            PickBrowserExtensionExportPathCommand, PickClipboardArchivePathCommand,
-            PickClipboardStorageDirectoryCommand, PickDirectoryCommand,
-            PickExtensionManifestCommand, PickExtensionRuntimeCommand,
-            PickExtensionSettingPathCommand, PickProgramCommand,
+            ClipboardArchivePickerMode, ExportBrowserExtensionCommand, MarkdownExportFormat,
+            PickArchivePathCommand, PickBrowserExtensionExportPathCommand,
+            PickClipboardArchivePathCommand, PickClipboardStorageDirectoryCommand,
+            PickDirectoryCommand, PickExtensionManifestCommand, PickExtensionRuntimeCommand,
+            PickExtensionSettingPathCommand, PickMarkdownDocumentCommand,
+            PickMarkdownExportCommand, PickProgramCommand,
         };
         let pickers = [
             PlatformCommand::PickDirectory(PickDirectoryCommand {
@@ -1324,6 +1563,16 @@ mod tests {
                 current_path: String::new(),
                 source_window_handle: 1,
                 source_process_id: 2,
+            }),
+            PlatformCommand::PickMarkdownDocument(PickMarkdownDocumentCommand {
+                source_window_handle: 1,
+                source_process_id: 2,
+            }),
+            PlatformCommand::PickMarkdownExport(PickMarkdownExportCommand {
+                source_window_handle: 1,
+                source_process_id: 2,
+                format: MarkdownExportFormat::Html,
+                suggested_name: "report".into(),
             }),
             PlatformCommand::PickExtensionManifest(PickExtensionManifestCommand {
                 current_path: String::new(),

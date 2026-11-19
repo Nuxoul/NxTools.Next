@@ -1,0 +1,4 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Workstation settings, source/compiled separation and native acceptance gates"}
+{"file":".trellis/spec/nxtools-desktop/backend/index.md","reason":"Desktop checklist and pointers to focused UI, lifecycle and quality contracts"}
+{"file":".trellis/spec/platformhost/index.md","reason":"Reviewed native fixture boundaries and explicit Windows acceptance"}
+{"file":"docs/reference-code/markdown-reader.md","reason":"User-requested title bar modes and verified reference behavior"}

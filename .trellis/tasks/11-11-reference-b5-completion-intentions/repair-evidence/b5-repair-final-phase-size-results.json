@@ -1,0 +1,26 @@
+﻿{
+    "fail":  0,
+    "run_count":  1,
+    "list_count":  1,
+    "run_exit":  0,
+    "run_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-phase-size.log",
+    "pass":  1,
+    "list_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-phase-size-list.log",
+    "selection":  [
+                      "test",
+                      "--locked",
+                      "--offline",
+                      "-p",
+                      "nxtools-desktop",
+                      "--bin",
+                      "nxtools-desktop",
+                      "task_windows_use_compact_content_driven_phase_sizes"
+                  ],
+    "filter":  "task_windows_use_compact_content_driven_phase_sizes",
+    "target":  "bin:nxtools-desktop",
+    "list_exit":  0,
+    "expected_count":  0,
+    "package":  "nxtools-desktop",
+    "skip":  0,
+    "not_run":  0
+}

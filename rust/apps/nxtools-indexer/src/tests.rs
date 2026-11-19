@@ -3662,7 +3662,7 @@ fn m4_shared_admission_rejects_non_hello_without_resetting_the_current_session()
 }
 
 #[test]
-fn launcher_search_sends_real_file_matches_before_directory_pass_finishes() {
+fn launcher_search_preserves_per_kind_candidates_across_framed_batches() {
     let entries = (0..20_000)
         .map(|row| {
             test_entry(
@@ -3694,7 +3694,7 @@ fn launcher_search_sends_real_file_matches_before_directory_pass_finishes() {
     let expected = search_snapshots_while(&snapshots, &IndexSettings::default(), &request, || true)
         .expect("production query completes");
     let mut framed = Vec::new();
-    let mut observed_first_before_second_pass = false;
+    let mut observed_nonterminal_files = false;
     let started = Instant::now();
     let completed = search_launcher_snapshots_while(
         &snapshots,
@@ -3711,8 +3711,8 @@ fn launcher_search_sends_real_file_matches_before_directory_pass_finishes() {
                 },
             )));
             write_envelope_sync(&mut framed, &frame).expect("production bounded IPC frame");
-            if !complete && !observed_first_before_second_pass {
-                observed_first_before_second_pass = true;
+            if !complete && !observed_nonterminal_files {
+                observed_nonterminal_files = true;
                 assert!(
                     String::from_utf8_lossy(&framed)
                         .lines()
@@ -3721,14 +3721,14 @@ fn launcher_search_sends_real_file_matches_before_directory_pass_finishes() {
                             Message::IndexerEvent(IndexerEvent::SearchBatch(batch))
                                 if !batch.complete && !batch.items.is_empty()
                         )),
-                    "file results must cross the framed boundary before scanning directories"
+                    "file candidates must cross the bounded framed boundary"
                 );
             }
             true
         },
     );
     assert!(completed);
-    assert!(observed_first_before_second_pass);
+    assert!(observed_nonterminal_files);
     let received = String::from_utf8(framed)
         .expect("utf8 frames")
         .lines()
@@ -3793,7 +3793,7 @@ fn launcher_search_cancellation_does_not_send_terminal_after_first_kind() {
 }
 
 #[test]
-fn launcher_worker_emits_framed_first_batch_before_terminal() {
+fn launcher_worker_preserves_framed_identity_and_one_terminal() {
     let snapshots = Arc::new(vec![test_snapshot(
         r"C:\",
         Some(1),
@@ -3940,3 +3940,6 @@ fn launcher_stream_preserves_empty_and_homophone_fallback() {
 
 #[path = "search_retirement_tests.rs"]
 mod search_retirement_tests;
+
+#[path = "launcher_single_walk_tests.rs"]
+mod launcher_single_walk_tests;

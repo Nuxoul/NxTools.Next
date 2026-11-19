@@ -106,7 +106,6 @@ impl QuickLaunchApplication {
             let runtime = service.runtime.clone();
             let request_cancel = request.cancellation.clone();
             let task = service.executor().spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_millis(150)).await;
                 if *request_cancel.borrow() {
                     return Err(nxtools_extensions::RuntimeError::Cancelled);
                 }
@@ -131,7 +130,6 @@ impl QuickLaunchApplication {
         }
     }
 
-    #[cfg(test)]
     pub(super) fn extension_search_in_progress(&self, query: &str) -> bool {
         self.extension_providers.query == query && self.extension_providers.running > 0
     }
@@ -143,6 +141,7 @@ impl QuickLaunchApplication {
             return;
         }
         self.extension_providers.running -= 1;
+        self.refresh_indexed_results(cx, false);
         self.resize_popup_content(cx);
     }
     pub(super) fn apply_extension_batch(
@@ -175,10 +174,11 @@ impl QuickLaunchApplication {
         let state = popup
             .panel
             .update(cx, |panel, cx| {
-                if !panel.is_open
-                    || panel.action_mode.is_some()
-                    || panel.search_input.read(cx).value().as_ref() != query
-                {
+                let current_query = panel.action_mode.as_ref().map_or_else(
+                    || panel.search_input.read(cx).value().to_string(),
+                    |mode| mode.parent.query.clone(),
+                );
+                if !panel.is_open || current_query != query {
                     return None;
                 }
                 Some((panel.results.clone(), panel.selected, panel.search_pending))
@@ -269,15 +269,16 @@ impl QuickLaunchApplication {
                 self.extension_providers.order.push(row.entry.id.clone());
             }
         }
-        if pending && results.is_empty() {
-            return;
+        self.refresh_indexed_results(cx, false);
+    }
+    pub(super) fn refresh_extension_results_after_action_mode(
+        &mut self,
+        query: &str,
+        cx: &mut Context<Self>,
+    ) {
+        if self.extension_providers.query == query {
+            self.refresh_indexed_results(cx, false);
         }
-        self.request_icons(&results[..results.len().min(ICON_PREFETCH_LIMIT)], cx);
-        let _ = popup.panel.update(cx, |panel, cx| {
-            panel.replace_results(results, cx);
-            panel.search_pending = false;
-            cx.notify();
-        });
     }
     pub(super) fn merge_extension_rows(
         &self,
@@ -457,7 +458,7 @@ mod tests {
         });
     }
     #[gpui_kit::test]
-    fn real_panel_late_batches_keep_identity_and_current_input_retires_actions(
+    fn normal_provider_completion_keeps_identity_and_current_input_retires_actions(
         cx: &mut TestAppContext,
     ) {
         cx.update(gpui_kit::init);
@@ -518,6 +519,9 @@ mod tests {
                 });
                 app.extension_providers.generation = 17;
                 app.extension_providers.query = "query".into();
+                app.extension_providers.running = 1;
+                app.index_search.begin("query", INDEX_CANDIDATE_LIMIT);
+                app.index_search.complete = true;
                 app.popup = Some(QuickLaunchWindow {
                     window: window.window_handle(),
                     panel: panel.downgrade(),
@@ -536,7 +540,7 @@ mod tests {
         panel.update_in(window, |panel, _, _| {
             panel.results = vec![normal()].into();
             panel.selected = 0;
-            panel.search_pending = false;
+            panel.search_pending = true;
         });
         let item = ProviderItem {
             id: "one".into(),
@@ -548,6 +552,7 @@ mod tests {
         };
         window.update(|_, cx| {
             application.update(cx, |app, cx| {
+                app.apply_extension_batch("query", 17, identity.clone(), false, Vec::new(), cx);
                 app.apply_extension_batch(
                     "query",
                     17,
@@ -558,10 +563,10 @@ mod tests {
                 )
             })
         });
-        panel.update_in(window, |panel, _, cx| {
+        panel.read_with(window, |panel, _| {
+            assert!(panel.search_pending);
             assert_eq!(panel.results[panel.selected].entry.id, "normal");
-            assert_eq!(panel.results.len(), 2);
-            panel.select_result(1, cx);
+            assert_eq!(panel.results.len(), 1);
         });
         let mut updated = item.clone();
         updated.title = "Updated".into();
@@ -585,11 +590,29 @@ mod tests {
                 )
             })
         });
-        let result = panel.update_in(window, |panel, _, _| {
-            assert_eq!(panel.selected, 1);
-            assert_eq!(panel.results[1].entry.name, "Updated");
-            panel.results[1].clone()
+        panel.read_with(window, |panel, _| {
+            assert!(panel.search_pending);
+            assert_eq!(panel.results[0].entry.id, "normal");
         });
+        application.update(window, |app, cx| {
+            app.finish_extension_provider("query", 17, cx)
+        });
+        let result = panel.update_in(window, |panel, window, cx| {
+            assert!(!panel.search_pending);
+            assert_eq!(panel.results.len(), 3);
+            let row = panel
+                .results
+                .iter()
+                .position(|row| row.entry.id == "extension-script:fixture.provider/provider/one")
+                .expect("current provider result");
+            assert_eq!(panel.results[row].entry.name, "Updated");
+            panel.select_result(row, cx);
+            panel.enter_action_mode(row, window, cx);
+            assert!(panel.action_mode.is_some());
+            panel.exit_action_mode(window, cx);
+            panel.results[row].clone()
+        });
+        window.run_until_parked();
         window.update(|_, cx| {
             application.update(cx, |app, _| {
                 assert!(app.extension_result_current(&result, "query"));
@@ -603,52 +626,11 @@ mod tests {
                 app.apply_extension_batch("query", 17, stale, true, Vec::new(), cx)
             })
         });
-        panel.update_in(window, |panel, _, _| assert_eq!(panel.results.len(), 3));
-        panel.update_in(window, |panel, _, _| {
-            panel.results = vec![normal()].into();
-            panel.selected = 0;
-            panel.search_pending = true;
-        });
-        window.update(|_, cx| {
-            application.update(cx, |app, cx| {
-                app.extension_providers.rows.clear();
-                app.extension_providers.order.clear();
-                app.apply_extension_batch("query", 17, identity.clone(), false, Vec::new(), cx);
-            })
-        });
-        panel.read_with(window, |panel, _| {
-            assert!(panel.search_pending);
-            assert_eq!(panel.results.len(), 1);
-            assert_eq!(panel.results[0].entry.id, "normal");
-        });
-        window.update(|_, cx| {
-            application.update(cx, |app, cx| {
-                app.apply_extension_batch(
-                    "query",
-                    17,
-                    identity.clone(),
-                    false,
-                    vec![item.clone()],
-                    cx,
-                );
-            })
-        });
-        panel.read_with(window, |panel, _| {
-            assert!(
-                !panel.search_pending,
-                "current extension results cannot wait for the indexer terminal"
-            );
-            assert_eq!(
-                panel.results.len(),
-                1,
-                "old ordinary rows must not become actionable with fresh extension rows"
-            );
-            assert!(panel.results[0].entry.id.starts_with("extension-script:"));
-        });
+        panel.read_with(window, |panel, _| assert_eq!(panel.results.len(), 3));
         panel.update_in(window, |panel, window, cx| {
             panel
                 .search_input
-                .update(cx, |input, cx| input.set_value("new input", window, cx))
+                .update(cx, |input, cx| input.replace_all("new input", window, cx))
         });
         window.run_until_parked();
         while endpoint.try_receive_command_for_contract_test().is_ok() {}
@@ -696,3 +678,7 @@ mod height_settling_tests {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "provider_completion_tests.rs"]
+mod provider_completion_tests;

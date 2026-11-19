@@ -22,8 +22,8 @@ impl DetectedLinkKind {
     }
 }
 
-/// One recognized target. `display` is what the panel shows; `copy_value` is
-/// the original target used by explicit copy and typed open actions.
+/// One recognized target. `display` preserves the original target; `copy_value`
+/// resolves environment-variable local paths for explicit copy and typed open actions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct DetectedLink {
     pub display: String,
@@ -84,9 +84,9 @@ fn detect_links_with_path_kind(
             links.len() < MAX_DETECTED_LINKS && candidates < MAX_CANDIDATES
         };
         let unwrapped = trim_target_wrappers(line);
-        let path_line = if looks_like_drive_path(line) || looks_like_unc_path(line) {
+        let path_line = if looks_like_local_path(line) {
             Some(line)
-        } else if looks_like_drive_path(unwrapped) || looks_like_unc_path(unwrapped) {
+        } else if looks_like_local_path(unwrapped) {
             Some(unwrapped)
         } else {
             None
@@ -103,7 +103,7 @@ fn detect_links_with_path_kind(
 }
 
 fn is_candidate(target: &str) -> bool {
-    if looks_like_drive_path(target) || looks_like_unc_path(target) || has_http_scheme(target) {
+    if looks_like_local_path(target) || has_http_scheme(target) {
         return true;
     }
     let authority = target.split(['/', '?', '#']).next().unwrap_or_default();
@@ -194,7 +194,7 @@ fn scan_line(line: &str, accept: &mut impl FnMut(&str, TargetSource) -> bool) ->
 }
 
 fn closing_wrapper(content: &str, close: char) -> Option<usize> {
-    let local_path = looks_like_drive_path(content) || looks_like_unc_path(content);
+    let local_path = looks_like_local_path(content);
     content.char_indices().find_map(|(index, ch)| {
         if ch != close {
             return None;
@@ -209,8 +209,7 @@ fn closing_wrapper(content: &str, close: char) -> Option<usize> {
             });
             let next_target = following.starts_with(['\'', '"', '<'])
                 || has_http_scheme(following)
-                || looks_like_drive_path(following)
-                || looks_like_unc_path(following);
+                || looks_like_local_path(following);
             if local_path && !next_target && after.contains('\'') {
                 return None;
             }
@@ -296,9 +295,7 @@ fn scan_prose(
                     .char_indices()
                     .find(|(index, _)| {
                         let suffix = &remaining[*index..];
-                        has_http_scheme(suffix)
-                            || looks_like_drive_path(suffix)
-                            || looks_like_unc_path(suffix)
+                        has_http_scheme(suffix) || looks_like_local_path(suffix)
                     })
                     .map(|(index, _)| index)
             };
@@ -361,11 +358,19 @@ fn classify(
     candidate: &str,
     path_kind: &mut impl FnMut(&str) -> Option<DetectedLinkKind>,
 ) -> Option<DetectedLink> {
-    if looks_like_drive_path(candidate) || looks_like_unc_path(candidate) {
-        let kind = path_kind(candidate)?;
+    if looks_like_local_path(candidate) {
+        let path = if looks_like_environment_path(candidate) {
+            expand_environment_path(candidate)?
+        } else {
+            candidate.to_owned()
+        };
+        if !looks_like_drive_path(&path) && !looks_like_unc_path(&path) {
+            return None;
+        }
+        let kind = path_kind(&path)?;
         return Some(DetectedLink {
             display: candidate.to_owned(),
-            copy_value: candidate.to_owned(),
+            copy_value: path,
             kind,
         });
     }
@@ -481,6 +486,34 @@ fn looks_like_bare_domain(url: &url::Url) -> bool {
             .is_some_and(|label| !label.bytes().all(|byte| byte.is_ascii_digit()))
 }
 
+fn looks_like_local_path(candidate: &str) -> bool {
+    looks_like_drive_path(candidate)
+        || looks_like_unc_path(candidate)
+        || looks_like_environment_path(candidate)
+}
+
+fn looks_like_environment_path(candidate: &str) -> bool {
+    candidate
+        .strip_prefix('%')
+        .and_then(|rest| rest.split_once('%'))
+        .is_some_and(|(name, tail)| {
+            !name.is_empty() && (tail.is_empty() || tail.starts_with(['\\', '/']))
+        })
+}
+
+fn expand_environment_path(candidate: &str) -> Option<String> {
+    let mut expanded = String::new();
+    let mut remaining = candidate;
+    while let Some((prefix, rest)) = remaining.split_once('%') {
+        expanded.push_str(prefix);
+        let (name, tail) = rest.split_once('%')?;
+        expanded.push_str(&std::env::var(name).ok()?);
+        remaining = tail;
+    }
+    expanded.push_str(remaining);
+    Some(expanded)
+}
+
 fn looks_like_drive_path(candidate: &str) -> bool {
     let bytes = candidate.as_bytes();
     bytes.len() >= 3
@@ -496,6 +529,113 @@ fn looks_like_unc_path(candidate: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn environment_variable_log_path_is_recognized_and_resolved() {
+        let source = r"%LOCALAPPDATA%\NxTools\NxTools.Next\logs";
+        let root = std::env::var("LOCALAPPDATA").expect("Windows local application data");
+        let expected = format!(r"{root}\NxTools\NxTools.Next\logs");
+        let mut checked = Vec::new();
+        let links = detect_links_with_path_kind(source, |path| {
+            checked.push(path.to_owned());
+            (path == expected).then_some(DetectedLinkKind::LocalDirectory)
+        });
+        assert_eq!(links.len(), 1, "environment-variable directory target");
+        assert_eq!(checked, vec![expected.clone()]);
+        assert_eq!(links[0].display, source);
+        assert_eq!(links[0].copy_value, expected);
+        assert_eq!(links[0].kind, DetectedLinkKind::LocalDirectory);
+    }
+
+    #[test]
+    fn environment_paths_preserve_whole_files_directories_and_source_boundaries() {
+        let temp = std::env::var("TEMP").expect("Windows temporary directory");
+        let root = tempfile::tempdir_in(&temp).expect("environment path fixture");
+        let folder = root.path().join("Report (draft) files");
+        std::fs::create_dir(&folder).expect("spaced environment directory");
+        let file = folder.join("James' report.txt");
+        std::fs::write(&file, b"fixture").expect("environment file");
+        for (path, kind) in [
+            (&folder, DetectedLinkKind::LocalDirectory),
+            (&file, DetectedLinkKind::LocalFile),
+        ] {
+            let relative = path.strip_prefix(&temp).expect("fixture below TEMP");
+            let source = format!(r"%TEMP%\{}", relative.display());
+            for text in [
+                source.clone(),
+                format!("\"{source}\""),
+                format!("'{source}'"),
+                format!("<{source}>"),
+                format!("打开 \"{source}\""),
+                format!("[日志](<{source}>)"),
+            ] {
+                let links = detect_links(&text);
+                assert_eq!(links.len(), 1, "environment path boundary: {text}");
+                assert_eq!(links[0].display, source);
+                assert_eq!(links[0].copy_value, path.to_string_lossy());
+                assert_eq!(links[0].kind, kind);
+            }
+        }
+        let relative = root.path().strip_prefix(&temp).expect("fixture below TEMP");
+        let source = format!(r"%TEMP%\{}", relative.display());
+        std::fs::write(root.path().join("report"), b"prefix").expect("existing prefix");
+        assert!(detect_links(&format!(r"{source}\report draft.txt")).is_empty());
+        assert!(detect_links(&format!(r"{source}\missing")).is_empty());
+    }
+
+    #[test]
+    fn environment_roots_and_prose_resolve_case_insensitively() {
+        let expected = std::env::var("LOCALAPPDATA").expect("Windows local application data");
+        for text in [
+            "%LOCALAPPDATA%",
+            "%localappdata%",
+            "日志在%LOCALAPPDATA%\\NxTools\\NxTools.Next\\logs",
+        ] {
+            let suffix = if text.starts_with('日') {
+                r"\NxTools\NxTools.Next\logs"
+            } else {
+                ""
+            };
+            let target = format!("{expected}{suffix}");
+            let links = detect_links_with_path_kind(text, |path| {
+                assert_eq!(path, target);
+                Some(DetectedLinkKind::LocalDirectory)
+            });
+            assert_eq!(links.len(), 1);
+            assert_eq!(links[0].copy_value, target);
+        }
+    }
+
+    #[test]
+    fn unresolved_or_non_path_environment_targets_do_not_probe_filesystem() {
+        let missing = "NXTOOLS_LINK_DETECTOR_UNDEFINED_VARIABLE";
+        assert!(
+            std::env::var_os(missing).is_none(),
+            "undefined variable fixture"
+        );
+        for text in [
+            format!(r"%{missing}%\logs"),
+            format!(r"%TEMP%\%{missing}%\logs"),
+            "%LOCALAPPDATA%relative".to_owned(),
+            "%LOCALAPPDATA".to_owned(),
+            "%%\\logs".to_owned(),
+            "%OS%\\logs".to_owned(),
+        ] {
+            let links = detect_links_with_path_kind(&text, |_| {
+                panic!("non-path environment target must not reach metadata")
+            });
+            assert!(links.is_empty());
+        }
+    }
+
+    #[test]
+    fn environment_markers_in_http_targets_remain_url_data() {
+        let target = "https://example.com/%LOCALAPPDATA%/logs?value=%20";
+        let links = detect_links(target);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].copy_value, target);
+        assert_eq!(links[0].kind, DetectedLinkKind::Web);
+    }
 
     #[test]
     fn extracts_http_urls_and_trims_punctuation() {

@@ -1,0 +1,25 @@
+﻿{
+    "fail":  0,
+    "run_count":  11,
+    "list_count":  11,
+    "run_exit":  0,
+    "run_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-paused.log",
+    "pass":  11,
+    "list_log":  "D:\\.pi-desktop\\data\\scratch\\0ffe6ffa-9e52-420b-af61-a29fdd0f37b4\\b5-repair-final-paused-list.log",
+    "selection":  [
+                      "test",
+                      "--locked",
+                      "--offline",
+                      "-p",
+                      "nxtools-download",
+                      "--test",
+                      "b4_paused_url_contract"
+                  ],
+    "filter":  "",
+    "target":  "b4_paused_url_contract",
+    "list_exit":  0,
+    "expected_count":  11,
+    "package":  "nxtools-download",
+    "skip":  0,
+    "not_run":  0
+}

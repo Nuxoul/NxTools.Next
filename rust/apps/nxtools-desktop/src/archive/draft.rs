@@ -20,6 +20,7 @@ pub(super) struct CreateDraft {
     pub destination: String,
     pub name: String,
     pub format: ArchiveCreateFormat,
+    pub self_extracting: bool,
     pub level: ArchiveCompressionLevel,
     pub password: String,
     pub confirm: String,
@@ -61,6 +62,7 @@ impl CreateDraft {
             destination,
             name: format!("{stem}.{}", extension(settings.create_format)),
             format: settings.create_format,
+            self_extracting: false,
             level: if settings.create_format != ArchiveCreateFormat::Zip
                 && settings.create_format != ArchiveCreateFormat::Tar
                 && settings.compression_level == ArchiveCompressionLevel::Store
@@ -87,14 +89,10 @@ impl CreateDraft {
         }
     }
     pub fn set_format(&mut self, format: ArchiveCreateFormat) {
-        let old_extension = format!(".{}", extension(self.format));
-        let stem = self
-            .name
-            .strip_suffix(&old_extension)
-            .unwrap_or(&self.name)
-            .to_owned();
+        let stem = self.output_stem();
         self.format = format;
-        self.name = format!("{stem}.{}", extension(format));
+        self.self_extracting &= format == ArchiveCreateFormat::Zip;
+        self.name = format!("{stem}.{}", self.output_extension());
         if !encrypted(format) {
             self.clear_secrets();
         }
@@ -106,9 +104,41 @@ impl CreateDraft {
             self.level = ArchiveCompressionLevel::Normal;
         }
     }
+    fn output_extension(&self) -> &'static str {
+        if self.self_extracting {
+            "exe"
+        } else {
+            extension(self.format)
+        }
+    }
+    fn output_stem(&self) -> String {
+        let suffix = format!(".{}", self.output_extension());
+        match self.name.len().checked_sub(suffix.len()) {
+            Some(end)
+                if self
+                    .name
+                    .get(end..)
+                    .is_some_and(|value| value.eq_ignore_ascii_case(&suffix)) =>
+            {
+                self.name[..end].to_owned()
+            }
+            _ => self.name.clone(),
+        }
+    }
+    pub fn set_self_extracting(&mut self, value: bool) {
+        let stem = self.output_stem();
+        self.self_extracting = value && self.format == ArchiveCreateFormat::Zip;
+        self.name = format!("{stem}.{}", self.output_extension());
+    }
     pub fn options(&self) -> Result<CreateOptions, String> {
         if self.sources.is_empty() || self.sources.len() > 32 {
             return Err("请选择 1–32 个来源；不会丢弃超出的输入。".into());
+        }
+        if self.self_extracting && self.format != ArchiveCreateFormat::Zip {
+            return Err("只有 ZIP 支持创建自解压压缩包。".into());
+        }
+        if self.self_extracting && (!self.password.is_empty() || !self.confirm.is_empty()) {
+            return Err("自解压 ZIP 不支持密码；请清除密码或取消自解压。".into());
         }
         if !self.separately && !valid_job_name(&self.name) {
             return Err("压缩包名称必须是一个有效文件名。".into());
@@ -117,7 +147,7 @@ impl CreateDraft {
             && !self
                 .name
                 .to_ascii_lowercase()
-                .ends_with(&format!(".{}", extension(self.format)))
+                .ends_with(&format!(".{}", self.output_extension()))
         {
             return Err("文件名扩展名与所选格式不一致。".into());
         }
@@ -229,7 +259,7 @@ impl CreateDraft {
                 let stem = stem
                     .and_then(|s| s.to_str())
                     .ok_or("来源名称不是有效 Unicode，无法生成压缩包名。")?;
-                format!("{stem}.{}", extension(self.format))
+                format!("{stem}.{}", self.output_extension())
             } else {
                 self.name.clone()
             };
@@ -263,6 +293,7 @@ impl CreateDraft {
                 readmission: None,
                 modify: None,
                 create: Some(ArchiveJobCreate {
+                    self_extracting: self.self_extracting,
                     format: match self.format {
                         ArchiveCreateFormat::Zip => ArchiveJobFormat::Zip,
                         ArchiveCreateFormat::SevenZ => ArchiveJobFormat::SevenZ,
@@ -495,6 +526,7 @@ impl ExtractDraft {
             Some(ArchiveJobSelection {
                 browser: selected.browser.clone(),
                 ordinals: selected.ordinals.clone(),
+                strip_prefix: None,
             })
         } else {
             None

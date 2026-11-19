@@ -18,7 +18,7 @@ use crate::icons::MaterialIcon;
 use crate::theme::Theme;
 use crate::ui::components::menu::MenuTone;
 use crate::ui::metrics::{CONTROL_HEIGHT_ACTION, RADIUS_CONTROL, SPACING_4};
-use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY, UI_FONT_FAMILY};
+use crate::ui::typography::{LINE_HEIGHT_BODY, TEXT_BODY};
 
 pub(super) type Handler = Rc<dyn Fn(&ClickEvent, &mut Window, &mut App)>;
 const EDGE: f32 = SPACING_4;
@@ -571,7 +571,6 @@ impl ProjectMenu {
                         theme.surface_raised
                     })
                     .text_color(text)
-                    .font_family(UI_FONT_FAMILY)
                     .text_size(px(TEXT_BODY))
                     .line_height(px(LINE_HEIGHT_BODY))
                     .hover(move |style| {

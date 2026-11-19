@@ -33,3 +33,7 @@ Callbacks update their local entity first and defer cross-entity actions to the 
 The existing preview generation/snapshot/epoch/selection fingerprint, exact lease adoption, independent encrypted drag grant and transferred-consumer lifetime remain authoritative. Internal preview never executes a member; explicit Open/OpenWith/nested-open retain their original confirmation and lease owners.
 
 Source tests and controlled GPUI events do not establish physical focus/keyboard/DPI or user visual acceptance. G-18 remains pending; no product GUI or Explorer operation is implied by these records.
+
+## Fixed-height Tree label
+
+`archive/browser.rs::folder_tree` publishes the source-derived `flutter_assets` name as one `TreeItem` label. Released Component0.8.0 `tree.rs:80-133` wraps the supplied ListItem in Base Tree's virtual scroll row; `list/list_item.rs:198-255` centers its public child slot but does not impose a single text line. The ArchiveBrowser Tree render item fixes each ListItem at32DIP and constrains the left pane to160–280DIP; `.text_ellipsis()` alone does not stop its child text from wrapping. The resulting second line is outside the row. A single-line shrinking label with its existing full-name Tooltip and accessible name keeps the same tree/selection/scroll, disclosure, pressed gesture and fixed-pane ownership. No archive I/O or native window geometry changes.

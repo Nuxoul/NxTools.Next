@@ -1,5 +1,7 @@
 use gpui_kit::{App, Rgba};
 
+#[cfg(test)]
+use crate::ui::typography::TEST_UI_FONT_FAMILY;
 pub(crate) use crate::ui::typography::{UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
 
 #[derive(Clone, Copy)]
@@ -116,7 +118,7 @@ pub(crate) struct UiThemeState {
 impl Default for UiThemeState {
     fn default() -> Self {
         Self {
-            preference: nxtools_core::ThemePreference::Dark,
+            preference: nxtools_core::ThemePreference::System,
             system_dark: true,
         }
     }
@@ -126,6 +128,30 @@ impl UiThemeState {
     pub fn is_dark(self) -> bool {
         self.preference.is_dark(self.system_dark)
     }
+}
+
+#[derive(Clone)]
+struct UiFontState(gpui_kit::SharedString);
+impl gpui_kit::Global for UiFontState {}
+
+/// Call only at startup or on the deferred, durably saved settings turn.
+/// Returns false when saved intent needs the default presentation fallback.
+pub(crate) fn set_ui_font_family(family: &str, cx: &mut App) -> bool {
+    let installed = crate::ui::typography::installed_ui_fonts(cx);
+    set_ui_font_from_catalog(family, &installed, cx)
+}
+
+fn set_ui_font_from_catalog(family: &str, installed: &[String], cx: &mut App) -> bool {
+    let available = nxtools_core::validate_ui_font_family(family).is_ok()
+        && crate::ui::typography::ui_font_available(family, installed);
+    let resolved = crate::ui::typography::resolved_ui_font(family, installed);
+    cx.set_global(UiFontState(resolved.clone()));
+    gpui_kit::component::Theme::update(cx, |theme| {
+        theme.font_family = resolved;
+        theme.mono_font_family = UI_MONO_FONT_FAMILY.into();
+    });
+    cx.refresh_windows();
+    available
 }
 
 pub(crate) fn set_theme_preference(preference: nxtools_core::ThemePreference, cx: &mut App) {
@@ -223,10 +249,14 @@ fn apply_active_theme(cx: &mut App) {
         None,
         cx,
     );
-    // Keep installed CJK fonts. The selected public Kit config owns every
-    // color, renderable token and Base projection, including optional themes.
+    // The selected config owns colors and sizes; saved UI typography survives
+    // theme changes and the original diagnostic monospace remains unchanged.
+    let family = cx
+        .try_global::<UiFontState>()
+        .map(|state| state.0.clone())
+        .unwrap_or_else(|| UI_FONT_FAMILY.into());
     ComponentTheme::update(cx, |component| {
-        component.font_family = UI_FONT_FAMILY.into();
+        component.font_family = family;
         component.mono_font_family = UI_MONO_FONT_FAMILY.into();
         // Keep the official thin focus edge; omit the redundant outside halo.
         component.focus_ring = false;
@@ -548,5 +578,154 @@ mod recurrence_tests {
                 )
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod ui_font_tests {
+    use super::*;
+
+    #[gpui_kit::test]
+    fn ui_font_application_survives_theme_switch_and_keeps_monospace_and_sizes(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        cx.update(apply_component_theme);
+        let before = cx.read(|cx| {
+            let theme = gpui_kit::component::Theme::global(cx);
+            (theme.font_size, theme.mono_font_size, theme.colors)
+        });
+        let mono_before = cx.read(|cx| {
+            gpui_kit::component::Theme::global(cx)
+                .mono_font_family
+                .clone()
+        });
+        cx.update(|cx| {
+            assert!(set_ui_font_from_catalog(
+                "思源黑体 CN",
+                &["思源黑体 CN".into()],
+                cx
+            ));
+        });
+        cx.read(|cx| {
+            let theme = gpui_kit::component::Theme::global(cx);
+            assert_eq!(theme.font_family, "思源黑体 CN");
+            assert_eq!(
+                (theme.font_size, theme.mono_font_size, theme.colors),
+                before
+            );
+        });
+        for preference in [
+            nxtools_core::ThemePreference::Light,
+            nxtools_core::ThemePreference::Dark,
+        ] {
+            cx.update(|cx| set_theme_preference(preference, cx));
+            cx.read(|cx| {
+                let theme = gpui_kit::component::Theme::global(cx);
+                assert_eq!(theme.font_family, "思源黑体 CN");
+                assert_eq!(theme.semantic_tokens().typography.sans, "思源黑体 CN");
+                assert_eq!(theme.mono_font_family, mono_before);
+                assert_eq!(theme.semantic_tokens().typography.mono, mono_before);
+                assert_eq!(
+                    gpui_kit::base::Theme::global(cx).tokens,
+                    theme.semantic_tokens()
+                );
+                assert_eq!(
+                    (theme.font_size, theme.mono_font_size),
+                    (before.0, before.1)
+                );
+            });
+        }
+        cx.update(|cx| assert!(!set_ui_font_family("NxTools missing test family", cx)));
+        cx.read(|cx| {
+            assert_eq!(
+                crate::ui::typography::active_ui_font_family(cx),
+                UI_FONT_FAMILY
+            )
+        });
+    }
+}
+
+#[cfg(test)]
+mod ui_font_paint_tests {
+    use super::*;
+    use gpui_kit::{AppContext as _, IntoElement, ParentElement as _, Styled as _, div, px};
+    use std::{cell::RefCell, rc::Rc};
+
+    struct FontPaintFixture(Rc<RefCell<Vec<gpui_kit::SharedString>>>);
+
+    impl gpui_kit::Render for FontPaintFixture {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            cx: &mut gpui_kit::Context<Self>,
+        ) -> impl IntoElement {
+            let normal = self.0.clone();
+            let mono = self.0.clone();
+            let body = div()
+                .child(
+                    gpui_kit::canvas(
+                        |_, _, _| (),
+                        move |_, (), window, _| {
+                            normal
+                                .borrow_mut()
+                                .push(window.text_style().font_family.clone());
+                        },
+                    )
+                    .size(px(1.0)),
+                )
+                .child(
+                    div().font_family(UI_MONO_FONT_FAMILY).child(
+                        gpui_kit::canvas(
+                            |_, _, _| (),
+                            move |_, (), window, _| {
+                                mono.borrow_mut()
+                                    .push(window.text_style().font_family.clone());
+                            },
+                        )
+                        .size(px(1.0)),
+                    ),
+                );
+            crate::ui::components::settings::settings_shell(
+                Theme::active(cx),
+                crate::ui::components::settings::SettingsShellIds {
+                    root: "font-paint-shell",
+                    content: "font-paint-body",
+                    footer: "font-paint-footer",
+                },
+                div().into_any_element(),
+                body.into_any_element(),
+                div().into_any_element(),
+            )
+        }
+    }
+
+    #[gpui_kit::test]
+    fn ui_font_reaches_production_settings_shell_paint_without_changing_monospace(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        cx.update(apply_component_theme);
+        let fonts = Rc::new(RefCell::new(Vec::new()));
+        let recorded = fonts.clone();
+        let (_, window) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|_| FontPaintFixture(recorded));
+            gpui_kit::component::Root::new(view, window, cx)
+        });
+        window.refresh().expect("default font paint");
+        assert!(fonts.borrow().iter().any(|name| name == UI_FONT_FAMILY));
+        fonts.borrow_mut().clear();
+        window.update(|_, cx| {
+            assert!(set_ui_font_from_catalog(
+                TEST_UI_FONT_FAMILY,
+                &[TEST_UI_FONT_FAMILY.into()],
+                cx
+            ));
+        });
+        window.refresh().expect("saved font paint");
+        let painted = fonts.borrow();
+        assert!(painted.iter().any(|name| name == TEST_UI_FONT_FAMILY));
+        assert!(painted.iter().any(|name| name == UI_MONO_FONT_FAMILY));
+        assert!(!painted.iter().any(|name| name == UI_FONT_FAMILY));
     }
 }

@@ -18,6 +18,7 @@ fn request() -> DownloadRequest {
         headers: Vec::new(),
         cookie: None,
         referrer: None,
+        source_page: None,
         certificate_policy: Default::default(),
         connection_limit: Some(8),
         speed_limit_bytes_per_second: None,
@@ -236,6 +237,7 @@ fn remaining_phase_zero_domain_types_have_explicit_meaning() {
         default_save_directory: Some(PathBuf::from(r"D:\Downloads")),
         schedule: None,
         is_running: true,
+        completion_intention: Default::default(),
     };
     let schedule = DownloadSchedule {
         daily: DownloadDailySchedule {

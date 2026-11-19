@@ -12,6 +12,7 @@ Read [shared architecture](../../shared/architecture.md), [engineering](../../sh
 | [Errors](error-handling.md) | Validation/context and unsafe raw diagnostics |
 | [Diagnostics](logging-guidelines.md) | Nonblocking guard and payload policy |
 | [Quality](quality-guidelines.md) | Defaults/normalize/merge/instance tests |
+| [Software data and appearance](data-directory.md) | Shared directory discovery, migration publication and configurable UI font/default theme |
 
 ## Quality Check
 Follow [verification](../../shared/verification.md); `cargo test -p nxtools-core --lib`, scoped Clippy/check/fmt when code changes. Docs-only use spec-contracts. Test stale/missing/corrupt config, mixed-case blacklist and instance hints. No product/service launch. [Standards entry](../../index.md).

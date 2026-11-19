@@ -136,7 +136,7 @@ internal sealed class ArchiveReadSession : IAsyncDisposable
             if (item.Kind != "exited") return;
             operation.Credit?.TrySetResult(false);
             // Native admission/timeout is the cause; worker termination frames are cleanup consequences.
-            var code = !item.CleanupComplete ? "cleanup_incomplete" : item.Category == "timeout" ? "io_failure" : item.Category is "source_unavailable" or "source_changed" or "resource_limit" or "missing_volume" ? item.Category : operation.Failure ??
+            var code = !item.CleanupComplete ? "cleanup_incomplete" : item.Category == "timeout" ? "io_failure" : item.Category is "source_unavailable" or "source_changed" or "resource_limit" or "missing_volume" or "corrupt_archive" or "unsupported_format" or "unsupported_method" or "unsupported_encryption" ? item.Category : operation.Failure ??
                 (item.Category == "success" ? operation.Complete && operation.Negotiated ? null : "protocol_violation" : Map(item.Category));
             var status = code is null ? "succeeded" : code == "cancelled" ? "cancelled" : code == "disconnected" ? "disconnected" : "failed";
             var terminal = new ArchiveReadTerminal(status, code, operation.Files, operation.Bytes,
@@ -233,7 +233,8 @@ internal sealed class ArchiveReadSession : IAsyncDisposable
         "SelectedOutputLimit" => "selected_output_limit", "SourceUnavailable" => "source_unavailable",
         "SourceChanged" => "source_changed", "Cancelled" => "cancelled", "IoFailure" => "io_failure",
         "helper_missing" or "helper_untrusted" or "incompatible_version" or "missing_capability" or "resource_limit" or "selected_output_limit" or "cancelled" or "disconnected" or
-        "protocol_violation" or "consumer_too_slow" or "consumer_queue_full" or "metadata_budget" or "source_unavailable" or "source_changed" or "missing_volume" => code,
+        "protocol_violation" or "consumer_too_slow" or "consumer_queue_full" or "metadata_budget" or "source_unavailable" or "source_changed" or "missing_volume" or
+        "corrupt_archive" or "unsupported_format" or "unsupported_method" or "unsupported_encryption" => code,
         "concurrency_limit" or "aggregate_memory_limit" => "busy",
         "stdout_missing_terminal" or "process_exit" => "worker_crashed",
         "stdout_invalid_frame" or "stdout_frame_limit" or "worker_capability_mismatch" => "protocol_violation",

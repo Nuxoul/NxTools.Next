@@ -13,25 +13,33 @@ internal sealed class ArchiveDropLocator : IDisposable
     private readonly string marker;
     private readonly string staging;
     private readonly string wrapper;
+    private readonly bool direct;
     private readonly object gate = new();
     private readonly List<string> hits = [];
     private readonly List<FileSystemWatcher> watchers = [];
 
     internal string Staging => staging;
-    internal string Folder => Path.Combine(staging, wrapper);
+    internal string Folder => direct ? staging : Path.Combine(staging, wrapper);
+    internal string MarkerPath => direct ? Path.Combine(staging, marker) : Path.Combine(Folder, marker);
     internal string MarkerName => marker;
 
-    private ArchiveDropLocator(string staging, string wrapper, string marker)
-    { this.staging = staging; this.wrapper = wrapper; this.marker = marker; }
+    private ArchiveDropLocator(string staging, string wrapper, string marker, bool direct)
+    { this.staging = staging; this.wrapper = wrapper; this.marker = marker; this.direct = direct; }
 
     // Creates the owned staging folder first, then starts watching, so our own creation is never a hit.
-    internal static ArchiveDropLocator Create(Guid operation, string wrapper, string? tempRoot = null, IEnumerable<string>? roots = null)
+    internal static ArchiveDropLocator Create(Guid operation, string wrapper, string? tempRoot = null, IEnumerable<string>? roots = null) =>
+        CreateCore(operation, wrapper, false, tempRoot, roots);
+
+    internal static ArchiveDropLocator CreateDirect(Guid operation, string markerName, string? tempRoot = null, IEnumerable<string>? roots = null) =>
+        CreateCore(operation, markerName, true, tempRoot, roots);
+
+    private static ArchiveDropLocator CreateCore(Guid operation, string wrapper, bool direct, string? tempRoot, IEnumerable<string>? roots)
     {
         var staging = Path.Combine(tempRoot ?? Path.GetTempPath(), "NxTools", "drop-" + operation.ToString("N"));
-        var locator = new ArchiveDropLocator(Path.GetFullPath(staging), wrapper, MarkerPrefix + operation.ToString("N"));
+        var locator = new ArchiveDropLocator(Path.GetFullPath(staging), wrapper, MarkerPrefix + operation.ToString("N"), direct);
         try {
             Directory.CreateDirectory(locator.Folder);
-            var markerPath = Path.Combine(locator.Folder, locator.marker);
+            var markerPath = locator.MarkerPath;
             File.WriteAllBytes(markerPath, []);
             File.SetAttributes(markerPath, FileAttributes.Hidden);
             foreach (var root in roots ?? WatchRoots()) locator.Watch(root);
@@ -141,6 +149,7 @@ internal sealed class ArchiveDropLocator : IDisposable
     {
         try {
             if (!Directory.Exists(parent) || Inside(parent, staging)) return null;
+            if (direct) return Accept(Path.Combine(parent, marker));
             foreach (var candidate in Directory.EnumerateDirectories(parent, wrapper + "*"))
                 if (Accept(Path.Combine(candidate, marker)) is {} folder) return folder;
         } catch (Exception failure) when (failure is IOException or UnauthorizedAccessException or ArgumentException) { }

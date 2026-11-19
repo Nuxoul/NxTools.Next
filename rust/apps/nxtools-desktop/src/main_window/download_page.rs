@@ -99,9 +99,23 @@ pub(crate) fn download_row_transfer_presentation(
     let total_bytes = live_progress
         .and_then(|progress| progress.total_bytes)
         .or(durable_total_bytes);
-    let fraction = total_bytes.filter(|total| *total > 0).map_or(0.0, |total| {
-        (downloaded_bytes as f32 / total as f32).clamp(0.0, 1.0)
-    });
+    let fraction = if status == DownloadStatus::Finalizing {
+        live_progress
+            .and_then(|progress| progress.finishing.as_ref())
+            .and_then(crate::downloads::finishing_ratio)
+            .unwrap_or(0.0)
+    } else {
+        total_bytes.filter(|total| *total > 0).map_or(0.0, |total| {
+            (downloaded_bytes as f32 / total as f32).clamp(
+                0.0,
+                if status == DownloadStatus::Completed {
+                    1.0
+                } else {
+                    0.99
+                },
+            )
+        })
+    };
     let transferred = total_bytes.map_or_else(
         || format_download_bytes(downloaded_bytes),
         |total| format_download_transfer(downloaded_bytes, total),
@@ -253,19 +267,8 @@ pub(crate) fn download_task_name(task: &DownloadEngineTask) -> &str {
 }
 
 pub(crate) fn download_failure_summary(error: &DownloadFault) -> &'static str {
-    let message = error.message.to_ascii_lowercase();
-    if error.code == DownloadFaultCode::Protocol {
-        if message.contains("resource changed")
-            || message.contains("validator changed")
-            || message.contains("etag changed")
-        {
-            return "远程文件已变化，请重新下载";
-        }
-        if message.contains("ignored the requested byte range")
-            || message.contains("range") && message.contains("http 200")
-        {
-            return "服务器不支持断点续传，请重新开始";
-        }
+    if let Some(reason) = crate::downloads::protocol_restart_summary(error) {
+        return reason;
     }
     match error.code {
         DownloadFaultCode::InvalidRequest => "下载请求无效，请检查地址",
@@ -275,6 +278,7 @@ pub(crate) fn download_failure_summary(error: &DownloadFault) -> &'static str {
         DownloadFaultCode::DestinationExists => "目标位置已有同名文件",
         DownloadFaultCode::Network => "网络连接失败，请检查网络后重试",
         DownloadFaultCode::Protocol => "服务器响应异常，请重试",
+        DownloadFaultCode::UnexpectedWebPage => "网站返回了网页，请在浏览器中完成验证后下载",
         DownloadFaultCode::Permission => "没有权限写入保存位置",
         DownloadFaultCode::DiskFull => "磁盘空间不足",
         DownloadFaultCode::FileInUse => "目标文件正在被其他程序使用",
@@ -1397,7 +1401,14 @@ pub(crate) fn download_task_row(
     let total_bytes = live_progress
         .and_then(|progress| progress.total_bytes)
         .or(task.total_bytes);
-    let (status_label, status_color) = download_status_presentation(theme, status);
+    let (default_label, status_color) = download_status_presentation(theme, status);
+    let status_label = if status == DownloadStatus::Finalizing {
+        live_progress
+            .and_then(|progress| progress.finishing.as_ref())
+            .map_or(default_label, crate::downloads::finishing_stage_label)
+    } else {
+        default_label
+    };
     let mut transfer = download_row_transfer_presentation(
         status,
         task.downloaded_bytes,
@@ -1419,6 +1430,7 @@ pub(crate) fn download_task_row(
     let secondary_color = theme.text_secondary;
     let error_tooltip = task.error.as_ref().map(|error| error.message.clone());
     let has_icon_path = icon_path.is_some();
+    let fallback_icon_color = theme.icon_muted;
     let row_open_application = application.clone();
     let context_application = application;
     let click_main_window = main_window.clone();
@@ -1598,7 +1610,24 @@ pub(crate) fn download_task_row(
                                         })
                                     })
                                     .size(px(40.0))
-                                    .child(img(path).size_full().object_fit(ObjectFit::Contain)),
+                                    .child(
+                                        img(path)
+                                            .size_full()
+                                            .object_fit(ObjectFit::Contain)
+                                            .with_fallback(move || {
+                                                div()
+                                                    .debug_selector(|| {
+                                                        "download-task-image-load-fallback".into()
+                                                    })
+                                                    .size(ordinary_rem(30.0))
+                                                    .child(
+                                                        Icon::new(IconName::File)
+                                                            .size_full()
+                                                            .text_color(fallback_icon_color),
+                                                    )
+                                                    .into_any_element()
+                                            }),
+                                    ),
                             )
                         })
                         .when(!has_icon_path, |slot| {
@@ -1802,11 +1831,20 @@ pub(crate) fn download_task_row(
                                     })
                                 })
                                 .w_full()
-                                .child(download_aggregate_progress(
-                                    element_id,
-                                    transfer.fraction,
-                                    status_color,
-                                )),
+                                .child(
+                                    download_aggregate_progress(
+                                        element_id,
+                                        transfer.fraction,
+                                        status_color,
+                                    )
+                                    .loading(
+                                        status == DownloadStatus::Finalizing
+                                            && live_progress
+                                                .and_then(|progress| progress.finishing.as_ref())
+                                                .and_then(crate::downloads::finishing_ratio)
+                                                .is_none(),
+                                    ),
+                                ),
                         ),
                 )
                 .child(
@@ -3312,7 +3350,7 @@ pub(crate) fn download_status_log_label(status: DownloadStatus) -> &'static str 
         DownloadStatus::Waiting => "等待",
         DownloadStatus::Downloading => "下载中",
         DownloadStatus::Paused => "已暂停",
-        DownloadStatus::Finalizing => "正在落盘",
+        DownloadStatus::Finalizing => "正在完成",
         DownloadStatus::Verifying => "正在校验",
         DownloadStatus::Completed => "已完成",
         DownloadStatus::Failed => "失败",

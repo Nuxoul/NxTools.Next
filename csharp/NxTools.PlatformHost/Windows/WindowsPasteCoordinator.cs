@@ -112,7 +112,8 @@ internal interface IWindowsPasteOperations
 
 internal sealed class WindowsPasteCoordinator(
     IWindowsPasteOperations operations,
-    IPlatformLog? log = null)
+    IPlatformLog? log = null,
+    IElevatedPasteInput? elevatedInput = null)
 {
     private const int ActivationAttempts = 4;
     private const uint PasteInputCount = 4;
@@ -198,6 +199,24 @@ internal sealed class WindowsPasteCoordinator(
             return new WindowsCommandResult(true);
         }
 
+        var input = new ElevatedPasteInput(
+            command.TargetWindowHandle, command.TargetFocusWindowHandle, correlationId);
+        if (elevatedInput?.TryPasteInput(input) is { } elevatedResult)
+        {
+            Log(elevatedResult.Success ? "info" : "error", "paste.elevated_result", correlationId,
+                new Dictionary<string, object?> { ["success"] = elevatedResult.Success,
+                    ["error"] = elevatedResult.Error });
+            return elevatedResult;
+        }
+        return ExecuteInput(input);
+    }
+
+    internal WindowsCommandResult ExecuteInput(ElevatedPasteInput command)
+    {
+        var correlationId = command.CorrelationId;
+        if (command.TargetWindowHandle == 0 || !operations.IsWindow(command.TargetWindowHandle))
+            return Fail(correlationId, "paste.target_invalid", "The target window no longer exists.");
+
         var targetReady = false;
         for (var attempt = 0; attempt < ActivationAttempts; attempt++)
         {
@@ -280,6 +299,9 @@ internal sealed class WindowsPasteCoordinator(
                 post.Posted,
                 post.Error);
         }
+
+        if (!operations.IsForegroundWindowForTarget(command.TargetWindowHandle))
+            return Fail(correlationId, "paste.foreground_changed", "The target window is no longer in the foreground.");
 
         var shortcut = operations.SendPasteShortcut();
         foreach (var step in shortcut.Steps)

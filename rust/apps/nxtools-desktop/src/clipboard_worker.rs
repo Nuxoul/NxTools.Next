@@ -381,6 +381,7 @@ impl ClipboardCaptureWorkerHandle {
         limit: usize,
         known_total: Option<usize>,
         cursor: Option<ClipboardPageCursor>,
+        filters: nxtools_clipboard::ClipboardHistoryFilter,
     ) -> Result<nxtools_clipboard::ClipboardSummaryPage, ClipboardHistoryError> {
         let generation = self
             .query_generation
@@ -393,25 +394,16 @@ impl ClipboardCaptureWorkerHandle {
         let query = query.to_owned();
         let category_id = category_id.to_owned();
         self.async_request_inner(Some(cancellation), move |history| {
-            if let Some(cursor) = cursor {
-                history.summary_category_page_after(
-                    &query,
-                    &category_id,
-                    scope,
-                    cursor,
-                    limit,
-                    known_total,
-                )
-            } else {
-                history.summary_category_page_with_total(
-                    &query,
-                    &category_id,
-                    scope,
-                    offset,
-                    limit,
-                    known_total,
-                )
-            }
+            history.filtered_summary_page(
+                &query,
+                &category_id,
+                scope,
+                offset,
+                limit,
+                cursor,
+                known_total,
+                &filters,
+            )
         })
         .await
     }
@@ -811,8 +803,7 @@ impl ClipboardCaptureWorkerHandle {
         &self,
         item_id: i64,
     ) -> Result<nxtools_clipboard::ClipboardItem, ClipboardHistoryError> {
-        self.async_request_inner(None, move |history| find_history_item(history, item_id))
-            .await
+        self.active_item_async(item_id).await
     }
 
     pub(crate) fn enqueue_cleanup(
@@ -1124,7 +1115,7 @@ fn run_worker(
                 info!(event = "clipboard.commit.started", operation_id = %causality.root_operation_id, "clipboard commit started");
                 let result = (|| -> Result<Option<ClipboardCommitted>> {
                     if let Some(source_id) = causality.derived_from {
-                        match find_history_item(&state.history, source_id) {
+                        match state.history.active_item(source_id) {
                             Ok(source) => {
                                 let same_payload = (source.kind
                                     == nxtools_clipboard::ClipboardKind::Text
@@ -1234,42 +1225,6 @@ fn apply_cleanup(
     }
 }
 
-// ClipboardHistory's row getter is private. Use its public immutable cursor projection, not
-// another connection/ad-hoc SQL or mutating set_flag/restore to read an item.
-fn find_history_item(
-    history: &ClipboardHistory,
-    item_id: i64,
-) -> Result<nxtools_clipboard::ClipboardItem, ClipboardHistoryError> {
-    let mut page = history.query_category_page_with_total(
-        "",
-        nxtools_clipboard::BUILTIN_ALL_CATEGORY_ID,
-        ClipboardSearchScope::Content,
-        0,
-        500,
-        None,
-    )?;
-    loop {
-        if let Some(item) = page.items.iter().find(|item| item.id == item_id) {
-            return Ok(item.clone());
-        }
-        let Some(cursor) = page
-            .items
-            .last()
-            .filter(|_| page.has_more)
-            .map(nxtools_clipboard::ClipboardPageCursor::from)
-        else {
-            return Err(ClipboardHistoryError::ItemNotFound(item_id));
-        };
-        page = history.query_category_page_after(
-            "",
-            nxtools_clipboard::BUILTIN_ALL_CATEGORY_ID,
-            ClipboardSearchScope::Content,
-            cursor,
-            500,
-            Some(page.total),
-        )?;
-    }
-}
 fn persist_capture(
     history: &mut ClipboardHistory,
     asset_directory: &Path,
@@ -1743,6 +1698,80 @@ mod tests {
         );
         assert!(!staged.exists());
         assert_eq!(worker.counts_async().await.expect("counts").total, 2);
+        worker.shutdown().expect("shutdown fixture");
+    }
+
+    #[tokio::test]
+    async fn extension_and_derived_capture_resolve_full_active_source_by_id() {
+        let directory = tempfile::tempdir().expect("owned clipboard fixture");
+        let worker = ClipboardCaptureWorkerHandle::spawn(
+            directory.path().join("clipboard.db"),
+            directory.path().join("assets"),
+            retention(),
+            1_000,
+        )
+        .expect("worker");
+        let source_text = "原".repeat(512) + "tail";
+        let source_id = worker
+            .capture_committed_async(
+                fixture_capture(&source_text),
+                ClipboardCommitCausality::capture(),
+            )
+            .await
+            .expect("source commit")
+            .expect("source item")
+            .item_id;
+        for index in 0..500 {
+            worker
+                .capture_committed_async(
+                    fixture_capture(&format!("newer item {index}")),
+                    ClipboardCommitCausality::capture(),
+                )
+                .await
+                .expect("newer commit")
+                .expect("newer item");
+        }
+        let source = worker
+            .extension_get_async(source_id)
+            .await
+            .expect("old source");
+        assert_eq!(source.id, source_id);
+        assert_eq!(source.text, source_text);
+        let derived = ClipboardCommitCausality {
+            derived_from: Some(source_id),
+            ..ClipboardCommitCausality::capture()
+        };
+        let replacement = worker
+            .capture_committed_async(fixture_capture(&source_text), derived.clone())
+            .await
+            .expect_err("derived capture cannot replace its source");
+        assert_eq!(
+            replacement.to_string(),
+            "derived content must not replace its source"
+        );
+        let distinct = worker
+            .capture_committed_async(fixture_capture("derived text"), derived.clone())
+            .await
+            .expect("derived commit")
+            .expect("derived item");
+        assert_ne!(distinct.item_id, source_id);
+
+        worker
+            .soft_delete_async(source_id, 1_002)
+            .await
+            .expect("soft delete");
+        assert!(matches!(
+            worker.extension_get_async(source_id).await,
+            Err(ClipboardHistoryError::ItemNotFound(id)) if id == source_id
+        ));
+        let unavailable = worker
+            .capture_committed_async(fixture_capture("unavailable source"), derived)
+            .await
+            .expect_err("deleted source cannot authorize a derived capture");
+        assert!(matches!(
+            unavailable.downcast_ref::<ClipboardHistoryError>(),
+            Some(ClipboardHistoryError::ItemNotFound(id)) if *id == source_id
+        ));
         worker.shutdown().expect("shutdown fixture");
     }
 

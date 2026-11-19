@@ -50,6 +50,24 @@ internal static class ArchiveShellSelectionTests
             Check(factory.CreateInstance(IntPtr.Zero, ref iid, out var abandoned) == 0, "title-only object admitted");
             Marshal.Release(abandoned);
             Check(lifetime.LiveObjects == 0, "title-only final release frees original lifetime slot");
+            foreach (var selected in new[] { new[] { @"C:\selected\报告.txt", @"C:\selected\second.bin" }, new[] { @"C:\selected\folder" } })
+            {
+                var executeIid = typeof(IExecuteCommand).GUID;
+                Check(factory.CreateInstance(IntPtr.Zero, ref executeIid, out var executePointer) == 0, "classic DelegateExecute identity");
+                var selectionIid = typeof(IObjectWithSelection).GUID;
+                var selectedArray = Marshal.GetComInterfaceForObject(new FakeArray(selected.Select(path => new FakeItem(path)).ToArray()), typeof(IShellItemArray));
+                try
+                {
+                    Check(Marshal.QueryInterface(executePointer, in selectionIid, out var selectedPointer) == 0, "delegate retains original selection interface");
+                    try { Check(CallSetSelection(selectedPointer, selectedArray) == 0, "delegate accepts the complete selection"); }
+                    finally { Marshal.Release(selectedPointer); }
+                    var calls = forwarder.Calls.Count;
+                    Check(CallExecute(executePointer) == 0 && forwarder.Calls.Count == calls + 1, "delegate forwards once");
+                    Check(forwarder.Calls[^1].Verb == verb && forwarder.Calls[^1].Paths.SequenceEqual(selected), "ZIP/7z complete ordered file or folder selection");
+                    Check(CallExecute(executePointer) == ArchiveSelectionCommand.EIllegalMethodCall && lifetime.LiveObjects == 0, "delegate cannot execute twice and retires original lifetime");
+                }
+                finally { Marshal.Release(selectedArray); Marshal.Release(executePointer); }
+            }
         }
     });
 
@@ -60,11 +78,34 @@ internal static class ArchiveShellSelectionTests
         {
             var plan = ArchiveSelectionHandlerPlan.Create(@"C:\NxTools\NxTools.ShellSelectionHelper.exe", 2,
                 new ArchiveIntegrationIntent(true, false, []) { MenuLayout = layout, MenuCommands = ["create_zip", "create_7z", "create"] });
-            Check(plan.Changes.Count(change => change.Target.ValueName == "ExplorerCommandHandler") == 4, "two dynamic quick commands for files and folders");
-            Check(plan.Changes.Count(change => change.Target.ValueName == "DelegateExecute") == 2, "editable form retains original grouped delegate");
+            Check(plan.Changes.All(change => change.Target.ValueName != "ExplorerCommandHandler"), "classic local-server commands never require in-process Explorer activation");
+            Check(plan.Changes.Count(change => change.Target.ValueName == "DelegateExecute") == 6, "all three source commands use grouped delegates for files and folders");
             Check(plan.Changes.Count(change => change.Target.KeyPath.EndsWith(@"\LocalServer32")) == 3, "out-of-process helper classes");
-            Check(plan.Changes.All(change => change.Target.ValueName != "MUIVerb" || !((string)change.Value.Data).Contains("文件名")), "no registration-time filename substitution");
+            foreach (var command in ArchiveSelectionHandlerPlan.Commands.Where(command => ArchiveSelectionHandlerPlan.IsCreation(command.Command)))
+            {
+                var expected = command.Command switch { "create_zip" => "压缩为同名 .zip", "create_7z" => "压缩为同名 .7z", _ => "新建压缩包…" };
+                Check(command.Label == expected, "fixed classic menu label " + command.Command);
+                Check(plan.Changes.Count(change => change.Target.ValueName == "MUIVerb" && Equals(change.Value.Data, expected)) == 2, "same label on file and folder menus");
+            }
             Check(plan.Changes.All(change => change.Value.Data is not string value || !value.Contains("%1")), "no per-item invocation");
+            var icon = "\"C:\\Program Files\\NxTools\\NxTools.exe\",-2";
+            var withIcons = ArchiveSelectionHandlerPlan.Create(@"C:\Program Files\NxTools\NxTools.ShellSelectionHelper.exe", 2,
+                new ArchiveIntegrationIntent(true, false, [".zip"]) { MenuLayout = layout });
+            var menus = withIcons.Changes.Where(change => change.Target.ValueName == "MUIVerb" &&
+                (layout == "flat" || Equals(change.Value.Data, "NxTools"))).ToArray();
+            Check(menus.Length == (layout == "cascade" ? 3 : 11), "archive, file and directory menu coverage");
+            foreach (var menu in menus)
+                Check(withIcons.Changes.Any(change => change.Target.KeyPath == menu.Target.KeyPath &&
+                    change.Target.ValueName == "Icon" && Equals(change.Value.Data, icon)),
+                    "every visible menu root has the packaged desktop archive icon");
+            Check(withIcons.Changes.Where(change => change.Target.ValueName == "Icon").Count() == menus.Length,
+                "cascade children do not repeat the root icon");
+            var store = new ArchiveIntegrationPlanTests.FakeArchiveIntegrationStore();
+            var facts = ArchiveIntegrationTransaction.Apply(store, withIcons);
+            Check(facts.Values.Count(value => value.Target.ValueName == "Icon") == menus.Length,
+                "icon writes share original applied-facts ownership");
+            ArchiveIntegrationTransaction.Uninstall(store, facts);
+            Check(store.SnapshotValues().Count == 0, "original exact-value uninstall includes menu icons");
         }
         return Task.CompletedTask;
     }

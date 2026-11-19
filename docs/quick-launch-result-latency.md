@@ -2,20 +2,28 @@
 
 ## Production provider
 
-The launcher requests independent file/directory candidate headroom through `retain_kinds_apart`. `search_launcher_snapshots_while` runs the original production file-kind query, sends its nonempty candidates through the existing `RuntimeEvent::SearchCompleted` and framed `IndexSearchBatch` path, then runs the directory-kind query. Directory candidates and exactly one terminal batch follow. The coordinator forwards each current-lease/current-task response without waiting for terminal completion.
+The launcher requests independent file/directory candidate headroom through `retain_kinds_apart`.
+The production name/full-path query shares a matching walk and retains each kind separately, then
+uses the original bounded `RuntimeEvent::SearchCompleted` and framed `IndexSearchBatch` path.
+Cold filters can still require a complete recovery scan for an underfilled kind; that recovery
+does not replace the other kind's complete candidates. Scores, exclusions, delta suppression,
+preferred-directory ranking and single-kind/scoped semantics remain unchanged.
 
-The final candidate set and per-kind scores match the original complete provider; Finder owns display ranking. A no-normal-result query retains the existing explicitly permitted homophone fallback. Single-kind, directory-scoped and recent searches keep their original path. Cancellation before or after the first batch suppresses abandoned subsequent results and terminal delivery.
+Ordinary Desktop input dispatches next turn without a fixed debounce. All current index/extension
+providers must finish before the existing merged ranking replaces results once. Partial batches
+remain private. Only no ordinary results plus explicit permission enters bounded homophone
+fallback, retaining its original combined result cap. Cancellation suppresses abandoned delivery.
 
 Source owners:
 
-- `rust/apps/nxtools-indexer/src/lib.rs`: `search_launcher_snapshots_while`, `run_snapshot_search`, `send_search_completion` and original coordinator lease checks.
-- `rust/apps/nxtools-desktop/src/quick_launch/search.rs`: launcher request shape and generation-scoped accumulated candidates.
-- `rust/apps/nxtools-desktop/src/quick_launch.rs`: current-generation first/terminal provider diagnostics and existing merged-publication owner.
-- `rust/apps/nxtools-desktop/src/quick_launch/panel.rs`: original debounce, input, focus and result publication. No layout/control/component change is included.
+- `rust/apps/nxtools-indexer/src/lib.rs`: shared-kind search, cold recovery, `run_snapshot_search` and coordinator lease checks.
+- `rust/apps/nxtools-desktop/src/quick_launch/search.rs`: request shape and current-generation accumulation.
+- `rust/apps/nxtools-desktop/src/quick_launch.rs`: ordinary local hit probe, provider completion and merged-publication owner.
+- `rust/apps/nxtools-desktop/src/quick_launch/panel.rs`: deferred input, focus and result publication. InputState/InputGroup, layout and native lifecycle are unchanged.
 
 The reference index is `docs/reference-code/quick-launch-research.md` and `quick-launch-listary-results.md`: Listary's managed launcher awaits providers and SwiftList's managed callback streams. Listary's native search engine source is unavailable; no native implementation claim is inferred from managed references.
 
-## Measured worker and framed transport
+## Historical worker and framed transport fixture (2026-11-06)
 
 Debug production query worker over40,000snapshot rows with20,000distinct matching filenames and20,000distinct directory names,40candidates per kind:
 
@@ -26,9 +34,16 @@ Debug production query worker over40,000snapshot rows with20,000distinct matchin
 | Receiver finishes framed decoding | 31.217 ms |
 | Returned candidates | 80 |
 
-`launcher_search_sends_real_file_matches_before_directory_pass_finishes` compares the complete candidate/score set. `launcher_worker_emits_framed_first_batch_before_terminal` measures the original worker and round-trips its actual framed responses with command correlation. Other launcher regressions cover cancellation and empty/homophone fallback. These four tests pass without injecting ready provider batches.
+These measurements describe the earlier two-kind-pass implementation. Current `launcher_search_preserves_per_kind_candidates_across_framed_batches` and `launcher_worker_preserves_framed_identity_and_one_terminal` retain complete candidate/score, actual worker, framed correlation and terminal coverage without requiring a second matching pass.
 
 The separate Desktop ready-batch test validates arrival-to-publication, selection/action eligibility and paint. It cannot measure provider computation. Desktop refresh/selection16tests and the lifecycle source gate pass; deferred cross-entity callbacks, passive preview and focus owners remain unchanged. [Full verification and archive results](audits/2026-11-06-large-count-and-launcher.md).
+
+## Current query-work fixtures (2026-11-17)
+
+- The same64-row mixed-kind query returns all64rows while calls at the existing current-query boundary fall from393to199. `launcher_search_matches_both_kinds_with_one_candidate_walk` detects a repeated matching walk without a timing threshold.
+- With512synthetic application shortcuts, actual allocation requests around the public local search/probe calls are1,838,199bytes for complete ranking and2,053bytes for the short-circuit existence probe. Setup and catalog construction are excluded; built-in system entries remain present.
+- Independent-kind result comparisons cover cold underfill, exclusions, delta changes/deletes, scopes, limits and preferred-directory scoring. Local probe parity covers catalog/instant/command/package/environment sources; final merged ranking is unchanged.
+- These are Debug synthetic work/allocation observations, not resident-memory measurements or installed input-to-visible latency.
 
 ## Installed-runtime observations
 
@@ -43,10 +58,10 @@ Use the real toolchain with `CARGO_BUILD_JOBS=1`, `CARGO_INCREMENTAL=0` and `RUS
 ```text
 cargo test -p nxtools-indexer --lib launcher_ -- --nocapture --test-threads=1
 cargo test -p nxtools-indexer --lib search_ -- --test-threads=1
-cargo test -p nxtools-desktop search_latency_ready_indexed_rows_publish_before_terminal_batch -- --test-threads=1
+cargo test -p nxtools-desktop quick_launch::tests::normal_search_tests -- --test-threads=1
 cargo test -p nxtools-desktop quick_launch::tests::refresh_tests -- --test-threads=1
 ```
 
 ## Remaining acceptance
 
-The Computer Use tool reports `cua-driver not installed`. Actual input-to-first-visible-results, physical keyboard/focus/DPI and user acceptance remain unverified. File-pass latency and directory-only matches still require installed measurement; first-file publication only removes the wait for the subsequent directory pass. No package, installation, service restart or replacement occurred. The installed application/service has not acquired these source changes, and packaged LocalSystem acceptance remains separate.
+No package, installation, protected-tuple replacement or real service restart is authorized by these fixtures. The unchanged installed application/service does not contain the new source changes. Installed input-to-visible A/B, physical input/focus/DPI and packaged LocalSystem restart/base+delta/idle CPU+I/O/search/hash acceptance remain separate. Never certify new-source service behavior by testing the old installed binary.

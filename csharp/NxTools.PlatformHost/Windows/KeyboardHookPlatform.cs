@@ -31,9 +31,12 @@ internal sealed class WindowsKeyboardHookPlatform : IKeyboardHookPlatform
     public uint InitializeThread()
     {
         // Create the thread message queue before publishing its ID to Dispose.
-        _ = NativeMethods.PeekMessage(out _, IntPtr.Zero, 0, 0, 0);
+        EnsureThreadMessageQueue();
         return NativeMethods.GetCurrentThreadId();
     }
+
+    internal static void EnsureThreadMessageQueue() =>
+        _ = NativeMethods.PeekMessage(out _, IntPtr.Zero, 0, 0, 0);
 
     public IntPtr Install(KeyboardHookProcedure procedure)
     {

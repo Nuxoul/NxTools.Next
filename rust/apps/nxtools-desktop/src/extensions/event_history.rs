@@ -11,6 +11,7 @@ pub(crate) enum EventOutcome {
     Untrusted,
     Busy,
     Unavailable,
+    InvalidSettings,
     Protocol,
     Cancelled,
 }
@@ -28,9 +29,9 @@ impl EventOutcome {
             Err(
                 RuntimeError::NativeUnavailable
                 | RuntimeError::HandlerUnavailable
-                | RuntimeError::UnsupportedTransport
-                | RuntimeError::InvalidSettings,
+                | RuntimeError::UnsupportedTransport,
             ) => Self::Unavailable,
+            Err(RuntimeError::InvalidSettings) => Self::InvalidSettings,
             Err(RuntimeError::Cancelled) => Self::Cancelled,
             Err(RuntimeError::Protocol) => Self::Protocol,
             Err(RuntimeError::HandlerFailed) => Self::HandlerFailed,
@@ -48,6 +49,7 @@ impl EventOutcome {
             Self::Untrusted => "信任或内容已变化：请重新检查并信任",
             Self::Busy => "运行队列繁忙：等待空闲后恢复",
             Self::Unavailable => "运行通道或动作不可用：请检查运行环境",
+            Self::InvalidSettings => "设置未完成或无效：请打开扩展设置",
             Self::Protocol => "插件协议无效：请检查插件版本或联系作者",
             Self::Cancelled => "调用已取消，外部效果不能撤回",
         }

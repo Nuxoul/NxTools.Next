@@ -16,13 +16,12 @@ use gpui_kit::component::setting::{SelectIndex, SettingGroup, SettingItem, Setti
 
 #[path = "category_extensions.rs"]
 mod category_extensions;
+#[path = "queue_completion_settings.rs"]
+mod queue_completion_settings;
 
 pub(crate) struct DownloadSettingsInput<'a> {
     pub(crate) default_directory: &'a str,
     pub(crate) connection_limit: &'a str,
-    pub(crate) adaptive_segment_scaling_enabled: bool,
-    pub(crate) adaptive_segment_max_segments: &'a str,
-    pub(crate) adaptive_segment_min_mib: &'a str,
     pub(crate) max_concurrent_tasks: &'a str,
     pub(crate) speed_limit_kib: &'a str,
     pub(crate) show_progress_window: bool,
@@ -51,9 +50,6 @@ pub(crate) fn parse_download_settings_draft(
     let DownloadSettingsInput {
         default_directory,
         connection_limit,
-        adaptive_segment_scaling_enabled,
-        adaptive_segment_max_segments,
-        adaptive_segment_min_mib,
         max_concurrent_tasks,
         speed_limit_kib,
         show_progress_window,
@@ -85,20 +81,6 @@ pub(crate) fn parse_download_settings_draft(
         .map_err(|_| "连接上限必须是 1 到 64 的整数")?;
     if !(1..=64).contains(&default_connection_limit) {
         return Err("连接上限必须在 1 到 64 之间".into());
-    }
-    let adaptive_segment_max_segments = adaptive_segment_max_segments
-        .trim()
-        .parse::<u16>()
-        .map_err(|_| "动态分段上限必须是整数")?;
-    if !(default_connection_limit..=256).contains(&adaptive_segment_max_segments) {
-        return Err("动态分段上限必须在连接数和 256 之间".into());
-    }
-    let adaptive_segment_min_mib = adaptive_segment_min_mib
-        .trim()
-        .parse::<u16>()
-        .map_err(|_| "最小可拆分大小必须是 1 到 100 MiB 的整数")?;
-    if !(1..=100).contains(&adaptive_segment_min_mib) {
-        return Err("最小可拆分大小必须在 1 到 100 MiB 之间".into());
     }
     let max_concurrent_tasks = max_concurrent_tasks
         .trim()
@@ -165,6 +147,9 @@ pub(crate) fn parse_download_settings_draft(
         taskbar_overlay_height = taskbar_overlay_height.max(20);
     }
     Ok(DownloadSettingsDraft {
+        baseline: None,
+        max_concurrent_tasks_baseline: None,
+        global_speed_limit_edited: true,
         default_directory: PathBuf::from(default_directory),
         chrome_web_store_extension_id: String::new(),
         automatic_categories_enabled: false,
@@ -178,9 +163,6 @@ pub(crate) fn parse_download_settings_draft(
         default_cookie: String::new(),
         accept_invalid_certificates: false,
         default_connection_limit,
-        adaptive_segment_scaling_enabled,
-        adaptive_segment_max_segments,
-        adaptive_segment_min_mib,
         max_concurrent_tasks,
         global_speed_limit_bytes_per_second,
         background_speed_limit: Default::default(),
@@ -345,6 +327,8 @@ pub(crate) enum DownloadSettingsPage {
 pub(crate) struct DownloadSettingsView {
     pub(crate) theme: Theme,
     pub(crate) application: Entity<DownloadApplication>,
+    baseline: Option<DownloadSettings>,
+    max_concurrent_tasks_baseline: u16,
     pub(crate) directory: Entity<InputState>,
     pub(super) directory_picker: DownloadDirectoryDraft,
     // Legacy configuration compatibility only; never exposed as an editable field.
@@ -356,14 +340,13 @@ pub(crate) struct DownloadSettingsView {
     pub(crate) ffmpeg_discovery_generation: u64,
     pub(crate) ffmpeg_install_state: FfmpegInstallViewState,
     pub(crate) connection_limit: Entity<InputState>,
-    pub(crate) adaptive_segment_max_segments: Entity<InputState>,
-    pub(crate) adaptive_segment_min_mib: Entity<InputState>,
     pub(crate) concurrent_tasks: Entity<InputState>,
     pub(crate) speed_limit_kib: Entity<InputState>,
     pub(super) speed_limit_edit: super::speed_limit_edit::SpeedLimitEdit,
     background_speed_limit_enabled: bool,
     background_speed_limit_kib: Entity<InputState>,
     background_speed_limit_saved: u64,
+    background_speed_limit_dirty: bool,
     pub(crate) taskbar_overlay_offset_x: Entity<InputState>,
     pub(crate) taskbar_overlay_offset_y: Entity<InputState>,
     pub(crate) taskbar_overlay_width: Entity<InputState>,
@@ -374,6 +357,8 @@ pub(crate) struct DownloadSettingsView {
     pub(crate) show_completion_window: bool,
     pub(crate) completion_sound_enabled: bool,
     pub(crate) open_directory_on_completion: bool,
+    pub(super) completion_queues:
+        Vec<(DownloadQueue, nxtools_download::DownloadCompletionIntention)>,
     pub(crate) task_removal_deletes_file: bool,
     pub(crate) task_list_sort: Option<String>,
     pub(crate) task_list_sort_descending: Option<bool>,
@@ -383,7 +368,6 @@ pub(crate) struct DownloadSettingsView {
     pub(crate) selected_category: Option<usize>,
     pub(crate) duplicate_strategy: DownloadDuplicateStrategySettings,
     pub(crate) double_click_action: DownloadRowDoubleClickActionSettings,
-    pub(crate) adaptive_segment_scaling_enabled: bool,
     pub(crate) accept_invalid_certificates: bool,
     pub(crate) taskbar_overlay_enabled: bool,
     pub(crate) taskbar_overlay_anchor: DownloadTaskbarOverlayAnchor,
@@ -447,6 +431,7 @@ impl DownloadSettingsView {
             log_directory,
             database_path,
             ffmpeg_install_state,
+            completion_queues,
         } = initial;
         let directory = cx.new(|cx| {
             InputState::new(window, cx)
@@ -460,7 +445,12 @@ impl DownloadSettingsView {
         });
         let default_request_headers = cx.new(|cx| {
             TextareaState::new(window, cx)
-                .default_value(snapshot.default_request_headers.clone())
+                .default_value(
+                    nxtools_core::effective_download_request_headers(
+                        &snapshot.default_request_headers,
+                    )
+                    .into_owned(),
+                )
                 .placeholder(DEFAULT_REQUEST_HEADERS_PLACEHOLDER)
         });
         let default_cookie = cx.new(|cx| {
@@ -532,16 +522,6 @@ impl DownloadSettingsView {
                 .default_value(snapshot.default_connection_limit.to_string())
                 .placeholder("1-64")
         });
-        let adaptive_segment_max_segments = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(snapshot.adaptive_segment_max_segments.to_string())
-                .placeholder("8-256")
-        });
-        let adaptive_segment_min_mib = cx.new(|cx| {
-            InputState::new(window, cx)
-                .default_value(snapshot.adaptive_segment_min_mib.to_string())
-                .placeholder("1-100")
-        });
         let concurrent_tasks = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(snapshot.max_concurrent_tasks.to_string())
@@ -580,6 +560,14 @@ impl DownloadSettingsView {
                     .to_string(),
             )
         });
+        let background_speed_limit_subscription = cx.subscribe(
+            &background_speed_limit_kib,
+            |this, _, event: &InputEvent, _| {
+                if matches!(event, InputEvent::Change) {
+                    this.background_speed_limit_dirty = true;
+                }
+            },
+        );
         let taskbar_overlay_offset_x = cx.new(|cx| {
             InputState::new(window, cx)
                 .default_value(snapshot.taskbar_progress_overlay.offset_x.to_string())
@@ -714,6 +702,8 @@ impl DownloadSettingsView {
             let _ = view.update(cx, |view, cx| view.schedule_ffmpeg_discovery(cx));
         });
         Self {
+            baseline: snapshot.baseline,
+            max_concurrent_tasks_baseline: snapshot.max_concurrent_tasks,
             theme: Theme::zed_dark(),
             application,
             directory,
@@ -726,8 +716,6 @@ impl DownloadSettingsView {
             ffmpeg_discovery_generation: 0,
             ffmpeg_install_state,
             connection_limit,
-            adaptive_segment_max_segments,
-            adaptive_segment_min_mib,
             concurrent_tasks,
             speed_limit_kib,
             speed_limit_edit: super::speed_limit_edit::SpeedLimitEdit::new(
@@ -736,6 +724,7 @@ impl DownloadSettingsView {
             background_speed_limit_enabled: snapshot.background_speed_limit.enabled,
             background_speed_limit_kib,
             background_speed_limit_saved: snapshot.background_speed_limit.bytes_per_second,
+            background_speed_limit_dirty: false,
             taskbar_overlay_offset_x,
             taskbar_overlay_offset_y,
             taskbar_overlay_width,
@@ -744,6 +733,13 @@ impl DownloadSettingsView {
             show_progress_window: snapshot.show_progress_window,
             show_completion_window: snapshot.show_completion_window,
             completion_sound_enabled: snapshot.completion_sound_enabled,
+            completion_queues: completion_queues
+                .into_iter()
+                .map(|queue| {
+                    let intention = queue.completion_intention;
+                    (queue, intention)
+                })
+                .collect(),
             task_removal_deletes_file: snapshot.task_removal_deletes_file,
             task_list_sort: snapshot.task_list_sort.clone(),
             task_list_sort_descending: snapshot.task_list_sort_descending,
@@ -754,7 +750,6 @@ impl DownloadSettingsView {
             categories,
             duplicate_strategy: snapshot.duplicate_strategy,
             double_click_action: snapshot.double_click_action,
-            adaptive_segment_scaling_enabled: snapshot.adaptive_segment_scaling_enabled,
             accept_invalid_certificates: snapshot.accept_invalid_certificates,
             taskbar_overlay_enabled: snapshot.taskbar_progress_overlay.enabled,
             taskbar_overlay_anchor: snapshot.taskbar_progress_overlay.anchor,
@@ -783,6 +778,7 @@ impl DownloadSettingsView {
                 directory_subscription,
                 ffmpeg_input_subscription,
                 speed_limit_subscription,
+                background_speed_limit_subscription,
                 category_select_subscription,
                 offset_x_subscription,
                 offset_y_subscription,
@@ -882,9 +878,6 @@ impl DownloadSettingsView {
         let mut draft = parse_download_settings_draft(DownloadSettingsInput {
             default_directory: &self.directory.read(cx).value(),
             connection_limit: &self.connection_limit.read(cx).value(),
-            adaptive_segment_scaling_enabled: self.adaptive_segment_scaling_enabled,
-            adaptive_segment_max_segments: &self.adaptive_segment_max_segments.read(cx).value(),
-            adaptive_segment_min_mib: &self.adaptive_segment_min_mib.read(cx).value(),
             max_concurrent_tasks: &self.concurrent_tasks.read(cx).value(),
             speed_limit_kib: if self.speed_limit_edit.dirty {
                 &speed_limit_kib
@@ -913,6 +906,9 @@ impl DownloadSettingsView {
         if !self.speed_limit_edit.dirty {
             draft.global_speed_limit_bytes_per_second = self.speed_limit_edit.applied;
         }
+        draft.baseline = self.baseline.clone();
+        draft.max_concurrent_tasks_baseline = Some(self.max_concurrent_tasks_baseline);
+        draft.global_speed_limit_edited = self.speed_limit_edit.dirty;
         draft.chrome_web_store_extension_id = self.chrome_web_store_extension_id.clone();
         draft.ffmpeg_executable_path = self.ffmpeg_executable.read(cx).value().trim().to_owned();
         draft.default_request_headers = self
@@ -936,21 +932,22 @@ impl DownloadSettingsView {
         // hardcodes None, so restore the view-open-time values here.
         draft.task_list_sort = self.task_list_sort.clone();
         draft.task_list_sort_descending = self.task_list_sort_descending;
-        let bytes_per_second = if self.background_speed_limit_enabled {
-            let value = self
-                .background_speed_limit_kib
-                .read(cx)
-                .value()
-                .trim()
-                .parse::<u64>()
-                .map_err(|_| "后台限速必须是正整数 KiB/s")?;
-            value
-                .checked_mul(1024)
-                .filter(|value| *value > 0)
-                .ok_or("后台限速必须大于 0 且不能过大")?
-        } else {
-            self.background_speed_limit_saved
-        };
+        let bytes_per_second =
+            if self.background_speed_limit_enabled && self.background_speed_limit_dirty {
+                let value = self
+                    .background_speed_limit_kib
+                    .read(cx)
+                    .value()
+                    .trim()
+                    .parse::<u64>()
+                    .map_err(|_| "后台限速必须是正整数 KiB/s")?;
+                value
+                    .checked_mul(1024)
+                    .filter(|value| *value > 0)
+                    .ok_or("后台限速必须大于 0 且不能过大")?
+            } else {
+                self.background_speed_limit_saved
+            };
         draft.background_speed_limit = nxtools_core::BackgroundDownloadLimitSettings {
             enabled: self.background_speed_limit_enabled,
             bytes_per_second,
@@ -1162,10 +1159,34 @@ impl DownloadSettingsView {
             .debug_selector(|| "download-settings-default-headers-field".into())
             .w_full()
             .min_w_0()
+            .flex()
+            .items_start()
+            .gap_2()
             .child(
-                Textarea::new(&self.default_request_headers)
-                    .aria_label("默认 Header")
-                    .h(px(DOWNLOAD_REQUEST_HEADER_EDITOR_HEIGHT)),
+                div().flex_1().min_w_0().child(
+                    Textarea::new(&self.default_request_headers)
+                        .aria_label("默认 Header")
+                        .h(px(DOWNLOAD_REQUEST_HEADER_EDITOR_HEIGHT)),
+                ),
+            )
+            .child(
+                action_button("download-settings-reset-headers", "重置")
+                    .outline()
+                    .disabled(self.saving)
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        cx.defer_in(window, |this, window, cx| {
+                            this.default_request_headers.update(cx, |input, cx| {
+                                input.set_value(
+                                    nxtools_core::default_download_request_headers(),
+                                    window,
+                                    cx,
+                                );
+                                input.focus_handle(cx).focus(window, cx);
+                            });
+                        });
+                        this.error = None;
+                        cx.notify();
+                    })),
             )
             .into_any_element();
         let default_cookie_control = div()
@@ -1775,30 +1796,6 @@ impl DownloadSettingsView {
             ordinary_rem(88.0),
         )
         .into_any_element();
-        let adaptive_max_control = download_settings_input(
-            theme,
-            "download-settings-adaptive-max-field",
-            &self.adaptive_segment_max_segments,
-            ordinary_rem(88.0),
-        )
-        .into_any_element();
-        let adaptive_min_control = download_settings_input(
-            theme,
-            "download-settings-adaptive-min-field",
-            &self.adaptive_segment_min_mib,
-            ordinary_rem(88.0),
-        )
-        .into_any_element();
-        let adaptive_toggle = settings_toggle(
-            theme,
-            "download-settings-adaptive-segments",
-            self.adaptive_segment_scaling_enabled,
-            cx.listener(|this, _, _, cx| {
-                this.adaptive_segment_scaling_enabled = !this.adaptive_segment_scaling_enabled;
-                this.error = None;
-                cx.notify();
-            }),
-        );
         let concurrent_control = download_settings_input(
             theme,
             "download-settings-concurrent-tasks-field",
@@ -2266,9 +2263,6 @@ impl DownloadSettingsView {
             (DownloadSettingsPage::Request, 1) => certificate_toggle,
             (DownloadSettingsPage::Transfer, 0) => connection_control,
             (DownloadSettingsPage::Transfer, 1) => concurrent_control,
-            (DownloadSettingsPage::Transfer, 2) => adaptive_toggle,
-            (DownloadSettingsPage::Transfer, 3) => adaptive_max_control,
-            (DownloadSettingsPage::Transfer, 4) => adaptive_min_control,
             (DownloadSettingsPage::Transfer, 5) => speed_control,
             (DownloadSettingsPage::Transfer, 6) => div()
                 .w_full()
@@ -2337,6 +2331,7 @@ impl DownloadSettingsView {
             (DownloadSettingsPage::Window, 1) => completion_toggle,
             (DownloadSettingsPage::Window, 2) => completion_sound_toggle,
             (DownloadSettingsPage::Window, 3) => completion_directory_toggle,
+            (DownloadSettingsPage::Window, 19) => self.render_queue_completion_settings(cx),
             (DownloadSettingsPage::Window, 4) => task_removal_toggle,
             (DownloadSettingsPage::Window, 5) => taskbar_overlay_toggle,
             (DownloadSettingsPage::Window, 6) => taskbar_edit_control,
@@ -2938,31 +2933,13 @@ fn download_setting_groups(
                     (
                         0,
                         "连接上限",
-                        "新任务从开始即使用的最大并行连接数，范围 1–64",
+                        "新任务的并行连接上限，范围 1–64；分段由下载器自动调度",
                         false,
                     ),
                     (
                         1,
                         "同时下载",
                         "默认队列允许同时运行的任务数，范围 1–64",
-                        false,
-                    ),
-                    (
-                        2,
-                        "动态分段",
-                        "速度稳定时拆分长尾；连接数仍保持在上限内",
-                        false,
-                    ),
-                    (
-                        3,
-                        "分段上限",
-                        "动态拆分后的最大分段数，范围为连接数到 256",
-                        false,
-                    ),
-                    (
-                        4,
-                        "最小长尾",
-                        "剩余大小达到此值才拆分，单位 MiB，范围 1–100",
                         false,
                     ),
                     (5, "全局限速", "单位 KiB/s；填 0 表示不限速", false),
@@ -3012,6 +2989,12 @@ fn download_setting_groups(
                         "删除任务时删除本地文件",
                         "关闭后，删除文件只从列表移除任务记录",
                         false,
+                    ),
+                    (
+                        19,
+                        "队列完成动作",
+                        "仅在当前非空轮次全部成功后执行；多个队列共用一个可取消倒计时",
+                        true,
                     ),
                 ],
             ),

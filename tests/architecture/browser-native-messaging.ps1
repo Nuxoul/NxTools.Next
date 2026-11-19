@@ -39,10 +39,14 @@ $background = (@($manifest.background.scripts) | ForEach-Object {
 $backgroundEntrySource = Get-Content -LiteralPath (Join-Path $extension 'background.js') -Raw
 Assert-Contains $background 'chrome.runtime.connectNative(NATIVE_HOST_NAME)' `
     'Browser extension must use Native Messaging.'
-Assert-Contains $background 'const { response, handoffId } = await sendDownloadItem(downloadItem);' `
-    'Browser download must wait for the desktop response.'
-Assert-Contains $background 'expectedHandoffId: handoffId' `
-    'Safe handoff policy must bind acceptance to the submitted handoff ID.'
+$controlledHandoff = Get-Content -LiteralPath (Join-Path $extension 'bg\browser-handoff.js') -Raw
+Assert-Contains $background 'runControlledBrowserHandoff(downloadItem, context, requestContext, settings' `
+    'Automatic browser downloads must use the controlled ownership lifecycle.'
+foreach ($boundary in 'await chrome.downloads.pause(record.downloadId)', 'await chrome.downloads.cancel(record.downloadId)', 'controlledHandoffState(reply, record)', 'commit_browser_handoff', 'abort_browser_handoff', 'USER_CANCELED', 'BROWSER_HANDOFF_SESSION_KEY') {
+    Assert-Contains $controlledHandoff $boundary "Controlled handoff is missing boundary $boundary."
+}
+Assert-Contains $controlledHandoff 'response.handoffId !== record.handoffId' `
+    'Controlled acceptance must bind the reply to the original handoff identity.'
 Assert-Contains $background 'openDialog: settings.openDialog' `
     'Browser confirmation-window preference must cross the Native Messaging boundary.'
 Assert-Contains $background 'sanitizeCapturedHeaderObject(resource.requestHeaders)' `
@@ -71,11 +75,18 @@ Assert-Contains $background '}, 15000, correlationId)' `
     'Ordinary handoff must preserve one correlation ID from extension to Rust.'
 Assert-Contains $background 'info.menuItemId !== "nxtools-download-link"' `
     'The context-menu listener must reject undeclared menu identifiers.'
-Assert-Contains $background 'result?.ok !== true || result?.accepted !== true' `
-    'The context-menu success badge requires explicit native acceptance.'
-if ($background.IndexOf('return { cancel: true };', [StringComparison]::Ordinal) -ge 0) {
-    throw 'Browser response hooks must not cancel before asynchronous acceptance.'
-}
+Assert-Contains $background 'NxToolsHandoffPolicy.handoffOutcome(result, correlationId)' `
+    'Context-menu intake must use identity-bound durable/pending classification.'
+Assert-Contains $background 'setBadge(pending ? "…" : "OK"' `
+    'Confirmation-pending requests must not display a durable-acceptance badge.'
+Assert-Contains $background 'if (state === "held")' `
+    'Firefox response cancellation requires durable Held acceptance.'
+Assert-Contains $background 'void finishFirefoxResponseCancellation(active)' `
+    'Firefox response cancellation must install terminal observation before returning cancel.'
+Assert-Contains $background 'if (terminal === "failed")' `
+    'Firefox Commit requires matching request-terminal cancellation evidence.'
+Assert-Contains $background 'browser_cancel_unconfirmed' `
+    'Unknown Firefox cancellation must retain Held instead of activating a duplicate transfer.'
 
 $handoffPolicy = Get-Content -LiteralPath (Join-Path $extension 'handoff-policy.js') -Raw
 Assert-Contains $handoffPolicy 'response.handoffId === expectedHandoffId' `
@@ -201,10 +212,19 @@ Assert-Contains $newWindowLifecycle 'PlatformCommand::ActivateWindow' `
 
 $desktopMain = Get-Content -LiteralPath `
     (Join-Path $root 'rust\apps\nxtools-desktop\src\main.rs') -Raw
-Assert-Contains $desktopMain 'focus: launch_mode.main_window_focus()' `
-    'A browser confirmation cold start must not let the main window claim focus.'
-Assert-Contains $desktopMain 'show: launch_mode.main_window_show()' `
-    'A browser confirmation cold start must keep the main window hidden until native minimization.'
+Assert-Contains $desktopMain 'startup_main_window_presentation(launch_mode, initial_archive.is_some(), markdown_origin)' `
+    'Main-window presentation must use the shared archive/Markdown startup policy.'
+Assert-Contains $desktopMain 'archive_launch::main_window_presentation(mode, archive_origin)' `
+    'Non-Markdown startup must retain the original launch-mode policy.'
+Assert-Contains $desktopMain 'focus: main_focus' `
+    'The main window must apply the resolved launch-mode focus policy.'
+Assert-Contains $desktopMain 'show: main_show' `
+    'The main window must apply the resolved launch-mode visibility policy.'
+$desktopPresentation = Get-Content -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\archive_launch.rs') -Raw
+Assert-Contains $desktopPresentation 'mode.main_window_focus()' `
+    'Browser confirmation cold start must retain the non-focusing main-window policy.'
+Assert-Contains $desktopPresentation 'mode.main_window_show()' `
+    'Browser confirmation cold start must retain the hidden main-window policy.'
 $platformEvents = Get-Content -LiteralPath `
     (Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events.rs') -Raw
 Assert-Contains $platformEvents 'PlatformCommand::SetWindowMinimized' `

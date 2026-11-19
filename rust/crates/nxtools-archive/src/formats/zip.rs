@@ -874,17 +874,7 @@ impl<R: Read> Payload<R> {
                 control,
             )?))
         } else {
-            Self::Deflated(Box::new(Deflated {
-                input,
-                decoder: flate2::Decompress::new(false),
-                buffer: [0; 8192],
-                start: 0,
-                end: 0,
-                finished: false,
-                inflate_us: 0,
-                inflate_calls: 0,
-                control,
-            }))
+            Self::Deflated(Box::new(Deflated::new(input, control, true)))
         })
     }
     fn compressed_consumed(&self, packed: u64) -> u64 {
@@ -909,7 +899,7 @@ impl<R: Read> Read for Payload<R> {
     }
 }
 
-struct Deflated<R: Read> {
+pub(crate) struct Deflated<R: Read> {
     input: std::io::Take<R>,
     decoder: flate2::Decompress,
     buffer: [u8; 8192],
@@ -919,9 +909,37 @@ struct Deflated<R: Read> {
     inflate_calls: u64,
     finished: bool,
     control: OperationControl,
+    track_zip_work: bool,
+}
+impl<R: Read> Deflated<R> {
+    pub(crate) fn new(
+        input: std::io::Take<R>,
+        control: OperationControl,
+        track_zip_work: bool,
+    ) -> Self {
+        Self {
+            input,
+            decoder: flate2::Decompress::new(false),
+            buffer: [0; 8192],
+            start: 0,
+            end: 0,
+            inflate_us: 0,
+            inflate_calls: 0,
+            finished: false,
+            control,
+            track_zip_work,
+        }
+    }
+    #[cfg(feature = "isolated-codecs")]
+    pub(crate) fn consumed(&self) -> u64 {
+        self.decoder.total_in()
+    }
 }
 impl<R: Read> Drop for Deflated<R> {
     fn drop(&mut self) {
+        if !self.track_zip_work {
+            return;
+        }
         self.control.record_work(|work| {
             work.zip_inflate_us = work.zip_inflate_us.saturating_add(self.inflate_us);
             work.zip_inflate_calls = work.zip_inflate_calls.saturating_add(self.inflate_calls);

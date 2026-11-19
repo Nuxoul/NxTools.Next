@@ -15,6 +15,7 @@ $downloadsFiles = @(
     'downloads\shutdown_window.rs',
     'downloads\settings_view.rs',
     'downloads\task_window.rs',
+    'downloads\task_window_details.rs',
     'downloads\window_support.rs'
 )
 $source = ($downloadsFiles | ForEach-Object {
@@ -69,7 +70,7 @@ if ($newDownloadSource.Contains('popover_shell(') -or $newDownloadSource.Contain
 }
 
 $scheduleContent = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\schedule_view.rs')
-$taskContent = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\task_window.rs')
+$taskContent = (Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\task_window.rs')) + (Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\task_window_details.rs'))
 $supportContent = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\downloads\window_support.rs')
 foreach ($contract in @('Form::horizontal()', 'Field::new()', 'StatusBar::new()', 'Switch::new(id)',
     'Toggle::new(', 'this.enabled_start = *requested', 'this.enabled_stop = *requested',
@@ -81,7 +82,7 @@ if ($scheduleContent.Contains('ToggleGroup::new(')) {
 }
 foreach ($contract in @('Progress::new("download-task-window-progress")', '.xsmall()',
     'Toolbar::new("download-task-window-toolbar")', 'ToolbarGroup::new("download-task-window-action-group")',
-    'checkbox::Checkbox::new(', 'application.toggle_shutdown_armed(task_id, cx)', 'DialogFooter::new()',
+    'Checkbox::new(', 'save_completion_intention(', 'TabBar::new("download-task-detail-tabs")', 'download-window-options', 'DialogFooter::new()',
     'fn replace_snapshot(', 'fn segment_progress_table(', 'segment_display_status(', 'Table::new()')) {
     if (-not $taskContent.Contains($contract)) { throw "Task component/phase/domain owner missing: $contract" }
 }
@@ -209,11 +210,19 @@ foreach ($requiredDialogShellContract in @(
     'pub(crate) struct DialogShellIds',
     'pub(crate) fn dialog_shell(',
     '.child(titlebar)',
-    '.h(px(SETTINGS_FOOTER_HEIGHT))',
-    '.font_family(UI_FONT_FAMILY)'
+    '.h(px(SETTINGS_FOOTER_HEIGHT))'
 )) {
     if (-not $dialogComponent.Contains($requiredDialogShellContract)) {
         throw "Auxiliary download dialogs must share the design-system DialogShell geometry."
+    }
+}
+if ($dialogComponent.Contains('.font_family(')) {
+    throw 'Auxiliary download dialogs must inherit the configured UI font from the component root.'
+}
+$themeSource = Get-Content -Raw (Join-Path $RepositoryRoot 'rust\apps\nxtools-desktop\src\theme.rs')
+foreach ($fontContract in @('pub(crate) fn set_ui_font_family(', 'theme.font_family = resolved;', 'component.font_family = family;')) {
+    if (-not $themeSource.Contains($fontContract)) {
+        throw 'The configured UI font must propagate through both font updates and theme changes.'
     }
 }
 foreach ($requiredDialogRole in @(

@@ -18,11 +18,11 @@ impl MainWindow {
         }
     }
 
-    pub(crate) fn render_extensions(
+    fn ensure_extension_manager(
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> AnyElement {
+    ) -> Option<Entity<extensions_page::ExtensionManagerView>> {
         if self.extension_manager.is_none()
             && let Some(application) = self.extension_application.clone()
         {
@@ -30,6 +30,66 @@ impl MainWindow {
                 cx.new(|cx| extensions_page::ExtensionManagerView::new(application, window, cx)),
             );
         }
+        self.extension_manager.clone()
+    }
+
+    pub(super) fn defer_extension_settings(
+        &self,
+        request: crate::extensions::SettingsRequested,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        use gpui_kit::component::WindowExt as _;
+        let destination = window.window_handle();
+        let main = cx.entity().downgrade();
+        let notifications = self.notifications.clone();
+        cx.defer(move |cx| {
+            let same_window = destination == request.source;
+            let opened = destination.update(cx, |_, window, cx| {
+                if !same_window && window.has_active_dialog(cx) {
+                    return false;
+                }
+                let Some(manager) = main.update(cx, |main, cx| main.ensure_extension_manager(window, cx)).ok().flatten() else {
+                    return false;
+                };
+                if !manager.update(cx, |view, cx| view.open_report_settings(request.package_id, window, cx)) {
+                    return false;
+                }
+                if same_window {
+                    window.close_dialog(cx);
+                }
+                let _ = main.update(cx, |main, cx| {
+                    main.retire_download_detail_scope(cx);
+                    main.shell.activate(MainModule::Extensions);
+                    window.blur(cx);
+                    let index = MainModule::ALL.iter().position(|module| *module == MainModule::Extensions).expect("extensions module");
+                    main.module_focus[index].focus(window, cx);
+                    cx.notify();
+                });
+                true
+            }).unwrap_or(false);
+            if opened && !same_window {
+                crate::platform_events::restore_main_window(request.correlation_id, request.started, cx);
+            } else if !opened {
+                notifications.update(cx, |center, cx| {
+                    center.push(crate::notifications::AppNotification::new(
+                        format!("extension-settings-navigation-{}", request.correlation_id),
+                        crate::notifications::NotificationLevel::Error,
+                        "扩展",
+                        "无法直接打开设置。请结束当前编辑或操作，再到「扩展」中打开该插件的设置。",
+                    ).in_window(request.source), cx);
+                });
+            }
+            info!(event = "extension.settings_navigation.terminal", correlation_id = %request.correlation_id, success = opened,
+                elapsed_ms = request.started.elapsed().as_millis(), "extension settings navigation finished");
+        });
+    }
+
+    pub(crate) fn render_extensions(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let mut page = div()
             .id("extensions-workspace")
             .debug_selector(|| "extensions-workspace".into())
@@ -39,7 +99,7 @@ impl MainWindow {
             .flex()
             .flex_col()
             .bg(self.theme.canvas);
-        if let Some(manager) = self.extension_manager.clone() {
+        if let Some(manager) = self.ensure_extension_manager(window, cx) {
             page = page.child(manager);
         } else {
             page = page.child(
@@ -56,8 +116,19 @@ impl MainWindow {
         page.into_any_element()
     }
 
-    pub(crate) fn render_titlebar(&self, window: &Window) -> AnyElement {
+    pub(crate) fn render_titlebar(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
+        let owner = cx.entity().downgrade();
+        let about_action = div().debug_selector(|| "global-about-entry".into()).child(
+            labelled_icon_action("global-about-button", MaterialIcon::Info, "关于")
+                .ghost()
+                .on_click(move |_, window, cx| {
+                    let owner = owner.clone();
+                    window.defer(cx, move |_, cx| {
+                        let _ = owner.update(cx, |main, cx| main.open_about(cx));
+                    });
+                }),
+        );
         let network_settings = self.network_settings.clone();
         let global_settings_action = div()
             .id("global-network-settings")
@@ -164,6 +235,7 @@ impl MainWindow {
                         .items_center()
                         .gap_1()
                         .child(global_settings_action)
+                        .child(about_action)
                         .child(
                             div()
                                 .debug_selector(|| "main-window-controls".into())
