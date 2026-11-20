@@ -35,6 +35,7 @@ fn link_panel_collapsed_and_expanded_render_within_the_fixed_client(cx: &mut Tes
         });
         Root::new(view, window, cx)
     });
+    window.simulate_resize(size(px(LINK_PANEL_WIDTH), px(collapsed)));
     window.refresh().expect("render collapsed production panel");
     let first = window.debug_bounds("link-panel-row-0").expect("first row");
     let expander = window
@@ -65,6 +66,7 @@ fn link_panel_collapsed_and_expanded_render_within_the_fixed_client(cx: &mut Tes
 
     window.simulate_click(expander.center(), gpui_kit::Modifiers::default());
     window.run_until_parked();
+    window.simulate_resize(size(px(LINK_PANEL_WIDTH), px(expanded)));
     window.refresh().expect("render expanded production panel");
     let third = window
         .debug_bounds("link-panel-row-2")
@@ -812,5 +814,66 @@ fn round2_link_popup_preserves_official_row_padding_and_statusbar_height(cx: &mu
     assert!(
         footer.size.height >= px(24.0),
         "official statusbar text and padding must fit"
+    );
+}
+
+#[gpui_kit::test]
+fn link_panel_expanded_list_scrolls_to_every_row_with_footer_visible(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_root, window) = cx.add_window_view(|window, cx| {
+        let view = cx.new(|_| LinkPanelView {
+            links: (0..32)
+                .map(|index| DetectedLink {
+                    display: format!("https://example.invalid/{index}"),
+                    copy_value: format!("https://example.invalid/{index}"),
+                    kind: DetectedLinkKind::Web,
+                })
+                .collect(),
+            application: gpui_kit::WeakEntity::new_invalid(),
+            expanded: true,
+            auto_hide_ms: 6_000,
+            window_handle: Some(window.window_handle()),
+            auto_hide_task: None,
+        });
+        Root::new(view, window, cx)
+    });
+    window.simulate_resize(size(px(LINK_PANEL_WIDTH), px(240.0)));
+    window.refresh().expect("bounded expanded link panel");
+    let viewport = window
+        .debug_bounds("link-panel-list")
+        .expect("link scroll viewport");
+    let footer = window
+        .debug_bounds("link-panel-footer")
+        .expect("fixed count footer");
+    assert!(viewport.bottom() <= footer.top());
+    assert!(footer.bottom() <= px(240.0));
+    assert!(
+        window
+            .debug_bounds("link-panel-row-31")
+            .expect("last retained link")
+            .bottom()
+            > viewport.bottom()
+    );
+    window.simulate_event(gpui_kit::ScrollWheelEvent {
+        position: viewport.center(),
+        delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(-2_000.0))),
+        modifiers: gpui_kit::Modifiers::default(),
+        touch_phase: gpui_kit::TouchPhase::Moved,
+    });
+    window.run_until_parked();
+    window.refresh().expect("scroll to last retained link");
+    let last = window
+        .debug_bounds("link-panel-row-31")
+        .expect("reachable last row");
+    assert!(last.top() >= viewport.top() && last.bottom() <= viewport.bottom());
+    let copy = window
+        .debug_bounds("link-panel-copy-31")
+        .expect("reachable last copy action");
+    assert!(copy.top() >= viewport.top() && copy.bottom() <= viewport.bottom());
+    assert_eq!(
+        window
+            .debug_bounds("link-panel-footer")
+            .expect("unchanged footer"),
+        footer
     );
 }

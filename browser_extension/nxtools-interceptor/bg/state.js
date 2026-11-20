@@ -28,7 +28,6 @@ let connectionState = "disconnected";
 let connectionMessage = "未连接 NxTools";
 let connectionFailureCode = "desktop_unavailable";
 const DESKTOP_CONNECT_TIMEOUT_MS = 1800;
-let lastSnapshot = null;
 let lastHandoff = null;
 const pendingDesktopRequests = new Map();
 const mobileUserAgentTabs = new Set();

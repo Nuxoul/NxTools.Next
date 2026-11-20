@@ -79,7 +79,7 @@ class ArchiveSourceDistributionTests(unittest.TestCase):
         builder = self.load_builder()
         with tempfile.TemporaryDirectory(dir=os.environ.get("PI_SCRATCH_DIR")) as directory:
             root = Path(directory)
-            setup = root / "NxTools.Next-setup-0.7.3.exe"
+            setup = root / "NxTools.Next-setup-0.7.4.exe"
             setup.write_bytes(b"normal installer")
             materials = root / "third_party/archive-worker"
             materials.mkdir(parents=True)
@@ -89,7 +89,7 @@ class ArchiveSourceDistributionTests(unittest.TestCase):
                 (root / name).write_bytes(name.encode())
             (root / "unrelated.pem").write_bytes(b"must not be included")
             builder.write_distribution(setup, materials, root)
-            with zipfile.ZipFile(root / "NxTools.Next-release-0.7.3.zip") as archive:
+            with zipfile.ZipFile(root / "NxTools.Next-release-0.7.4.zip") as archive:
                 self.assertEqual(archive.read(setup.name), setup.read_bytes())
                 self.assertEqual(archive.read("third_party/archive-worker/archive-worker-source.zip"), b"source kit")
                 self.assertNotIn("unrelated.pem", archive.namelist())

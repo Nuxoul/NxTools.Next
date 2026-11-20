@@ -245,3 +245,71 @@ mod tests {
         });
     }
 }
+
+#[cfg(test)]
+mod window_feedback_tests {
+    use super::*;
+    use gpui_kit::{IntoElement, prelude::*};
+
+    struct SettledSurface;
+    impl gpui_kit::Render for SettledSurface {
+        fn render(
+            &mut self,
+            _: &mut gpui_kit::Window,
+            _: &mut gpui_kit::Context<Self>,
+        ) -> impl IntoElement {
+            gpui_kit::div().size_full().child(animated_surface(
+                "window-feedback-entrance",
+                ENTER_DURATION,
+                gpui_kit::div()
+                    .debug_selector(|| "window-feedback-content".into())
+                    .size_full()
+                    .into_any_element(),
+                12.,
+                0.5,
+            ))
+        }
+    }
+
+    #[gpui_kit::test]
+    fn window_feedback_settled_surface_does_not_reenter_on_unrelated_refresh(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        cx.update(|cx| {
+            cx.set_global(UiMotionPreference::Known {
+                reduced_motion: false,
+            });
+            cx.set_reduce_motion(false);
+        });
+        let (view, surface) = cx.add_window_view(|_, _| SettledSurface);
+        surface.simulate_resize(gpui_kit::size(gpui_kit::px(300.), gpui_kit::px(180.)));
+        surface.refresh().expect("initial entrance frame");
+        assert!(
+            surface
+                .debug_bounds("window-feedback-content")
+                .expect("entrance")
+                .origin
+                .y
+                > gpui_kit::px(0.)
+        );
+        surface.executor().advance_clock(Duration::from_millis(250));
+        // Released AnimationState reads scheduler::Instant rather than the timer executor's clock.
+        std::thread::sleep(ENTER_DURATION + Duration::from_millis(20));
+        surface.update(|window, cx| window.simulate_next_frame(cx));
+        surface.refresh().expect("settled frame");
+        let settled = surface
+            .debug_bounds("window-feedback-content")
+            .expect("settled content");
+        assert_eq!(settled.origin.y, gpui_kit::px(0.));
+        for _ in 0..3 {
+            view.update(surface, |_, cx| cx.notify());
+            surface.update(|_, cx| cx.refresh_windows());
+            surface.refresh().expect("ordinary invalidation frame");
+            assert_eq!(
+                surface.debug_bounds("window-feedback-content"),
+                Some(settled),
+                "ordinary refresh must not replay whole-surface entrance"
+            );
+        }
+    }
+}

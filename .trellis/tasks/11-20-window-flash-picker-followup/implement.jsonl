@@ -1,0 +1,5 @@
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Existing caption_action official Button and original settings controls"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Modeless About and hidden picker source lifecycle contracts"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Native HWND/process/input ownership and error facts"}
+{"file":"docs/reference-code/system-shell.md","reason":"Verified caption, framework modal parent and picker show/hide boundaries"}
+{"file":".trellis/tasks/11-20-window-flash-picker-followup/design.md","reason":"Requested UI shape, modeless creation policy and original save/focus authority"}

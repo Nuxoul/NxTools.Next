@@ -82,10 +82,10 @@ Explicit HTTP(S) continues to use the existing `url` dependency for host/port va
 
 A drive/UNC-leading unquoted line is one complete path, including spaces; a missing path
 does not fall back to an existing prefix. Multiple paths use separate lines or explicit
-quotes. Each distinct candidate is validated once, including negative path checks. Only
-the first 64 lines, a bounded candidate set and first 8 distinct matches are considered;
-the existing native clipboard byte limit remains authoritative. No network URL requests
-or payload diagnostics are introduced.
+quotes. Each distinct candidate is validated once, including negative path checks. The
+first 64 lines and first 128 distinct candidates retain their existing work budget;
+all matches within that budget reach the panel in source order. The native clipboard
+byte limit remains authoritative. No network URL requests or payload diagnostics are introduced.
 
 The original one-panel reuse, focus, placement, timer, close-before-deferred-dispatch,
 explicit Copy and echo suppression remain. `link_panel_shell_command` still maps Web to
@@ -126,3 +126,30 @@ spaces and never fall back to a shorter existing prefix; undefined variables and
 missing targets produce no match. HTTP(S) percent escapes remain URL data.
 Preserve the existing background detection, budgets, generation retirement, diagnostics,
 one-panel identity, passive placement, focus, timer and deferred action boundaries.
+
+## Complete expansion and count-only footer
+
+The footer contains only the link count. `LinkPanelView::render` retains official
+ListItem rows, XSmall ghost Copy/Download and the Small ghost expander; the row list
+uses Kit0.8.0 `ScrollableElement::overflow_y_scrollbar().id(...)` with one scroll owner.
+The fixed count footer stays outside it. The natural height includes both 1px shell
+borders, giving 69px single, 93px collapsed multi-link and 125px expanded three-link
+clients; larger results fit the selected monitor's work area and scroll to the last row.
+
+The expander sets local state and defers `request_link_panel_expansion` to the original
+ClipboardApplication. The current window/generation and original pending placement
+owner carry `ExpandedBounds` through the existing correlated SetWindowBounds command,
+result, three-second deadline and retirement path. It never updates the same window
+handle from its leased callback or races a second GPUI resize against native placement.
+Rust `link_panel_bounds` computes logical placement from the retained cursor-monitor
+snapshot and converts once to device pixels. C#
+`WindowsPlatformAdapter.SetWindowBounds` -> `NativeMethods.SetWindowBounds` owns actual
+client inset compensation, no-activate SetWindowPos and exact client readback. The HWND,
+topmost/passive policy, restaging generation, auto-hide clock and close-before-deferred
+copy/open/download owners remain unchanged. There is no legacy Link detector equivalent.
+
+Regression seams: `tools/link_detector.rs` verifies 32 retained links and the existing
+candidate budget; `tools/polish_tests.rs` checks actual fixed clients and scroll-to-last
+Copy; `clipboard/link_placement_tests.rs` drives the production expander and native
+bounds/result boundary at 144DPI on a negative-origin work area. These synthetic tests
+do not certify installed Windows pointer/DPI or user visual acceptance.

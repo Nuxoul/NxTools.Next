@@ -1,56 +1,7 @@
 "use strict";
 
-// Popup rendering: tasks, resources, media tools, site toggle and settings.
+// Popup rendering: resources, media tools, site toggle and settings.
 // Builds DOM nodes directly; event handlers delegate to popup/actions.js.
-
-function renderTasks(tasks) {
-  elements.taskCountText.textContent = String(tasks.length);
-  elements.taskTabCount.textContent = String(Math.min(tasks.length, 99));
-  if (tasks.length === 0) {
-    elements.taskList.replaceChildren(emptyState("桌面端暂无任务", "桌面端运行后可查看和管理下载任务。"));
-    return;
-  }
-
-  const items = tasks.slice(0, 8).map((task) => {
-    const name = task.displayFileName || task.DisplayFileName || task.url || "download";
-    const progress = progressValue(task);
-    const percent = progressLabel(progress, task);
-    const primaryAction = taskActionLabel(task);
-    const taskId = task.id || task.Id || "";
-    const actions = el("div", { className: "task-actions" });
-    if (primaryAction && taskId) {
-      actions.append(el("button", {
-        className: "mini-send",
-        text: primaryAction.label,
-        dataset: { taskId, action: primaryAction.action },
-        attrs: { "aria-label": `${primaryAction.label} ${name}` }
-      }));
-    }
-    if (taskId && !isCompletedStatus(task.status)) {
-      actions.append(el("button", {
-        className: "mini-send danger",
-        text: "取消",
-        dataset: { taskId, action: "cancel" },
-        attrs: { "aria-label": `取消 ${name}` }
-      }));
-    }
-    const bar = el("progress", { className: "bar", text: percent, attrs: { max: "100", "aria-label": `${name} 下载进度` } });
-    bar.value = Number(progress.toFixed(2));
-    return el("article", { className: "item task" },
-      el("div", { className: "item-main" },
-        el("strong", { text: name, title: name }),
-        el("small", {},
-          el("span", { className: "task-status", text: statusLabel(task.status), dataset: { statusTone: statusTone(task.status) } }),
-          document.createTextNode(` · ${formatBytes(task.downloadedBytes)} / ${formatBytes(task.totalBytes)}`))),
-      el("span", { className: "badge", text: percent }),
-      el("div", { className: "task-progress" }, bar, actions));
-  });
-  elements.taskList.replaceChildren(...items);
-
-  elements.taskList.querySelectorAll("[data-task-id][data-action]").forEach((button) => {
-    button.addEventListener("click", () => runTaskAction(button));
-  });
-}
 
 function resourceMetaText(resource) {
   const info = resource.description || {};
@@ -524,7 +475,7 @@ function renderCapturePause(state) {
 
 function connectionPresentation(status = {}) {
   const defaults = {
-    connected: ["已连接", "桌面任务与发送功能可用。"],
+    connected: ["已连接", "可将页面和资源发送到 NxTools。"],
     host_not_registered: ["浏览器接管未注册", "请在 NxTools 下载设置中重新注册浏览器接管，然后测试连接。"],
     host_forbidden: ["浏览器接管被拒绝", "请确认当前浏览器已在 NxTools 中获准，然后重新注册。"],
     host_start_failed: ["无法启动本地连接", "请启动或修复 NxTools 桌面端，然后测试连接。"],
@@ -589,9 +540,8 @@ function renderHandoff(status) {
 function render(state) {
   renderRevision += 1;
   const focused = document.activeElement;
-  const focusAttribute = ["data-resource-preview", "data-resource-inspect", "data-resource-check", "data-resource-id", "data-task-id"].find(name => focused?.hasAttribute?.(name));
+  const focusAttribute = ["data-resource-preview", "data-resource-inspect", "data-resource-check", "data-resource-id"].find(name => focused?.hasAttribute?.(name));
   const focusValue = focusAttribute ? focused.getAttribute(focusAttribute) : "";
-  const focusAction = focused?.dataset?.action || "";
   const mediaDraft = focused === elements.mediaSpeedInput ? focused.value : null;
   currentState = state;
   handleLinkReviewNavigation(state);
@@ -614,15 +564,13 @@ function render(state) {
 
   renderSiteToggle(state.siteControl || {});
   renderCaptureSummary(state);
-  renderTasks(Array.isArray(state.tasks) ? state.tasks : []);
   if (!previewResourceId || !findResourceById(previewResourceId, state)) previewResourceId = "";
   renderResourceLists(state);
   renderLinkReview(state);
   renderAdvanced(state);
   if (mediaDraft !== null) elements.mediaSpeedInput.value = mediaDraft;
   if (focusAttribute) {
-    const actionSelector = focusAction ? `[data-action="${CSS.escape(focusAction)}"]` : "";
-    document.querySelector(`[${focusAttribute}="${CSS.escape(focusValue)}"]${actionSelector}`)?.focus({ preventScroll: true });
+    document.querySelector(`[${focusAttribute}="${CSS.escape(focusValue)}"]`)?.focus({ preventScroll: true });
   }
 }
 

@@ -68,8 +68,13 @@ test("resource context and three metadata fields remain available", () => {
   assert.match(cssRule("input.resource-check"),/width:\s*16px/);
   assert.doesNotMatch(cssRule("input.resource-check"),/display:\s*none/);
 });
-test("task and batch ownership, caps and partial retry remain", () => {
-  assert.match(script,/tasks\.slice\(0, 8\)/); assert.match(script,/visibleResources\.slice\(0, visibleLimit\)/);
+test("popup overview has no desktop task list or task controls", () => {
+  assert.match(html, /id="tasksTab"[^>]*>概览<\/button>/);
+  assert.doesNotMatch(html, /id="(?:taskList|taskCountText|taskTabCount)"|桌面下载任务|最近 8 项/);
+  assert.doesNotMatch(script, /renderTasks|runTaskAction|popup_task_action|data-task-id/);
+});
+test("batch ownership, caps and partial retry remain", () => {
+  assert.match(script,/visibleResources\.slice\(0, visibleLimit\)/);
   assert.match(script,/resourceListLimits\.get\(target\) \|\| 24/); assert.match(script,/resourceMore: target\.id/);
   assert.match(script,/selectedResourceIds\.size > 32/); assert.match(script,/result\.acceptedResourceIds \|\| \[\]/);
   assert.match(script,/selectedResourceIds\.delete\(resourceId\)/);

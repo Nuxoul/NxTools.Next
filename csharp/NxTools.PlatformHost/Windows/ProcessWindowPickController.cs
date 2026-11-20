@@ -23,6 +23,8 @@ internal interface IProcessWindowPickNative
     void ShowOverlay(long overlay);
     void HideOverlay(long overlay);
     void InstallHooks(Func<ProcessPickInput, long, bool> input, long source, long overlay);
+    void HideSourceWindows(long source, long overlay, uint peer);
+    void RestoreSourceWindows();
     void RemoveHooks();
     bool IsPressed(ProcessPickInput input);
     ProcessPickWindow? HitTest(long source, long overlay);
@@ -86,13 +88,16 @@ internal sealed class ProcessWindowPickController(
             native.PrepareOverlay(command.OverlayWindowHandle, _viewport);
             _initialLeft = native.IsPressed(ProcessPickInput.LeftDown);
             native.InstallHooks(Input, command.SourceWindowHandle, command.OverlayWindowHandle);
+            native.HideSourceWindows(command.SourceWindowHandle, command.OverlayWindowHandle, peer);
             Diagnostic("started", "active", "start", null);
             return new(true);
         }
         catch (Exception error)
         {
             var code = Code(error);
-            Diagnostic("failed", "failed", "startup_failed", code);
+            var restoreCode = TryRestoreSource();
+            if (restoreCode is not null) code = restoreCode.Value;
+            Diagnostic("failed", "failed", restoreCode is null ? "startup_failed" : "restore_failed", code);
             // Installation can fail after the first hook succeeds.
             native.RemoveHooks();
             if (prepared) TryHide();
@@ -189,7 +194,9 @@ internal sealed class ProcessWindowPickController(
         if (_session is null || _terminal) return;
         _terminal = true; _terminalAt = native.ElapsedMilliseconds;
         var hideCode = TryHide();
+        var restoreCode = TryRestoreSource();
         if (hideCode is not null) { state = "failed"; reason = "hide_failed"; code = hideCode; candidate = null; }
+        if (restoreCode is not null) { state = "failed"; reason = "restore_failed"; code = restoreCode; candidate = null; }
         Diagnostic(state == "failed" ? "failed" : "completed", state, reason, code);
         publish(new(_session.SessionId, state, Candidate: candidate, NativeErrorCode: code));
         if (!_leftUp && !_escapeUp) Cleanup();
@@ -198,6 +205,12 @@ internal sealed class ProcessWindowPickController(
     private int? TryHide()
     {
         try { native.HideOverlay(_session!.OverlayWindowHandle); return null; }
+        catch (Exception error) { return Code(error); }
+    }
+
+    private int? TryRestoreSource()
+    {
+        try { native.RestoreSourceWindows(); return null; }
         catch (Exception error) { return Code(error); }
     }
 

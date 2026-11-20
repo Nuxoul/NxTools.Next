@@ -30,39 +30,6 @@ function relativeCaptureAge(value) {
   return `${Math.floor(minutes / 60)} 小时前`;
 }
 
-function statusLabel(status) {
-  const text = String(status || "").toLowerCase();
-  if (text.includes("downloading")) return "下载中";
-  if (text.includes("created") || text.includes("waiting")) return "等待";
-  if (text.includes("queued")) return "排队";
-  if (text.includes("paused")) return "暂停";
-  if (text.includes("completed")) return "完成";
-  if (text.includes("failed")) return "失败";
-  if (text.includes("verifying")) return "校验";
-  if (text.includes("finalizing")) return "收尾";
-  if (text.includes("cancelled")) return "已取消";
-  return status || "-";
-}
-
-// Semantic tone for the task status text: active, idle, error or done.
-function statusTone(status) {
-  const text = String(status || "").toLowerCase();
-  if (text.includes("failed")) return "error";
-  if (text.includes("completed")) return "done";
-  if (text.includes("paused") || text.includes("cancelled") || text.includes("created") || text.includes("waiting")) return "idle";
-  return "active";
-}
-
-function isCompletedStatus(status) {
-  return String(status || "").toLowerCase().includes("completed");
-}
-
-function isActiveStatus(status) {
-  const text = String(status || "").toLowerCase();
-  return text.includes("downloading") || text.includes("waiting") || text.includes("queued") ||
-    text.includes("finalizing") || text.includes("verifying") || text.includes("probing");
-}
-
 function resourceKind(resource) {
   return resource?.description?.kind || "download";
 }
@@ -205,45 +172,6 @@ function formatTime(value) {
     return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
   }
   return `${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
-}
-
-function progressValue(task) {
-  if (isCompletedStatus(task.status)) {
-    return 100;
-  }
-
-  const total = Number(task.totalBytes || 0);
-  const done = Number(task.downloadedBytes || 0);
-  let value = 0;
-  if (Number.isFinite(total) && total > 0 && Number.isFinite(done) && done >= 0) {
-    value = (Math.min(done, total) / total) * 100;
-  } else {
-    const progress = Number(task.progress || 0);
-    if (Number.isFinite(progress) && progress > 0) {
-      value = progress <= 1 ? progress * 100 : progress;
-    }
-  }
-
-  value = Math.max(0, Math.min(100, value));
-  return isActiveStatus(task.status) && value >= 100 ? 99.5 : value;
-}
-
-function progressLabel(value, task) {
-  if (isCompletedStatus(task.status)) {
-    return "100%";
-  }
-  return `${Math.floor(Math.max(0, Math.min(99, value)))}%`;
-}
-
-function taskActionLabel(task) {
-  const text = String(task.status || "").toLowerCase();
-  if (text.includes("created") || text.includes("waiting") || text.includes("paused") || text.includes("failed")) {
-    return { action: "resume", label: "继续" };
-  }
-  if (text.includes("downloading") || text.includes("queued") || text.includes("probing")) {
-    return { action: "pause", label: "暂停" };
-  }
-  return null;
 }
 
 function isQueuedDesktopResult(result) {

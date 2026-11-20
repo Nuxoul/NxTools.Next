@@ -244,3 +244,67 @@ fn multimonitor_link_close_or_native_failure_retires_pending_reveal(cx: &mut Tes
     assert!(owner.read_with(cx, |owner, _| owner.pending_link_placement.is_none()));
     assert!(endpoint.try_receive_command_for_contract_test().is_err());
 }
+
+#[gpui_kit::test]
+fn link_panel_expander_applies_complete_native_bounds_on_the_same_monitor(cx: &mut TestAppContext) {
+    use gpui_kit::VisualTestContext;
+    let (_temporary, owner, endpoint) = fixture(cx);
+    let monitor = CursorMonitorSnapshot {
+        display_id: 0xCAFE,
+        work_left: -1920,
+        work_top: -1080,
+        work_width: 1920,
+        work_height: 360,
+        dpi: 144,
+    };
+    owner.update(cx, |owner, _| {
+        owner.config.clipboard.link_detector_enabled = true;
+        owner.link_panel.monitor = Some(monitor);
+    });
+    for count in [3, 32] {
+        let targets = (0..count)
+            .map(|index| crate::tools::link_detector::DetectedLink {
+                display: format!("https://example.invalid/{index}"),
+                copy_value: format!("https://example.invalid/{index}"),
+                kind: crate::tools::link_detector::DetectedLinkKind::Web,
+            })
+            .collect();
+        owner.update(cx, |owner, cx| owner.show_link_panel(targets, cx));
+        let handle = owner.read_with(cx, |owner, _| owner.link_panel.window.expect("link panel"));
+        {
+            let mut window = VisualTestContext::from_window(handle, cx);
+            window.simulate_resize(size(
+                px(420.0),
+                px(crate::tools::link_panel::link_panel_height(count, false)),
+            ));
+            window.refresh().expect("collapsed production panel");
+            let expander = window
+                .debug_bounds("link-panel-expander")
+                .expect("expand action");
+            window.simulate_click(expander.center(), gpui_kit::Modifiers::default());
+            window.run_until_parked();
+        }
+        let resize = command(&endpoint);
+        let Message::PlatformCommand(PlatformCommand::SetWindowBounds(bounds)) = &resize.message
+        else {
+            panic!("expansion must use the native client-bounds owner");
+        };
+        assert_eq!(bounds.window_handle, 9001);
+        assert_eq!(bounds.width, 630);
+        let expected_height =
+            (crate::tools::link_panel::link_panel_height(count, true) * 1.5).round() as i32;
+        assert_eq!(bounds.height, expected_height.min(360));
+        assert!(bounds.x >= -1920 && bounds.x + bounds.width <= 0);
+        assert!(bounds.y >= -1080 && bounds.y + bounds.height <= -720);
+        reply(cx, &owner, &resize, None);
+        assert!(owner.read_with(cx, |owner, _| owner.pending_link_placement.is_none()));
+        assert!(endpoint.try_receive_command_for_contract_test().is_err());
+        let mut window = VisualTestContext::from_window(handle, cx);
+        window.simulate_resize(size(px(420.0), px(bounds.height as f32 / 1.5)));
+        window.refresh().expect("expanded native client viewport");
+        let footer = window
+            .debug_bounds("link-panel-footer")
+            .expect("count footer");
+        assert!(footer.bottom() <= px(bounds.height as f32 / 1.5));
+    }
+}

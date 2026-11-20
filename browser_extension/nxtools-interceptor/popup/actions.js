@@ -138,24 +138,6 @@ async function refreshAfterCurrent() {
   return refresh({ force: true });
 }
 
-async function runTaskAction(button) {
-  beginBusy(button, "处理中");
-  try {
-    setMessage("正在发送任务操作");
-    const result = await sendMessage({
-      type: "popup_task_action",
-      taskId: button.dataset.taskId,
-      action: button.dataset.action
-    }, 12000);
-    setMessage(result.message || (result.ok ? "操作已发送" : "操作失败"));
-    await refresh({ force: true });
-  } catch (error) {
-    setMessage(error instanceof Error ? error.message : "任务操作失败");
-  } finally {
-    endBusy(button);
-  }
-}
-
 async function sendResourceFromButton(button, resourceId) {
   const resource = findResourceById(resourceId);
   if (isProtectedResource(resource)) {

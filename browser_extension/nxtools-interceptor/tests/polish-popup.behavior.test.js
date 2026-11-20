@@ -100,7 +100,7 @@ function fixture() {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../popup", file), "utf8"), context, { filename: file });
   }
   const run = source => vm.runInContext(source, context);
-  run("renderResourceLists = () => {}; renderTasks = () => {}; renderAdvanced = () => {}; renderCaptureSummary = () => {}; renderSiteToggle = () => {}; renderHandoff = () => {}; refresh = async () => currentState;");
+  run("renderResourceLists = () => {}; renderAdvanced = () => {}; renderCaptureSummary = () => {}; renderSiteToggle = () => {}; renderHandoff = () => {}; refresh = async () => currentState;");
   return {
     node,
     messages,
@@ -117,12 +117,11 @@ function baseState() {
     settings: { interceptDownloads: true },
     capturePaused: false,
     capturePauseAvailable: true,
-    status: { ok: true, code: "connected", message: "已连接", guidance: "桌面任务与发送功能可用。" },
+    status: { ok: true, code: "connected", message: "已连接", guidance: "可将页面和资源发送到 NxTools。" },
     activeTab: { id: 7, url: "https://page.example/course", domain: "page.example" },
     siteControl: { supported: true, enabled: true, host: "page.example" },
     currentResources: [],
-    otherResources: [],
-    tasks: []
+    otherResources: []
   };
 }
 

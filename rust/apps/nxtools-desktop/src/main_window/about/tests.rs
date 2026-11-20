@@ -235,3 +235,106 @@ fn about_updates_compare_versions_numerically_and_reject_unknown_tags() {
     ));
     assert!(compare_release("0.7.9", "nightly").is_none());
 }
+
+#[gpui_kit::test]
+fn window_feedback_about_caption_has_only_one_close_action(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    let (_, surface) = cx.add_window_view(|window, cx| {
+        let view = cx.new(|cx| About::new(Uuid::new_v4(), cx));
+        Root::new(view, window, cx)
+    });
+    surface.simulate_resize(size(px(420.), px(480.)));
+    surface.refresh().expect("About caption frame");
+    surface.update(|window, _| {
+        let nodes = gpui_kit::base::test_support::snapshots(window);
+        assert!(
+            !nodes.iter().any(|node| [
+                "minimize",
+                "maximize",
+                "restore",
+                "window-minimize",
+                "window-maximize"
+            ]
+            .iter()
+            .any(|id| node.path().last() == Some(&gpui_kit::ElementId::from(*id)))),
+            "About must not offer Minimize or Maximize"
+        );
+        assert_eq!(
+            nodes
+                .iter()
+                .filter(|node| node.label() == Some("关闭"))
+                .count(),
+            1,
+            "one named original-owner Close action"
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn window_feedback_about_close_retires_update_and_removes_window_once(cx: &mut TestAppContext) {
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
+    cx.update(gpui_kit::init);
+    let slot = Rc::new(RefCell::new(None));
+    let captured = slot.clone();
+    let (_, surface) = cx.add_window_view(move |window, cx| {
+        let view = cx.new(|cx| {
+            let mut view = About::new(Uuid::new_v4(), cx);
+            view.update_request = Some(Uuid::new_v4());
+            view.update = UpdateStatus::Checking;
+            view
+        });
+        About::observe_close(&view, window, cx);
+        *captured.borrow_mut() = Some(view.clone());
+        Root::new(view, window, cx)
+    });
+    let view = slot.borrow().clone().expect("original About entity");
+    let handle = surface.update(|window, _| window.window_handle());
+    let closes = Rc::new(Cell::new(0));
+    let seen = closes.clone();
+    let _closed = surface.update(|_, cx| {
+        cx.on_window_closed(move |_, id| {
+            if id == handle.window_id() {
+                seen.set(seen.get() + 1);
+            }
+        })
+    });
+    surface.simulate_resize(size(px(420.), px(480.)));
+    surface.refresh().expect("About with pending update");
+    let close = surface.update(|window, _| {
+        gpui_kit::base::test_support::snapshots(window)
+            .iter()
+            .find(|node| {
+                node.label() == Some("关闭")
+                    || node.path().last() == Some(&gpui_kit::ElementId::from("close"))
+            })
+            .expect("visible Close caption control")
+            .bounds()
+    });
+    surface.simulate_click(close.center(), Modifiers::default());
+    surface.run_until_parked();
+    assert!(
+        !surface.read(|cx| cx.windows().contains(&handle)),
+        "caption click must close the actual About window"
+    );
+    assert_eq!(closes.get(), 1, "only one close lifecycle dispatch");
+    assert!(
+        surface.read(|cx| view.read(cx).closed && view.read(cx).update_request.is_none()),
+        "close retires update work before releasing the source window"
+    );
+}
+
+#[gpui_kit::test]
+fn window_feedback_about_creation_keeps_main_window_outside_modal_lifecycle(
+    cx: &mut TestAppContext,
+) {
+    let options = cx.update(|cx| about_window_options(cx));
+    assert!(
+        matches!(options.kind, WindowKind::Normal),
+        "About must not disable/re-enable its main window through the framework Dialog path"
+    );
+    assert!(!options.is_minimizable && !options.is_resizable);
+    assert_eq!(options.window_min_size, Some(size(px(420.), px(480.))));
+}

@@ -106,7 +106,7 @@ impl About {
         });
     }
 
-    fn retire_update(&mut self) {
+    pub(super) fn retire_update(&mut self) {
         self.closed = true;
         self.update_request = None;
         self.update_task = None;

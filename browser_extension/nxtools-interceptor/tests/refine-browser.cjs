@@ -134,10 +134,10 @@ async function run() {
     document.querySelector('#currentResourceList .resource-thumb').classList.contains('has-media')`), 'thumbnail-node-reused-across-refresh');
 
   await evaluate(`setView('tasks')`);
-  check(await evaluate(`(() => { const item = document.querySelector('#taskList .item'); const bar = item.querySelector('progress').getBoundingClientRect();
-    const act = item.querySelector('[data-action]').getBoundingClientRect(); return Math.abs((bar.top + bar.bottom) / 2 - (act.top + act.bottom) / 2) < 14; })()`),
-    'task-progress-and-actions-on-one-line');
-  check(await evaluate(`Boolean(document.querySelector('#taskList [data-status-tone]'))`), 'task-status-semantic-tone');
+  check(await evaluate(`document.getElementById('tasksTab').textContent === '概览' &&
+    !document.querySelector('#taskList, #taskTabCount, #taskCountText, [data-task-id]')`), 'overview-without-desktop-tasks');
+  check(await evaluate(`!elements.siteEnabledToggle.disabled && !elements.homeCapturePauseButton.disabled &&
+    !elements.homeTestButton.disabled`), 'overview-retains-site-pause-and-connection-controls');
 
   check(await evaluate(`(() => { document.querySelector('.status-footer') && (document.getElementById('messageText').textContent = ''); setMessage('已发送到 NxTools'); const f = document.querySelector('.status-footer');
     return Boolean(f && !f.hidden && f.getBoundingClientRect().height > 0); })()`), 'feedback-status-bar-appears');

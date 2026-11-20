@@ -12,18 +12,23 @@ internal sealed record ProcessPickWindowFacts(bool Exists, bool Visible, bool Cl
 internal sealed class ProcessWindowPickNative(ProcessPickApi? operations = null) : IProcessWindowPickNative
 {
     private readonly ProcessPickApi _api = operations ?? new ProcessPickApi();
-    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private SafeProcessHandle? _ownerProcess;
+    private uint _ownerPid;
+    private readonly List<long> _hidden = [];
     private ProcessPickApi.HookProc? _mouseCallback, _keyboardCallback;
     private IntPtr _mouseHook, _keyboardHook;
     private Func<ProcessPickInput, long, bool>? _input;
     private long _source, _overlay;
-    public long ElapsedMilliseconds => _clock.ElapsedMilliseconds;
+    public long ElapsedMilliseconds => _api.ElapsedMilliseconds;
 
     public bool ValidateOwners(long source, long overlay, uint peer)
     {
         var owner = _api.Facts(source); var surface = _api.Facts(overlay);
-        return source != 0 && overlay != 0 && source != overlay && peer != 0 && owner.Exists && owner.Visible &&
-            !owner.Cloaked && owner.Root == source && owner.ProcessId == peer && surface.Exists &&
+        if (_ownerProcess is not null && (_ownerPid != peer || !_api.OwnerAlive(_ownerProcess))) return false;
+        var capturedSource = _ownerProcess is not null && _hidden.Contains(source);
+        return source != 0 && overlay != 0 && source != overlay && peer != 0 && peer != _api.CurrentProcessId &&
+            owner.Exists && (capturedSource || (owner.Visible && !owner.Cloaked)) &&
+            owner.Root == source && owner.ProcessId == peer && surface.Exists &&
             surface.Root == overlay && surface.ProcessId == owner.ProcessId;
     }
 
@@ -44,6 +49,52 @@ internal sealed class ProcessWindowPickNative(ProcessPickApi? operations = null)
     public void ShowOverlay(long overlay) => _api.Show(overlay);
     public void HideOverlay(long overlay) => _api.Hide(overlay);
     public bool IsPressed(ProcessPickInput input) => _api.Pressed(input == ProcessPickInput.LeftDown ? 1 : 27);
+
+    public void HideSourceWindows(long source, long overlay, uint peer)
+    {
+        if (!ValidateOwners(source, overlay, peer)) throw new Win32Exception(1400);
+        _ownerProcess = _api.OpenOwner(peer);
+        _ownerPid = peer;
+        if (_ownerProcess.IsInvalid || !_api.OwnerAlive(_ownerProcess)) throw new Win32Exception(1400);
+        // Snapshot visibility before hiding an owner can affect its owned windows.
+        foreach (var handle in _api.TopLevelWindows())
+        {
+            var facts = _api.Facts(handle);
+            if (handle != overlay && facts.Exists && facts.Visible && facts.Root == handle && facts.ProcessId == peer)
+                _hidden.Add(handle);
+        }
+        foreach (var handle in _hidden)
+        {
+            if (!_api.OwnerAlive(_ownerProcess)) throw new Win32Exception(1400);
+            var facts = _api.Facts(handle);
+            if (facts.Exists && facts.Root == handle && facts.ProcessId == peer) _api.Hide(handle);
+        }
+        if (!ValidateOwners(source, overlay, peer)) throw new Win32Exception(1400);
+    }
+
+    public void RestoreSourceWindows()
+    {
+        Exception? failure = null;
+        try
+        {
+            foreach (var handle in _hidden)
+            {
+                try
+                {
+                    if (_ownerProcess is null || !_api.OwnerAlive(_ownerProcess)) continue;
+                    var facts = _api.Facts(handle);
+                    if (facts.Exists && facts.Root == handle && facts.ProcessId == _ownerPid) _api.Restore(handle);
+                }
+                catch (Exception error) { failure ??= error; }
+            }
+        }
+        finally
+        {
+            _hidden.Clear(); _ownerPid = 0;
+            _ownerProcess?.Dispose(); _ownerProcess = null;
+        }
+        if (failure is not null) throw failure;
+    }
 
     public ProcessPickWindow? HitTest(long source, long overlay) => ReadWindow(_api.RootAtPointer(), source, overlay);
     public ProcessPickWindow? ReadWindow(long handle, long source, long overlay)
@@ -105,6 +156,23 @@ internal sealed class ProcessWindowPickNative(ProcessPickApi? operations = null)
 // Virtual OS calls are the native-boundary fixture seam; product uses only these Win32 implementations.
 internal class ProcessPickApi
 {
+    private readonly Stopwatch _clock = Stopwatch.StartNew();
+    internal virtual long ElapsedMilliseconds => _clock.ElapsedMilliseconds;
+    internal virtual uint CurrentProcessId => (uint)Environment.ProcessId;
+    internal virtual SafeProcessHandle OpenOwner(uint pid)
+    {
+        var process = OpenProcess(0x100000, false, pid); // SYNCHRONIZE pins identity and permits exit observation.
+        if (!process.IsInvalid) return process;
+        var code = Marshal.GetLastWin32Error(); process.Dispose(); throw new Win32Exception(code);
+    }
+    internal virtual bool OwnerAlive(SafeProcessHandle process) => WaitForSingleObject(process, 0) == 0x102;
+    internal virtual IReadOnlyList<long> TopLevelWindows()
+    {
+        var windows = new List<long>();
+        if (!EnumWindows((hwnd, _) => { windows.Add(hwnd.ToInt64()); return true; }, IntPtr.Zero))
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        return windows;
+    }
     internal virtual int LastError => Marshal.GetLastWin32Error();
     internal virtual ProcessPickWindowFacts Facts(long handle)
     {
@@ -154,8 +222,15 @@ internal class ProcessPickApi
     }
     internal virtual void Hide(long hwnd)
     {
-        if (!IsWindow(new IntPtr(hwnd))) return;
-        if (!SetWindowPos(new IntPtr(hwnd), IntPtr.Zero, 0, 0, 0, 0, 0x1 | 0x2 | 0x4 | 0x10 | 0x80 | 0x200)) throw new Win32Exception(Marshal.GetLastWin32Error());
+        if (!Facts(hwnd).Exists) return;
+        Visibility(hwnd, VisibilityFlags | 0x80); // SWP_HIDEWINDOW, retaining placement and show state.
+    }
+    internal virtual void Restore(long hwnd) => Visibility(hwnd, VisibilityFlags | 0x40);
+    // NOSIZE | NOMOVE | NOZORDER | NOACTIVATE | NOOWNERZORDER: no foreground or per-window activation.
+    private const uint VisibilityFlags = 0x1 | 0x2 | 0x4 | 0x10 | 0x200;
+    internal virtual void Visibility(long hwnd, uint flags)
+    {
+        if (!SetWindowPos(new IntPtr(hwnd), IntPtr.Zero, 0, 0, 0, 0, flags)) throw new Win32Exception(Marshal.GetLastWin32Error());
     }
     internal virtual bool Pressed(int key) => (GetAsyncKeyState(key) & 0x8000) != 0;
     internal virtual long RootAtPointer() => GetCursorPos(out var point) ? RootAt(point.X, point.Y) : 0;
@@ -178,6 +253,9 @@ internal class ProcessPickApi
     [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential)] internal struct MouseData { public int X, Y; public uint Mouse, Flags, Time; public UIntPtr Extra; }
     [StructLayout(LayoutKind.Sequential)] internal struct KeyboardData { public uint Key, Scan, Flags, Time; public UIntPtr Extra; }
+    private delegate bool EnumWindowsProc(IntPtr hwnd, IntPtr parameter);
+    [DllImport("user32.dll", SetLastError = true)] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
+    [DllImport("kernel32.dll", SetLastError = true)] private static extern uint WaitForSingleObject(SafeProcessHandle handle, uint milliseconds);
     [DllImport("user32.dll")] private static extern bool IsWindow(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr hwnd);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr hwnd, out uint pid);

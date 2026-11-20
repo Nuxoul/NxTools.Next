@@ -461,3 +461,131 @@ fn blacklist_window_picker_frame_show_and_actual_timeout_are_session_scoped(
     application.update(&mut surface, |app, cx| app.close_window(cx));
     std::fs::remove_dir_all(directory).expect("cleanup");
 }
+
+#[gpui_kit::test]
+fn window_feedback_blacklist_editor_keeps_scope_controls_only_on_rule_rows(
+    cx: &mut TestAppContext,
+) {
+    let (application, view, mut surface, directory, _) = fixture(cx);
+    let original = std::fs::read(directory.join("config.json")).expect("unchanged saved rules");
+    view.update_in(&mut surface, |view, window, cx| {
+        view.rules
+            .push(ProcessBlacklistRule::new("existing.exe", false, true).expect("existing rule"));
+        view.process_input
+            .update(cx, |input, cx| input.set_value("new.exe", window, cx));
+        cx.notify();
+    });
+    surface.refresh().expect("editor and existing rule");
+    assert!(
+        surface
+            .debug_bounds("global-blacklist-new-clipboard")
+            .is_none(),
+        "no duplicate preset Clipboard checkbox beside picker"
+    );
+    assert!(
+        surface.debug_bounds("global-blacklist-new-quick").is_none(),
+        "no duplicate preset Quick Launch checkbox beside picker"
+    );
+    assert!(
+        surface
+            .debug_bounds("global-blacklist-clipboard-0")
+            .is_some()
+    );
+    assert!(surface.debug_bounds("global-blacklist-quick-0").is_some());
+    let add = surface
+        .debug_bounds("global-blacklist-add-action")
+        .expect("original Add");
+    surface.simulate_click(add.center(), Default::default());
+    surface.run_until_parked();
+    view.read_with(&surface, |view, _| {
+        let added = view
+            .rules
+            .iter()
+            .find(|rule| rule.process == "new")
+            .expect("original draft Add");
+        assert!(added.disable_clipboard);
+        assert!(
+            !added.disable_quick_launch,
+            "preserve the existing new-rule defaults"
+        );
+    });
+    assert_eq!(
+        std::fs::read(directory.join("config.json")).expect("saved config"),
+        original,
+        "Add remains local until Apply"
+    );
+    application.update(&mut surface, |app, cx| app.close_window(cx));
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}
+
+#[gpui_kit::test]
+fn window_feedback_blacklist_update_preserves_live_row_scope_changes(cx: &mut TestAppContext) {
+    let (application, view, mut surface, directory, _) = fixture(cx);
+    surface.simulate_resize(size(px(720.), px(680.)));
+    let mut expected = view.read_with(&surface, |view, _| {
+        (
+            view.rules[0].disable_clipboard,
+            view.rules[0].disable_quick_launch,
+        )
+    });
+    surface.refresh().expect("existing rule row");
+    let edit = kit_migration_tests::control_bounds(&mut surface, "global-blacklist-edit-0");
+    surface.simulate_click(edit.center(), Default::default());
+    surface.run_until_parked();
+    for (id, clipboard) in [
+        ("global-blacklist-clipboard-0", true),
+        ("global-blacklist-quick-0", false),
+    ] {
+        surface.refresh().expect("selected rule scope");
+        let scope = kit_migration_tests::control_bounds(&mut surface, id);
+        surface.simulate_click(scope.center(), Default::default());
+        surface.run_until_parked();
+        if clipboard {
+            expected.0 = !expected.0;
+        } else {
+            expected.1 = !expected.1;
+        }
+        view.read_with(&surface, |view, _| {
+            assert_eq!(
+                (
+                    view.rules[0].disable_clipboard,
+                    view.rules[0].disable_quick_launch
+                ),
+                expected,
+                "actual row checkbox changes its requested scope"
+            )
+        });
+    }
+    if !expected.0 && !expected.1 {
+        surface
+            .refresh()
+            .expect("retain one disabled scope before Update");
+        let scope =
+            kit_migration_tests::control_bounds(&mut surface, "global-blacklist-clipboard-0");
+        surface.simulate_click(scope.center(), Default::default());
+        surface.run_until_parked();
+        expected.0 = true;
+    }
+    view.update_in(&mut surface, |view, window, cx| {
+        view.process_input
+            .update(cx, |input, cx| input.set_value("renamed.exe", window, cx));
+    });
+    surface.refresh().expect("rename selected rule");
+    let update = kit_migration_tests::control_bounds(&mut surface, "global-blacklist-add");
+    surface.simulate_click(update.center(), Default::default());
+    surface.run_until_parked();
+    view.read_with(&surface, |view, _| {
+        let renamed = view
+            .rules
+            .iter()
+            .find(|rule| rule.process == "renamed")
+            .expect("updated rule");
+        assert_eq!(
+            (renamed.disable_clipboard, renamed.disable_quick_launch),
+            expected,
+            "Update must retain both newly selected row scopes"
+        );
+    });
+    application.update(&mut surface, |app, cx| app.close_window(cx));
+    std::fs::remove_dir_all(directory).expect("cleanup");
+}

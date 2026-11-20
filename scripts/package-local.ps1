@@ -17,7 +17,7 @@ if ([string]::IsNullOrWhiteSpace($SigningKeyPath)) {
 $SigningKeyPath = [IO.Path]::GetFullPath($SigningKeyPath)
 $ledgerPath = $SigningKeyPath + '.release-sequence.json'
 $packageDirectory = Join-Path $root 'artifacts\win-x64'
-$installerPath = Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.3.exe'
+$installerPath = Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.4.exe'
 if (-not (Test-Path -LiteralPath $SigningKeyPath -PathType Leaf)) {
     throw "Existing release PEM not found: $SigningKeyPath. See PACKAGING.md; do not generate a replacement key."
 }

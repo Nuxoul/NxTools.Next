@@ -221,10 +221,18 @@ foreach ($contract in @('official_menu_renders_outside_source_budget', 'disabled
 Write-Host 'PASS Clipboard official PopupMenu has independent GPUI surface and native placement/session guards (source only)'
 
 $linkPanelSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\tools\link_panel.rs')
+$linkPanelContractSource = $linkPanelSource -replace '\s+', ''
 foreach ($contract in @('ListItem::new(', 'StatusBar::new()', 'Label::new(', '.small()',
     'window.remove_window();', 'cx.defer(move |cx|', 'application.dispatch_link_panel_route(',
-    'link_panel_height(this.links.len(), true)', 'fn arm_auto_hide(', 'fn swap_links(')) {
-    if (-not $linkPanelSource.Contains($contract)) { throw "Link component/original owner missing: $contract" }
+    'application.request_link_panel_expansion(source, total_rows, cx)', 'rows.overflow_y_scrollbar()', 'fn arm_auto_hide(', 'fn swap_links(')) {
+    if (-not $linkPanelContractSource.Contains(($contract -replace '\s+', ''))) { throw "Link component/original owner missing: $contract" }
+}
+$linkFooterSource = $linkPanelSource.Substring($linkPanelSource.IndexOf('link-panel-footer'))
+if ($linkFooterSource.Contains('.right(')) { throw 'Link panel footer must contain the link count only.' }
+$linkPlacementSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\clipboard\link_placement.rs')
+$linkPlacementContractSource = $linkPlacementSource -replace '\s+', ''
+foreach ($contract in @('fn request_link_panel_expansion(', 'link_panel_height(total_rows, true,)', 'Phase::ExpandedBounds', '.to_device_pixels(placement.scale)')) {
+    if (-not $linkPlacementContractSource.Contains(($contract -replace '\s+', ''))) { throw "Link expansion must retain the original native placement owner: $contract" }
 }
 $toolSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-desktop\src\main_window\tools_page.rs')
 foreach ($contract in @('ListItem::new("tool-link-detector-item")', 'focused_action(card.id,',

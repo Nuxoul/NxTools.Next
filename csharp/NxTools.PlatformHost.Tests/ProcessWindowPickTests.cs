@@ -5,6 +5,7 @@ using System.Threading.Channels;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
+using Microsoft.Win32.SafeHandles;
 using NxTools.PlatformHost.Diagnostics;
 using NxTools.PlatformHost.Protocol;
 using NxTools.PlatformHost.Windows;
@@ -236,11 +237,16 @@ internal static class ProcessWindowPickTests
         Check(!native.ValidateOwners(10, 20, 42), "overlay must share actual source PID");
         api.Windows[20] = api.Windows[20] with { ProcessId = 42 };
         Check(!native.ValidateOwners(10, 10, 42) && !native.ValidateOwners(10, 20, 0), "same HWND and missing peer rejected");
+        api.Windows[10] = api.Windows[10] with { ProcessId = 70 }; api.Windows[20] = api.Windows[20] with { ProcessId = 70 };
+        Check(!native.ValidateOwners(10, 20, 70), "PlatformHost itself cannot become the Desktop visibility owner");
+        api.Windows[10] = api.Windows[10] with { ProcessId = 42 }; api.Windows[20] = api.Windows[20] with { ProcessId = 42 };
         var events = new List<ProcessWindowPickChangedEvent>();
         var controller = new ProcessWindowPickController(native, e => { events.Add(e); return true; }, NullPlatformLog.Instance);
         Check(controller.Execute(StartCommand(), 42, CancellationToken.None).Success, "production native preparation with injected OS calls");
-        Check(api.Mutations.All(m => m == 20) && !api.Windows[20].Visible && api.Windows[20].Left == -1920 && api.Windows[20].Top == -200,
-            "only hidden overlay is styled and placed at exact negative viewport");
+        Check(!api.Windows[10].Visible && !api.Windows[11].Visible, "admitted picker hides settings and main Desktop windows");
+        Check(api.Mutations.All(m => m is 10 or 11 or 13 or 14 or 20) && api.Styles.Keys.All(k => k.Item1 == 20) &&
+            !api.Windows[20].Visible && api.Windows[20].Left == -1920 && api.Windows[20].Top == -200,
+            "only overlay is styled/placed; source windows receive visibility-only changes");
         Check((api.Styles[(20, -20)] & 0x080800A0) == 0x080800A0 && (api.Styles[(20, -16)] & 0x00CF0000) == 0,
             "layered transparent noactivate toolwindow and borderless native style");
         Check(api.LayeredInitialized, "layered alpha initialized while hidden before native placement");
@@ -252,6 +258,7 @@ internal static class ProcessWindowPickTests
         Check(events.Single().Candidate?.WindowHandle == 30 && events.Single().State == "selected" && api.Installed.Count == 2, "actual clicked root selected with both releases owned");
         Check(native.HandleMouse(false, -100, 100), "native matching release swallowed"); controller.Tick();
         Check(api.Installed.Count == 0 && !controller.Occupied && !api.Windows[20].Visible, "actual native hook handles removed after release");
+        NativeDesktopVisibilityLifecycle();
         return Task.CompletedTask;
     }
 
@@ -287,6 +294,7 @@ internal static class ProcessWindowPickTests
             "deadline cannot reveal or replace the release-only owner");
         Check(bounded.Controller.Input(ProcessPickInput.LeftUp, 30), "deadline still swallows intercepted release"); bounded.Controller.Tick();
         Check(!bounded.Controller.Occupied && bounded.Native.Hooks == 0, "deadline release cleanup");
+        NativeVisibilityRollback();
         return Task.CompletedTask;
     }
 
@@ -310,12 +318,137 @@ internal static class ProcessWindowPickTests
         return Task.CompletedTask;
     }
 
+    private static void NativeDesktopVisibilityLifecycle()
+    {
+        foreach (var reason in new[] { "selected", "escape", "cancel", "cancel_down", "cancel_escape", "disconnect", "dispose",
+            "deadline", "show_deadline", "source_gone", "overlay_gone", "process_exit", "reused_handle", "source_foreign",
+            "display_changed", "queue_failed", "show_failed", "overlay_hide_failed", "target_gone" })
+        {
+            var api = new FakeApi();
+            var before = new Dictionary<long, ProcessPickWindowFacts>(api.Windows);
+            var showStates = new Dictionary<long, string>(api.ShowStates);
+            var native = new ProcessWindowPickNative(api);
+            var events = new List<ProcessWindowPickChangedEvent>();
+            using var cancellation = new CancellationTokenSource();
+            var controller = new ProcessWindowPickController(native, e =>
+            {
+                if (e.State != "hover") api.Order.Add("terminal");
+                events.Add(e); return reason != "queue_failed" || e.State != "hover";
+            }, NullPlatformLog.Instance);
+            Check(controller.Execute(StartCommand(), 42, cancellation.Token).Success, reason + ": admitted");
+            foreach (var handle in new long[] { 10, 11, 13, 14 })
+                Check(!api.Windows[handle].Visible && (api.Windows[handle] with { Visible = true }) == before[handle], reason + ": captured state untouched while hidden");
+            Check(!api.Windows[12].Visible && api.Windows[30].Visible && api.Windows[15].Visible && !api.Windows[20].Visible,
+                reason + ": originally hidden/foreign/child/overlay excluded from source hiding");
+            Check(native.ValidateOwners(10, 20, 42) && native.ReadWindow(11, 10, 20) is null && native.ReadWindow(41, 10, 20) is null &&
+                native.ReadWindow(30, 10, 20) is not null, reason + ": intentionally hidden source remains alive; hidden windows cannot be selected");
+            Check(controller.Execute(new("show_overlay", Session), 42, CancellationToken.None).Success && api.Windows[20].Visible,
+                reason + ": original passive overlay can show while Desktop is hidden");
+            Check(controller.Execute(new("show_overlay", Session), 42, CancellationToken.None).Success, "repeated current Show does not recapture source");
+            if (reason != "queue_failed")
+            {
+                controller.Tick(); controller.Tick();
+                Check(events.Count == 1 && events[0].State == "hover" && api.ProcessReads == 1, "hidden-source hover coalesces");
+            }
+            if (reason is "selected" or "cancel_down" or "target_gone")
+                Check(native.HandleMouse(true, 0, 0), reason + ": paired down suppressed");
+            if (reason is "escape" or "cancel_escape") Check(native.HandleEscape(true), "Escape down suppressed");
+            if (reason is "cancel" or "cancel_down" or "cancel_escape" or "reused_handle")
+            {
+                if (reason == "reused_handle") api.Windows[11] = api.Windows[11] with { ProcessId = 99 };
+                controller.Execute(new("cancel", Session), 42, CancellationToken.None);
+            }
+            if (reason == "disconnect") cancellation.Cancel();
+            if (reason == "dispose") new ProcessWindowPickCoordinator(controller, action => { action(); return true; }).Dispose();
+            if (reason is "deadline" or "show_deadline") api.Now = 120_000;
+            if (reason == "show_deadline") Check(!controller.Execute(new("show_overlay", Session), 42, CancellationToken.None).Success, "Show enforces native deadline");
+            if (reason == "source_gone") api.Windows[10] = api.Windows[10] with { Exists = false };
+            if (reason == "overlay_gone") api.Windows[20] = api.Windows[20] with { Exists = false };
+            if (reason == "source_foreign") api.Windows[10] = api.Windows[10] with { ProcessId = 99 };
+            if (reason == "display_changed") api.DisplayChanged = true;
+            if (reason == "process_exit")
+            {
+                api.ProcessAlive = false;
+                api.Windows[10] = api.Windows[10] with { Visible = true };
+                Check(!native.ValidateOwners(10, 20, 42), "exited retained process rejects even visible HWND/PID facts");
+                api.Windows[10] = api.Windows[10] with { Visible = false };
+            }
+            if (reason == "show_failed")
+            { api.FailShow = true; Check(!controller.Execute(new("show_overlay", Session), 42, CancellationToken.None).Success, "Show failure retires"); }
+            if (reason == "overlay_hide_failed")
+            { api.FailOverlayHide = true; controller.Execute(new("cancel", Session), 42, CancellationToken.None); }
+            if (reason == "target_gone") api.Windows[30] = api.Windows[30] with { Exists = false };
+            controller.Tick();
+            var terminal = events.Where(e => e.State != "hover").ToArray();
+            var failed = reason is "queue_failed" or "show_failed" or "overlay_hide_failed" or "target_gone";
+            Check(terminal.Length == 1 && terminal[0].State == (reason == "selected" ? "selected" : failed ? "failed" : "cancelled"), reason + ": exactly one truthful terminal");
+            foreach (var handle in new long[] { 10, 11, 13, 14 })
+            {
+                var eligible = reason != "process_exit" && api.Windows[handle].Exists && api.Windows[handle].ProcessId == 42;
+                Check(api.Windows[handle].Visible == eligible, reason + ": only surviving original Desktop windows restored");
+                var restored = api.VisibilityCalls.Where(c => c.Handle == handle && (c.Flags & 0x40) != 0).ToArray();
+                Check(restored.Length == (eligible ? 1 : 0), reason + ": restore exactly once, never a foreign/dead-process window");
+                if (eligible) Check(api.Windows[handle] == before[handle], reason + ": exact bounds and visibility restored");
+            }
+            Check(api.ShowStates.OrderBy(p => p.Key).SequenceEqual(showStates.OrderBy(p => p.Key)), reason + ": normal/maximized/minimized state preserved");
+            Check(!api.Windows[12].Visible && api.VisibilityCalls.All(c => c.Handle is 10 or 11 or 13 or 14 or 20), "no originally hidden/foreign/child window touched");
+            Check(api.OwnerHandle?.IsClosed == true, reason + ": process lease released at terminal");
+            Check(api.Order.FindLastIndex(s => s.StartsWith("restore:")) < api.Order.IndexOf("terminal"), "restore precedes terminal publication and Rust focus handoff");
+            Check(!controller.Execute(new("show_overlay", Session), 42, CancellationToken.None).Success, reason + ": late Show cannot revive");
+            if (reason is "selected" or "cancel_down" or "target_gone") Check(native.HandleMouse(false, 0, 0), "terminal preserves paired mouse release");
+            if (reason is "escape" or "cancel_escape") Check(native.HandleEscape(false), "terminal preserves paired Escape release");
+            controller.Tick();
+            Check(!controller.Occupied && api.Installed.Count == 0, reason + ": release owner cleans");
+            var calls = api.VisibilityCalls.Count;
+            controller.Stop(); controller.Execute(new("cancel", Session), 42, CancellationToken.None); controller.Tick();
+            Check(api.VisibilityCalls.Count == calls && events.Count(e => e.State != "hover") == 1, "late cancellation/disposal cannot restore twice");
+        }
+    }
+
+    private static void NativeVisibilityRollback()
+    {
+        foreach (var reason in new[] { "layered", "viewport", "mouse_hook", "keyboard_hook", "open", "enumerate", "first_hide", "partial_hide" })
+        {
+            var api = new FakeApi
+            {
+                FailLayered = reason == "layered", ClientMismatch = reason == "viewport",
+                FailedHook = reason == "mouse_hook" ? 14 : reason == "keyboard_hook" ? 13 : 0,
+                FailOpen = reason == "open", FailEnumeration = reason == "enumerate",
+                FailHide = reason == "first_hide" ? 10 : reason == "partial_hide" ? 11 : 0
+            };
+            var before = new Dictionary<long, ProcessPickWindowFacts>(api.Windows);
+            var controller = new ProcessWindowPickController(new ProcessWindowPickNative(api), _ => true, NullPlatformLog.Instance);
+            var result = controller.Execute(StartCommand(), 42, CancellationToken.None);
+            Check(!result.Success && !controller.Occupied && api.Installed.Count == 0 && !api.Windows[20].Visible, reason + ": failed admission cleans hooks/overlay");
+            Check(result.NativeErrorCode == (reason == "viewport" ? 13 : 5), "startup failure retains native error");
+            foreach (var handle in new long[] { 10, 11, 12, 13, 14, 15, 30 })
+                Check(api.Windows[handle] == before[handle], reason + ": failure unwinds complete captured Desktop visibility");
+            Check(api.OwnerHandle is null || api.OwnerHandle.IsClosed, reason + ": failed Start releases retained process");
+            Check(!controller.Execute(new("show_overlay", Session), 42, CancellationToken.None).Success, "failed Start cannot reveal late frame");
+        }
+        var restoreApi = new FakeApi { FailRestore = 10 };
+        var events = new List<ProcessWindowPickChangedEvent>();
+        var log = new RecordingLog();
+        var restoreController = new ProcessWindowPickController(new ProcessWindowPickNative(restoreApi), e => { events.Add(e); return true; }, log);
+        Check(restoreController.Execute(StartCommand(), 42, CancellationToken.None).Success, "restore failure fixture admitted");
+        restoreController.Execute(new("cancel", Session), 42, CancellationToken.None);
+        Check(events.Single().State == "failed" && events[0].NativeErrorCode == 5 && log.Events[^1].Fields["reason"]?.ToString() == "restore_failed",
+            "native restore failure is reported rather than successful cancellation");
+        Check(restoreApi.Windows[11].Visible && restoreApi.Windows[13].Visible && restoreApi.Windows[14].Visible &&
+            restoreApi.OwnerHandle?.IsClosed == true && restoreApi.Installed.Count == 0, "one restore failure cannot prevent remaining restores or native cleanup");
+    }
+
     private sealed class FakeApi : ProcessPickApi
     {
         internal readonly Dictionary<long, ProcessPickWindowFacts> Windows = new()
         {
             [10] = new(true, true, false, 42, 10, false, 0, 0, 900, 600),
+            [11] = new(true, true, false, 42, 11, false, 100, 50, 1000, 700),
             [20] = new(true, false, false, 42, 20, false, 0, 0, 1, 1),
+            [12] = new(true, false, false, 42, 12, false, 200, 80, 400, 300),
+            [13] = new(true, true, false, 42, 13, false, -900, -40, 1920, 1080),
+            [14] = new(true, true, false, 42, 14, false, -32000, -32000, 160, 28),
+            [15] = new(true, true, false, 42, 10, false, 0, 0, 20, 20),
             [30] = new(true, true, false, 70, 30, false, -100, 100, 700, 400),
             [40] = new(true, true, false, 70, 40, true, 0, 0, 700, 400),
             [41] = new(true, false, false, 70, 41, false, 0, 0, 700, 400),
@@ -325,15 +458,38 @@ internal static class ProcessWindowPickTests
         };
         internal readonly Dictionary<(long, int), long> Styles = new();
         internal readonly List<long> Mutations = [];
+        internal readonly List<(long Handle, uint Flags)> VisibilityCalls = [];
+        internal readonly Dictionary<long, string> ShowStates = new() { [10] = "normal", [11] = "normal", [13] = "maximized", [14] = "minimized" };
+        internal readonly List<string> Order = [];
+        internal SafeProcessHandle? OwnerHandle;
+        internal bool ProcessAlive = true, FailEnumeration, FailOpen;
+        internal long FailHide, FailRestore, Now;
+        internal bool FailShow, FailOverlayHide;
+        internal override long ElapsedMilliseconds => Now;
+        internal override uint CurrentProcessId => 70;
+        internal override SafeProcessHandle OpenOwner(uint pid)
+        {
+            Check(pid == 42, "only connected Desktop process is pinned");
+            if (FailOpen) throw new System.ComponentModel.Win32Exception(5);
+            return OwnerHandle = new SafeProcessHandle(new IntPtr(123), ownsHandle: false);
+        }
+        internal override bool OwnerAlive(SafeProcessHandle process)
+        { Check(ReferenceEquals(process, OwnerHandle) && !process.IsClosed, "original process handle owns visibility lifetime"); return ProcessAlive; }
+        internal override IReadOnlyList<long> TopLevelWindows()
+        {
+            Check(Installed.Count == 2 && LayeredInitialized, "source capture follows prepared overlay and both admitted hooks");
+            if (FailEnumeration) throw new System.ComponentModel.Win32Exception(5);
+            return Windows.Keys.ToArray();
+        }
         internal readonly HashSet<IntPtr> Installed = [];
         internal int FailedHook, ProcessReads;
-        internal bool ClientMismatch;
+        internal bool ClientMismatch, DisplayChanged;
         internal bool LayeredInitialized = false;
         internal bool FailLayered;
         internal long PointerRoot = 30;
         internal override int LastError => 5;
         internal override ProcessPickWindowFacts Facts(long handle) => Windows.GetValueOrDefault(handle) ?? new(false, false, false, 0, 0, false, 0, 0, 0, 0);
-        internal override ProcessPickViewport Viewport() => new(-1920, -200, 3840, 1280);
+        internal override ProcessPickViewport Viewport() => new(-1920, -200, DisplayChanged ? 3000u : 3840u, 1280);
         internal override ProcessPickViewport ClientViewport(long handle) => ClientMismatch ? Viewport() with { Left = -1919 } : Viewport();
         internal override long GetStyle(long hwnd, int index) => Styles.GetValueOrDefault((hwnd, index), index == -16 ? 0x00CF0000 : 0);
         internal override void SetStyle(long hwnd, int index, long value) { Mutations.Add(hwnd); Styles[(hwnd, index)] = value; }
@@ -346,13 +502,25 @@ internal static class ProcessWindowPickTests
         }
         internal override void Place(long hwnd, ProcessPickViewport viewport, bool visible)
         { Mutations.Add(hwnd); Windows[hwnd] = Windows[hwnd] with { Left = viewport.Left, Top = viewport.Top, Width = viewport.Width, Height = viewport.Height, Visible = visible }; }
-        internal override void Show(long hwnd) { Mutations.Add(hwnd); Windows[hwnd] = Windows[hwnd] with { Visible = true }; }
-        internal override void Hide(long hwnd) { Mutations.Add(hwnd); Windows[hwnd] = Windows[hwnd] with { Visible = false }; }
+        internal override void Show(long hwnd)
+        { if (FailShow) throw new System.ComponentModel.Win32Exception(5); Mutations.Add(hwnd); Windows[hwnd] = Windows[hwnd] with { Visible = true }; }
+        internal override void Visibility(long hwnd, uint flags)
+        {
+            VisibilityCalls.Add((hwnd, flags)); Mutations.Add(hwnd);
+            var visible = (flags & 0x40) != 0;
+            if (visible) Check((flags & 0x217) == 0x217 && (flags & 0x80) == 0, "restore never moves/sizes/reorders/activates a Desktop HWND");
+            if (visible && hwnd == FailRestore || !visible && hwnd == 20 && FailOverlayHide && Windows[20].Width != 1)
+                throw new System.ComponentModel.Win32Exception(5);
+            Windows[hwnd] = Windows[hwnd] with { Visible = visible };
+            Order.Add((visible ? "restore:" : "hide:") + hwnd);
+            if (!visible && hwnd == FailHide) throw new System.ComponentModel.Win32Exception(5);
+        }
         internal override bool Pressed(int key) => false;
         internal override long RootAtPointer() => PointerRoot;
         internal override long RootAt(int x, int y) => PointerRoot;
         internal override string? ProcessName(uint pid, out int error) { ProcessReads++; error = 0; return "owned-fixture.exe"; }
-        internal override IntPtr Install(int kind, HookProc callback) { if (kind == FailedHook) return IntPtr.Zero; var handle = new IntPtr(kind); Installed.Add(handle); return handle; }
+        internal override IntPtr Install(int kind, HookProc callback)
+        { Check(Windows[10].Visible && Windows[11].Visible, "hook admission precedes source hiding"); if (kind == FailedHook) return IntPtr.Zero; var handle = new IntPtr(kind); Installed.Add(handle); return handle; }
         internal override void Unhook(IntPtr hook) { Installed.Remove(hook); }
         internal override IntPtr Next(int code, IntPtr message, IntPtr data) => IntPtr.Zero;
     }
@@ -392,6 +560,8 @@ internal static class ProcessWindowPickTests
         public void HideOverlay(long overlay) { Visible = false; HideCalls++; }
         public void InstallHooks(Func<ProcessPickInput, long, bool> input, long source, long overlay) { Hooks = 1; if (Failure == "hooks") throw new System.ComponentModel.Win32Exception(5); }
         public void RemoveHooks() { Hooks = 0; }
+        public void HideSourceWindows(long source, long overlay, uint peer) { }
+        public void RestoreSourceWindows() { }
         public ProcessPickWindow? HitTest(long source, long overlay) => Hit;
         public ProcessPickWindow? ReadWindow(long handle, long source, long overlay) => Hit?.WindowHandle == handle ? Hit : null;
         public string? ResolveProcess(uint pid, out int error) { Resolves++; error = Name is null ? 5 : 0; return Name; }

@@ -29,7 +29,7 @@ async function run() {
   check(__fixture.ports.length===1&&__fixture.ports[0].name==='nxtools-popup'&&!__fixture.ports[0].closed,'popup-entry-retains-one-port');
   check(statusText.textContent==='已连接','stable-connected-label');
   renderConnection({ok:false,code:'connection_lost',message:'合成传输状态变化',guidance:'合成固定恢复指引'});check(statusText.textContent==='合成传输状态变化'&&homeConnectionGuidance.textContent==='合成固定恢复指引','backend-connection-message-and-guidance');renderConnection(__fixture.state.status);
-  const taskProgress=document.querySelector('progress.bar');check(taskProgress&&Math.abs(taskProgress.value-43.75)<.01&&!taskProgress.hasAttribute('style'),'csp-safe-task-progress-real-value');
+  check(tasksTab.textContent==='概览'&&!document.querySelector('#taskList, #taskTabCount, #taskCountText, [data-task-id]'),'overview-without-desktop-task-list-or-actions');
   tasksTab.focus();tasksTab.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));await settle();
   check(resourcesTab.getAttribute('aria-selected')==='true'&&document.activeElement===resourcesTab,'actual-tab-arrow-focus');
   const filter=document.querySelector('[data-resource-filter="audio"]');filter.click();

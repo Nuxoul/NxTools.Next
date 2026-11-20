@@ -11,6 +11,7 @@ use gpui_kit::component::Sizable;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::label::Label;
 use gpui_kit::component::list::ListItem;
+use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::status_bar::StatusBar;
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::prelude::FluentBuilder;
@@ -85,12 +86,8 @@ const LINK_PANEL_FOOTER_MARGIN_TOP: f32 = 2.0;
 /// Container's `.py(px(4.0))` top and bottom.
 const LINK_PANEL_VERTICAL_PADDING: f32 = 8.0;
 
-/// Exact window height for the panel's rendered chrome. The window is
-/// fixed-size and non-resizable, so this must mirror the render below row
-/// for row: a collapsed multi-link panel shows ONE row plus the expander,
-/// never the hidden rows. Sizing the window for all rows (the old
-/// `rows * 30 + 24` budget) left dead empty space below the footer —
-/// the reported "multiple links break the layout" bug.
+/// Natural client height: visible rows, optional expander, count footer,
+/// vertical padding and the one-pixel top/bottom borders.
 pub(crate) fn link_panel_height(total_rows: usize, expanded: bool) -> f32 {
     let visible_rows = if expanded || total_rows <= 1 {
         total_rows
@@ -102,7 +99,7 @@ pub(crate) fn link_panel_height(total_rows: usize, expanded: bool) -> f32 {
     } else {
         0.0
     };
-    LINK_PANEL_VERTICAL_PADDING
+    2.0 + LINK_PANEL_VERTICAL_PADDING
         + visible_rows as f32 * LINK_PANEL_ROW_HEIGHT
         + expander
         + LINK_PANEL_FOOTER_MARGIN_TOP
@@ -187,6 +184,7 @@ impl Render for LinkPanelView {
             .flex()
             .flex_col()
             .py(px(SPACING_4));
+        let mut rows = div().w_full().flex().flex_col();
         for (index, link) in self.links.iter().enumerate().take(visible_count) {
             let application = application.clone();
             let copy_application = application.clone();
@@ -205,7 +203,7 @@ impl Render for LinkPanelView {
                 })
                 .read(cx)
                 .clone();
-            container = container.child(
+            rows = rows.child(
                 ListItem::new(("link-panel-row", index))
                     .accessibility_label(format!("链接 {}", index + 1))
                     .track_focus(&focus)
@@ -378,25 +376,34 @@ impl Render for LinkPanelView {
                     }),
             );
         }
+        container = container.child(
+            div()
+                .debug_selector(|| "link-panel-list".into())
+                .flex_1()
+                .min_h_0()
+                .child(rows.overflow_y_scrollbar().id("link-panel-scroll")),
+        );
         if needs_expander {
             container = container.child(
                 Button::new("link-panel-expander")
                     .ghost()
                     .debug_selector(|| "link-panel-expander".into())
                     .small()
+                    .flex_none()
                     .mx(px(SPACING_4))
-                    .on_click(cx.listener(move |this, _event, _window, cx| {
+                    .on_click(cx.listener(move |this, _event, window, cx| {
                         this.expanded = true;
-                        // Grow the window to the expanded layout: every row
-                        // plus the footer, no expander slot.
-                        if let Some(handle) = this.window_handle {
-                            let new_height = link_panel_height(this.links.len(), true);
-                            let _ = handle.update(cx, |_, window, _| {
-                                let mut bounds = window.window_bounds().get_bounds();
-                                bounds.size.height = px(new_height);
-                                window.resize(bounds.size);
-                            });
-                        }
+                        let source = this.window_handle.unwrap_or_else(|| window.window_handle());
+                        let total_rows = this.links.len();
+                        let application = this.application.clone();
+                        cx.defer(move |cx| {
+                            if let Some(application) = application.upgrade() {
+                                application.update(cx, |application, cx| {
+                                    application
+                                        .request_link_panel_expansion(source, total_rows, cx);
+                                });
+                            }
+                        });
                         cx.notify();
                     }))
                     .label(format!(
@@ -416,19 +423,7 @@ impl Render for LinkPanelView {
                     StatusBar::new()
                         .h_full()
                         .flex_none()
-                        .left(Label::new(if self.links.len() > 1 {
-                            format!("{} 个链接", self.links.len())
-                        } else {
-                            "1 个链接".to_owned()
-                        }))
-                        .right(
-                            div()
-                                .flex()
-                                .items_center()
-                                .gap(px(SPACING_4))
-                                .child(Label::new("点击操作 · 可单独复制"))
-                                .child(Label::new("自动消失")),
-                        ),
+                        .left(Label::new(format!("{} 个链接", self.links.len()))),
                 ),
         );
         let _ = application;
@@ -442,14 +437,12 @@ mod tests {
 
     #[test]
     fn window_height_matches_the_rendered_chrome_exactly() {
-        // py(4)+py(4) + one 28px row + footer(2px margin + 29px).
-        assert_eq!(link_panel_height(1, false), 67.0);
-        // Collapsed multi-link: one row + the 24px expander, never the
-        // hidden rows. The old `rows * 30 + 24` budget reserved space for
-        // rows it did not render and left dead empty space below the footer.
-        assert_eq!(link_panel_height(3, false), 91.0);
+        // Two borders + py(4)+py(4) + one 28px row + footer(2px margin + 29px).
+        assert_eq!(link_panel_height(1, false), 69.0);
+        // Collapsed multi-link: one row plus the 24px expander.
+        assert_eq!(link_panel_height(3, false), 93.0);
         // Expanded: every row, no expander slot.
-        assert_eq!(link_panel_height(3, true), 123.0);
+        assert_eq!(link_panel_height(3, true), 125.0);
     }
 
     #[test]

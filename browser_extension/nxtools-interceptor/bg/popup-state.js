@@ -19,17 +19,15 @@ async function checkApiStatus(explicitRetry = false) {
       await ensureDesktopConnection();
       logCheck("started", "started");
     }
-    const response = await sendDesktopRequest("get_snapshot", {}, 2500, correlationId);
+    await sendDesktopRequest("get_snapshot", {}, 2500, correlationId);
     logCheck("completed", "ready");
-    lastSnapshot = response.data || lastSnapshot;
     if (explicitRetry) void restoreBrowserHandoffs();
     return {
       ok: true,
       code: "connected",
       guidance: "",
       message: "已连接",
-      transport: "native_messaging",
-      data: response.data || lastSnapshot
+      transport: "native_messaging"
     };
   } catch (error) {
     connectionFailureCode = nativeConnectionCode(error, connectionFailureCode);
@@ -144,7 +142,6 @@ async function buildPopupState(preferredMediaIndex = null, currentView = "tasks"
     capturePaused: await getCapturePaused(),
     capturePauseAvailable,
     status,
-    tasks: Array.isArray(status.data?.tasks) ? status.data.tasks : [],
     lastHandoff: lastHandoff ? { ...lastHandoff } : null,
     linkReview: linkReview?.tabId === tabId ? { ...linkReview } : null,
     featureStates: featureStatesForTab(tabId, settings),

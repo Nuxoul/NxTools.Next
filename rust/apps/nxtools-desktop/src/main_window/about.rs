@@ -18,6 +18,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use super::MainWindow;
+use crate::ui::components::titlebar::{caption_action, caption_window_options};
 use crate::ui::{motion::motion_allowed, typography::UI_MONO_FONT_FAMILY};
 
 mod emblem;
@@ -35,6 +36,21 @@ const RENDERER: &str = "GPUI GPU-Accelerated";
 const GITHUB: &str = "https://github.com/Nuxoul/NxTools.Next";
 const LATEST_RELEASE: &str = "https://api.github.com/repos/Nuxoul/NxTools.Next/releases/latest";
 
+fn about_window_options(cx: &gpui_kit::App) -> WindowOptions {
+    let dimensions = size(px(420.), px(480.));
+    let mut titlebar = TitleBar::title_bar_options();
+    titlebar.title = Some("关于 NxTools".into());
+    WindowOptions {
+        titlebar: Some(titlebar),
+        window_bounds: Some(WindowBounds::centered(dimensions, cx)),
+        window_min_size: Some(dimensions),
+        kind: WindowKind::Normal,
+        is_resizable: false,
+        is_minimizable: false,
+        ..caption_window_options()
+    }
+}
+
 impl MainWindow {
     pub(super) fn open_about(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4();
@@ -50,30 +66,16 @@ impl MainWindow {
         }
 
         let downloads = self.downloads.clone();
-        let dimensions = size(px(420.), px(480.));
-        let bounds = WindowBounds::centered(dimensions, cx);
-        let mut titlebar = TitleBar::title_bar_options();
-        titlebar.title = Some("关于 NxTools".into());
-        let result = cx.open_window(
-            WindowOptions {
-                titlebar: Some(titlebar),
-                window_bounds: Some(bounds),
-                window_min_size: Some(dimensions),
-                kind: WindowKind::Dialog,
-                is_resizable: false,
-                is_minimizable: false,
-                ..TitleBar::window_options()
-            },
-            move |window, cx| {
-                let view = cx.new(|cx| {
-                    let mut view = About::new(id, cx);
-                    view.downloads = Some(downloads);
-                    view
-                });
-                About::observe_close(&view, window, cx);
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        );
+        let options = about_window_options(cx);
+        let result = cx.open_window(options, move |window, cx| {
+            let view = cx.new(|cx| {
+                let mut view = About::new(id, cx);
+                view.downloads = Some(downloads);
+                view
+            });
+            About::observe_close(&view, window, cx);
+            cx.new(|cx| Root::new(view, window, cx))
+        });
         match result {
             Ok(window) => {
                 self.about_window = Some(window.into());
@@ -103,6 +105,14 @@ struct About {
     downloads: Option<gpui_kit::WeakEntity<crate::downloads::DownloadApplication>>,
     closed: bool,
     emblem: Entity<emblem::Emblem>,
+}
+
+impl About {
+    fn close_window(&mut self, window: &mut Window) {
+        info!(event = "desktop.about.close.requested", correlation_id = %self.id);
+        self.retire_update();
+        window.remove_window();
+    }
 }
 
 impl About {
@@ -546,11 +556,27 @@ impl Render for About {
                     .child(page),
             )
             .child(
-                div().absolute().top_0().left_0().right_0().child(
-                    TitleBar::new()
-                        .bg(gpui_kit::transparent_black())
-                        .border_b_0(),
-                ),
+                div()
+                    .absolute()
+                    .top_0()
+                    .left_0()
+                    .right_0()
+                    .h(px(crate::ui::metrics::TITLEBAR_HEIGHT))
+                    .flex()
+                    .child(
+                        div()
+                            .id("about-caption-drag")
+                            .h_full()
+                            .flex_1()
+                            .window_control_area(gpui_kit::WindowControlArea::Drag),
+                    )
+                    .child(caption_action(
+                        "about-close",
+                        gpui_kit::component::IconName::WindowClose,
+                        "关闭",
+                        true,
+                        cx.listener(|view, _, window, _| view.close_window(window)),
+                    )),
             )
     }
 }

@@ -4,9 +4,9 @@
 // Classic script sharing the background global scope; loaded by background.js
 // (Chrome importScripts) and manifest background.scripts (Firefox).
 
-// Message types each sender context may use. Popup/extension pages own settings,
-// task actions and resource dispatch; page content scripts (untrusted page
-// context) only report captures and request page-scoped handoffs.
+// Message types each sender context may use. Popup/extension pages own settings
+// and resource dispatch; page content scripts (untrusted page context) only
+// report captures and request page-scoped handoffs.
 const CONTENT_MESSAGE_TYPES = new Set([
   "content_media_resource",
   "content_page_context_changed",
@@ -483,19 +483,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         ok: false,
         message: error instanceof Error ? error.message : "媒体操作失败"
-      });
-    });
-    return true;
-  }
-
-  if (message.type === "popup_task_action") {
-    void sendDesktopRequest("task_action", {
-      taskId: String(message.taskId || ""),
-      action: String(message.action || "")
-    }).then(sendResponse, (error) => {
-      sendResponse({
-        ok: false,
-        message: error instanceof Error ? error.message : "任务操作失败"
       });
     });
     return true;

@@ -24,7 +24,7 @@ function fixture() {
   };
   const state = { settings: { interceptDownloads: true, captureFileTypes: "zip", captureMinimumKiB: 128,
     captureExcludedSites: "", captureExcludedAddresses: "", dropTargetWidth: 188, dropTargetHeight: 86 },
-    capturePaused: false, capturePauseAvailable: true, tasks: [], currentResources: [], otherResources: [] };
+    capturePaused: false, capturePauseAvailable: true, currentResources: [], otherResources: [] };
   const messages = [];
   let handler = async message => {
     if (message.type === "popup_save_settings") Object.assign(state.settings, message.settings);
@@ -39,7 +39,7 @@ function fixture() {
   for (const file of ["dom.js", "render.js", "actions.js"]) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "../popup", file), "utf8"), context, { filename: file });
   }
-  vm.runInContext("renderConnection = renderHandoff = renderSiteToggle = renderCaptureSummary = renderTasks = renderResourceLists = renderAdvanced = () => {}; bindPopupEvents();", context);
+  vm.runInContext("renderConnection = renderHandoff = renderSiteToggle = renderCaptureSummary = renderResourceLists = renderAdvanced = () => {}; bindPopupEvents();", context);
   const run = source => vm.runInContext(source, context);
   const publish = () => { context.nextState = structuredClone(state); run("render(nextState)"); };
   publish();

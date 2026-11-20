@@ -33,7 +33,7 @@ async function run(){
      document.getElementById('statusText').textContent='合成连接状态';
      document.getElementById('mediaSelect').innerHTML='<option>合成视频名称</option>';
      const name=mode==='long'?'合成中文文件名称与多语言长内容-'.repeat(12):'测试资料包.zip';
-     document.getElementById('taskList').innerHTML=mode==='empty'?'<div class="empty">暂无任务</div>':Array.from({length:mode==='long'?8:3},()=>'<article class="item"><div class="item-main"><strong>'+name+'</strong><small>下载中 · 12 MB / 48 MB</small></div><span class="badge">42%</span><div class="task-actions"><button class="mini-send">暂停</button><button class="mini-send danger">取消</button></div><div class="bar"><i style="width:42%"></i></div></article>').join('');
+     check(!document.querySelector('#taskList, #taskTabCount, #taskCountText'),page+'/'+mode+'/no-desktop-task-list');
      document.getElementById('currentResourceList').innerHTML=mode==='empty'?'<div class="empty">暂无资源</div>':Array.from({length:4},()=>'<article class="item resource"><span class="resource-thumb symbol">MP4</span><div class="resource-main"><strong>'+name+'</strong><div class="resource-name">合成文件名</div><div class="resource-url">demo.invalid/'+'synthetic/'.repeat(mode==='long'?30:1)+'</div><div class="resource-meta"><span class="meta-chip">1080p</span><span class="meta-chip">视频</span><span class="meta-chip">48 MB</span></div></div><div class="resource-actions"><button class="mini-send">解析</button></div></article>').join('');
      document.getElementById('messageText').textContent=mode==='long'?'模拟失败信息保留全部文本，可阅读而不截断。'.repeat(5):'全部合成数据，未连接产品';
      const view=document.getElementById(page+'View');const bad=[view,...view.querySelectorAll('*')].filter(e=>{const s=getComputedStyle(e);return e.getClientRects().length&&s.display!=='inline'&&e.scrollWidth>e.clientWidth+1&&!['INPUT','SELECT'].includes(e.tagName)&&!['hidden','auto'].includes(s.overflowX);}).map(e=>({tag:e.tagName,class:e.className,extra:e.scrollWidth-e.clientWidth}));
@@ -47,7 +47,7 @@ async function run(){
    const work=document.querySelector('.workspace');work.scrollTop=work.scrollHeight;
    const save=document.getElementById('saveButton').getBoundingClientRect(),viewport=work.getBoundingClientRect();
    check(save.top>=viewport.top&&save.bottom<=viewport.bottom+1,'scroll-to-original-save-action');
-   for(const row of document.querySelectorAll('.switch-row')){if(!row.getClientRects().length)continue;const toggle=row.querySelector('input');check(toggle.getBoundingClientRect().right<=row.getBoundingClientRect().right+1,'original-toggle-contained');}
+   for(const row of document.querySelectorAll('.switch-row')){if(!row.getClientRects().length)continue;const toggle=row.querySelector('input, button');check(toggle.getBoundingClientRect().right<=row.getBoundingClientRect().right+1,'original-toggle-contained');}
    return rows;
  })()`);
  const styles=require(path.join(root,'shadow-styles.js'));

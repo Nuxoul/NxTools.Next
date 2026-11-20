@@ -14,6 +14,7 @@ enum Phase {
     TargetMonitor,
     FinalBounds,
     Reveal,
+    ExpandedBounds,
 }
 
 pub(super) struct PendingLinkPlacement {
@@ -56,6 +57,76 @@ impl ClipboardApplication {
         });
         info!(event = "tools.link_panel.presentation_accepted", correlation_id = %operation);
         self.send_link_placement_command(PlatformCommand::QueryCursorMonitor, cx);
+        self.arm_link_placement_timeout(operation, cx);
+    }
+
+    pub(crate) fn request_link_panel_expansion(
+        &mut self,
+        source: AnyWindowHandle,
+        total_rows: usize,
+        cx: &mut Context<Self>,
+    ) {
+        if self.link_panel.window != Some(source)
+            || self.pending_link_placement.is_some()
+            || self.link_panel.native_window_handle == 0
+            || !self.config.clipboard.enabled
+            || !self.config.clipboard.link_detector_enabled
+            || self.capture_pause.blocks(nxtools_ipc::unix_time_ms())
+        {
+            return;
+        }
+        let placement = crate::ui::monitor_placement::cursor_monitor_placement(
+            self.link_panel.monitor,
+            0,
+            96,
+            cx,
+        );
+        let bounds = link_panel_bounds(
+            self.config.clipboard.link_panel_position,
+            size(
+                px(crate::tools::link_panel::LINK_PANEL_WIDTH),
+                px(crate::tools::link_panel::link_panel_height(
+                    total_rows, true,
+                )),
+            ),
+            placement.work_area,
+        )
+        .to_device_pixels(placement.scale);
+        let operation = uuid::Uuid::new_v4();
+        let native = self.link_panel.native_window_handle;
+        self.pending_link_placement = Some(PendingLinkPlacement {
+            operation,
+            command: uuid::Uuid::nil(),
+            generation: self.link_panel.generation,
+            pause_generation: self.capture_pause.generation,
+            started: Instant::now(),
+            phase: Phase::ExpandedBounds,
+            links: Vec::new(),
+            monitor: self.link_panel.monitor,
+            window: Some(source),
+            native,
+            bounds: (
+                bounds.origin.x.into(),
+                bounds.origin.y.into(),
+                bounds.size.width.into(),
+                bounds.size.height.into(),
+            ),
+        });
+        info!(event = "tools.link_panel.presentation_accepted", correlation_id = %operation, reason = "expand");
+        self.send_link_placement_command(
+            PlatformCommand::SetWindowBounds(SetWindowBoundsCommand {
+                window_handle: native,
+                x: bounds.origin.x.into(),
+                y: bounds.origin.y.into(),
+                width: bounds.size.width.into(),
+                height: bounds.size.height.into(),
+            }),
+            cx,
+        );
+        self.arm_link_placement_timeout(operation, cx);
+    }
+
+    fn arm_link_placement_timeout(&self, operation: uuid::Uuid, cx: &mut Context<Self>) {
         cx.spawn(async move |owner, cx| {
             cx.background_executor().timer(Duration::from_secs(3)).await;
             let _ = owner.update(cx, |owner, cx| {
@@ -265,7 +336,7 @@ impl ClipboardApplication {
                     cx,
                 );
             }
-            Phase::Reveal => {
+            Phase::Reveal | Phase::ExpandedBounds => {
                 info!(event = "tools.link_panel.presentation_completed", correlation_id = %pending.operation,
                     success = true, elapsed_ms = pending.started.elapsed().as_millis() as u64);
             }

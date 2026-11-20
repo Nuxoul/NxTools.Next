@@ -2697,14 +2697,28 @@ mod tests {
         }
         surface.update(|_, cx| {
             view.update(cx, |view, cx| {
+                view.rules = vec![
+                    ProcessBlacklistRule::new("BusyScopeFixture.exe", true, false)
+                        .expect("busy rule"),
+                ];
                 view.saving = true;
                 cx.notify();
             })
         });
         surface.refresh().expect("busy actions");
-        let toggle = surface
-            .debug_bounds("global-blacklist-new-quick")
-            .expect("busy scope");
+        let toggle =
+            super::kit_migration_tests::control_bounds(&mut surface, "global-blacklist-quick-0");
+        surface.update(|window, _| {
+            let nodes = gpui_kit::base::test_support::snapshots(window);
+            let scope = nodes
+                .iter()
+                .find(|node| {
+                    node.path().last()
+                        == Some(&gpui_kit::ElementId::from("global-blacklist-quick-0"))
+                })
+                .expect("actual busy row checkbox");
+            assert_eq!(scope.disabled(), Some(true));
+        });
         surface.simulate_click(toggle.center(), Modifiers::default());
         let general = super::kit_migration_tests::page_bounds(&mut surface, 0);
         surface.simulate_click(general.center(), Modifiers::default());
@@ -2712,6 +2726,7 @@ mod tests {
         surface.read(|cx| {
             let view = view.read(cx);
             assert!(!view.new_disable_quick_launch);
+            assert!(!view.rules[0].disable_quick_launch);
             assert!(view.tab == GlobalSettingsTab::Blacklist);
         });
         surface.update(|_, cx| {

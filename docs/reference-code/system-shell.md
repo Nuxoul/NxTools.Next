@@ -420,3 +420,32 @@ policies remain authoritative. About uses that same submission owner, not a brow
 HTTP downloader. Close retires the pending request before deferred cross-owner admission; accepted
 tasks remain downloader-owned. There is no legacy equivalent, automatic installer execution or
 change to protected-update authorization. [Slice contract](../../.trellis/tasks/11-20-installed-feedback-fixes/about-design.md).
+
+## About close-only caption and hidden picker source
+
+User requires a close-only About caption and hiding the application's source windows during
+blacklist picking. Released Component0.8.0 title_bar.rs::WindowControls uses window_controls(),
+not the dialog's is_minimizable/is_resizable options; its Windows control is a native
+WindowControlArea region and its client on_close callback is Linux-only. Existing project
+ui/components/titlebar.rs::caption_action supplies a real styled34DIP Button/Small icon with
+one original callback and no native Close hit region. About composes that existing action beside
+a native drag-only region in its transparent slot, with caption_window_options; retirement
+precedes GPUI remove_window. Constructors, fixed geometry and original Root/update owners remain.
+The editor keeps row Checkbox scopes but removes its duplicate preset controls; row edits update
+the selected draft flags before original Update/Add and durable Apply.
+
+ProcessWindowPickController Start hides captured visible top-level HWNDs only after preparation
+and hook admission. ProcessWindowPickNative limits the set to the verified Desktop process,
+excludes overlay/foreign/child/already-hidden windows and retains the source process handle.
+Visibility-only SetWindowPos uses NOACTIVATE/NOZORDER/NOSIZE/NOMOVE/NOOWNERZORDER; terminal and
+rollback restore surviving captured HWNDs before publication. Intentional hiding does not fail
+source liveness. The original Rust deferred refill/source focus and protocol remain unchanged.
+[Follow-up contract](../../.trellis/tasks/11-20-window-flash-picker-followup/design.md).
+
+About creation is modeless WindowKind::Normal, like existing Global Settings. Locked
+WindowsWindow::new at window.rs464-477 calls EnableWindow(false) only for Dialog; its
+events.rs::handle_destroy_msg337-344 re-enables and force-activates that parent. Read-only
+About does not need this parent-blocking lifetime. Its actual about_window_options factory
+retains fixed dimensions and close-only controls while bypassing that modal branch; the
+source policy gate and constructor regression protect this boundary. No other Dialog kind
+or framework source is changed.

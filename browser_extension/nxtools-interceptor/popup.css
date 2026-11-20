@@ -96,19 +96,6 @@ button[aria-busy="true"] { cursor: progress; }
 .item-main small { display: block; margin-top: 2px; font-variant-numeric: tabular-nums; }
 .badge { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; align-self: start; }
 
-/* Task rows: progress bar and actions share the second line. */
-.task-status[data-status-tone="active"] { color: var(--text); }
-.task-status[data-status-tone="idle"] { color: var(--muted); }
-.task-status[data-status-tone="error"] { color: var(--danger); }
-.task-status[data-status-tone="done"] { color: var(--success); }
-.task-progress { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; min-height: 26px; }
-.task-actions { display: flex; gap: 6px; flex: none; }
-.task-actions button { height: 26px; padding: 0 9px; font-size: 12px; }
-.bar { flex: 1; min-width: 0; display: block; height: 4px; border: 0; appearance: none; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
-.bar::-webkit-progress-bar { background: var(--surface-2); }
-.bar::-webkit-progress-value { background: var(--accent); }
-.bar::-moz-progress-bar { background: var(--accent); }
-
 .empty { min-height: 120px; padding: 24px 12px; display: flex; flex-direction: column; gap: 6px; align-items: center; justify-content: center; color: var(--text-dim); text-align: center; font-size: 13px; }
 .empty::before { content: ""; width: 24px; height: 18px; border: 1px solid var(--border); border-radius: 4px; border-top-width: 3px; margin-bottom: 6px; }
 .empty small { max-width: 300px; color: var(--muted); }

@@ -31,7 +31,6 @@ pub(crate) struct DetectedLink {
     pub kind: DetectedLinkKind,
 }
 
-const MAX_DETECTED_LINKS: usize = 8;
 const MAX_CANDIDATES: usize = 128;
 
 #[derive(Clone, Copy)]
@@ -81,7 +80,7 @@ fn detect_links_with_path_kind(
             if let Some(link) = classify(target, &mut path_kind) {
                 links.push(link);
             }
-            links.len() < MAX_DETECTED_LINKS && candidates < MAX_CANDIDATES
+            candidates < MAX_CANDIDATES
         };
         let unwrapped = trim_target_wrappers(line);
         let path_line = if looks_like_local_path(line) {
@@ -695,13 +694,18 @@ mod tests {
     }
 
     #[test]
-    fn plain_text_yields_nothing_and_bounded() {
+    fn plain_text_yields_nothing_and_all_copied_links_are_retained() {
         assert!(detect_links("普通一句话，没有链接").is_empty());
         let many = (0..32)
             .map(|i| format!("https://host{i}.test/x"))
             .collect::<Vec<_>>()
             .join(" ");
-        assert_eq!(detect_links(&many).len(), 8, "bounded panel rows");
+        let links = detect_links(&many);
+        assert_eq!(links.len(), 32, "copied links are not truncated to eight");
+        assert_eq!(
+            links.last().expect("last copied link").copy_value,
+            "https://host31.test/x"
+        );
     }
 
     #[test]
@@ -996,11 +1000,16 @@ mod tests {
             });
         assert!(links.is_empty());
         assert_eq!(checks, 128);
-        let eight = (0..9)
+        let many = (0..130)
             .map(|i| format!("https://example.com/{i}"))
             .collect::<Vec<_>>()
             .join(" ");
-        assert_eq!(detect_links(&eight).len(), 8);
+        let links = detect_links(&many);
+        assert_eq!(links.len(), MAX_CANDIDATES);
+        assert_eq!(
+            links.last().expect("last admitted candidate").copy_value,
+            "https://example.com/127"
+        );
     }
 
     #[test]

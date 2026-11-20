@@ -187,7 +187,9 @@ impl NetworkSettingsView {
                         format!("global-blacklist-clipboard-{index}").into(), clipboard, pending,
                         cx.listener(move |this, requested: &bool, _, cx| {
                             if !this.saving {
-                                this.rules[index].disable_clipboard = *requested; cx.notify();
+                                this.rules[index].disable_clipboard = *requested;
+                                if this.editing_rule == Some(index) { this.new_disable_clipboard = *requested; }
+                                cx.notify();
                                 info!(event = "global.blacklist.draft_scope_changed", correlation_id = %uuid::Uuid::new_v4(), clipboard = true, disabled = *requested, elapsed_ms = 0, "application rule scope updated");
                             }
                         }))))
@@ -196,7 +198,9 @@ impl NetworkSettingsView {
                         format!("global-blacklist-quick-{index}").into(), quick, pending,
                         cx.listener(move |this, requested: &bool, _, cx| {
                             if !this.saving {
-                                this.rules[index].disable_quick_launch = *requested; cx.notify();
+                                this.rules[index].disable_quick_launch = *requested;
+                                if this.editing_rule == Some(index) { this.new_disable_quick_launch = *requested; }
+                                cx.notify();
                                 info!(event = "global.blacklist.draft_scope_changed", correlation_id = %uuid::Uuid::new_v4(), clipboard = false, disabled = *requested, elapsed_ms = 0, "application rule scope updated");
                             }
                         }))))
@@ -313,28 +317,6 @@ impl NetworkSettingsView {
                             })),
                     ),
             )
-            .child(div().w_16().flex_none().child(scope_checkbox(
-                "global-blacklist-new-clipboard".into(),
-                self.new_disable_clipboard,
-                pending,
-                cx.listener(|this, requested: &bool, _, cx| {
-                    if !this.saving {
-                        this.new_disable_clipboard = *requested;
-                        cx.notify();
-                    }
-                }),
-            )))
-            .child(div().w_16().flex_none().child(scope_checkbox(
-                "global-blacklist-new-quick".into(),
-                self.new_disable_quick_launch,
-                pending,
-                cx.listener(|this, requested: &bool, _, cx| {
-                    if !this.saving {
-                        this.new_disable_quick_launch = *requested;
-                        cx.notify();
-                    }
-                }),
-            )))
             .child(
                 div()
                     .debug_selector(|| "global-blacklist-add-action".into())
@@ -352,9 +334,20 @@ impl NetworkSettingsView {
                             .on_click(cx.listener(|this, _, window, cx| this.add_rule(window, cx))),
                     ),
             );
-        Form::vertical().small().child(Field::new()
-            .label(if self.editing_rule.is_some() { "编辑应用" } else { "添加应用" })
-            .description("填写进程名或选取窗口；点击已有应用可编辑。左侧勾选禁用剪贴板，右侧勾选禁用速启。")
-            .child(editor)).into_any_element()
+        Form::vertical()
+            .small()
+            .child(
+                Field::new()
+                    .label(if self.editing_rule.is_some() {
+                        "编辑应用"
+                    } else {
+                        "添加应用"
+                    })
+                    .description(
+                        "填写进程名或选取窗口；添加后在列表中选择禁用范围，点击已有应用可编辑。",
+                    )
+                    .child(editor),
+            )
+            .into_any_element()
     }
 }

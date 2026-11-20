@@ -57,7 +57,7 @@ function nativeConnectionCode(error, fallback = "desktop_unavailable") {
 
 function disconnectedStatus() {
   const [message, guidance] = CONNECTION_FAILURES[connectionFailureCode] || CONNECTION_FAILURES.desktop_unavailable;
-  return { ok: false, code: connectionFailureCode, message, guidance, transport: "native_messaging", data: lastSnapshot };
+  return { ok: false, code: connectionFailureCode, message, guidance, transport: "native_messaging" };
 }
 
 function desktopHandoffError(message, reason, boundaryCode, connectionCode = "") {
@@ -195,10 +195,6 @@ function handleDesktopMessage(message) {
   if (message.type === "hello_ack") {
     connectionState = "connected";
     connectionMessage = message.message || "Native Messaging 已连接 NxTools";
-  }
-
-  if (message.type === "snapshot") {
-    lastSnapshot = message.data || null;
   }
 
   const requestId = String(message.requestId || "");

@@ -20,7 +20,7 @@
       <button id="sendTabButton" class="accent-button" title="把当前网页地址发送到 NxTools">发送页面</button>
     </section>
     <nav class="tabs" role="tablist" aria-label="扩展功能">
-      <button id="tasksTab" class="tab active" role="tab" data-view="tasks" aria-controls="tasksView" aria-selected="true" tabindex="0">任务 <small id="taskTabCount" class="tab-count">0</small></button>
+      <button id="tasksTab" class="tab active" role="tab" data-view="tasks" aria-controls="tasksView" aria-selected="true" tabindex="0">概览</button>
       <button id="resourcesTab" class="tab" role="tab" data-view="resources" aria-controls="resourcesView" aria-selected="false" tabindex="-1">捕获 <small id="resourceTabCount" class="tab-count">0</small></button>
       <button id="advancedTab" class="tab" role="tab" data-view="advanced" aria-controls="advancedView" aria-selected="false" tabindex="-1">媒体工具</button>
       <button id="settingsTab" class="tab" role="tab" data-view="settings" aria-controls="settingsView" aria-selected="false" tabindex="-1">设置</button>
@@ -33,8 +33,6 @@
           <div id="homeConnectionPanel" class="home-status-row connection-help"><span><strong id="homeConnectionMessage">正在读取桌面连接</strong><small id="homeConnectionGuidance">打开面板不会自动启动桌面端</small></span><button id="homeTestButton">测试连接</button></div>
         </section>
         <p id="handoffStatus" class="handoff-status" role="status" aria-live="polite" hidden></p>
-        <div class="section-head"><h2>桌面任务 <small id="taskCountText" class="count">0</small></h2><small>最近 8 项 · 由桌面端管理</small></div>
-        <div id="taskList" class="list task-list" aria-label="桌面下载任务"></div>
       </section>
       <section id="resourcesView" class="view" role="tabpanel" aria-labelledby="resourcesTab" aria-hidden="true">
         <div class="resource-toolbar">
