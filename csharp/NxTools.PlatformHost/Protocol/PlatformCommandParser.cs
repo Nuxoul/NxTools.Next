@@ -39,7 +39,8 @@ internal sealed record ConfigureClipboardCommand(
     ulong MaxTextBytes = 8UL * 1024 * 1024,
     ulong MaxImageBytes = 64UL * 1024 * 1024,
     ulong MaxImagePixels = 100_000_000,
-    bool SuppressInFullscreen = true);
+    bool SuppressInFullscreen = true,
+    bool Enabled = true);
 internal sealed record SetClipboardCapturePausedCommand(bool Paused);
 internal sealed record SetClipboardHotKeyRecordingCommand(bool Recording);
 internal sealed record ConfigureQuickLaunchCommand(
@@ -59,6 +60,7 @@ internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowNoActivateCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowShadowCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height);
+internal sealed record QueryWindowGeometryCommand(long WindowHandle);
 internal sealed record SetWindowBoundsCenteredCommand(long WindowHandle, int Width, int Height);
 internal sealed record PresentFixedWindowOverAnchorCommand(long WindowHandle, long AnchorWindowHandle, int Width, int Height);
 internal sealed record PrepareNotificationWindowCommand(long WindowHandle, long SourceWindowHandle, uint SourceProcessId,
@@ -380,6 +382,9 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
             envelope,
             "set_window_bounds",
             "Window-bounds command payload was empty.");
+
+    public static QueryWindowGeometryCommand ParseQueryWindowGeometry(ProtocolEnvelope envelope) =>
+        Parse<QueryWindowGeometryCommand>(envelope, "query_window_geometry", "Window-geometry command payload was empty.");
 
     public static SetWindowBoundsCenteredCommand ParseSetWindowBoundsCentered(
         ProtocolEnvelope envelope) =>

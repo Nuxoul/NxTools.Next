@@ -9,6 +9,10 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        // Framework resolution happens before Main; the installer needs no native effects.
+        if (args.Length == 1 && args[0] == "--check-runtime") return 0;
+        if (args.Length > 0 && args[0] is Windows.Archive.ArchiveInstallCommands.CheckUser or Windows.Archive.ArchiveInstallCommands.Uninstall)
+            return Windows.Archive.ArchiveInstallCommands.Run(args);
         if (ArchiveCliHost.IsMode(args))
         {
             if (!ArchiveCliHost.TryParse(args, out var archiveCliOptions)) return 2;

@@ -954,6 +954,7 @@ internal sealed class PlatformPipeClient(
                 cancellationToken),
             "configure_clipboard" => await platformAdapter.ConfigureClipboardAsync(
                 PlatformCommandParser.ParseConfigureClipboard(envelope),
+                diagnosticCorrelationId,
                 cancellationToken),
             "set_clipboard_capture_paused" => await platformAdapter.SetClipboardCapturePausedAsync(
                 PlatformCommandParser.ParseSetClipboardCapturePaused(envelope),
@@ -1014,6 +1015,11 @@ internal sealed class PlatformPipeClient(
                 diagnosticCorrelationId),
             "set_window_position" => platformAdapter.SetWindowPosition(
                 PlatformCommandParser.ParseSetWindowPosition(envelope)),
+            "query_window_geometry" => platformAdapter.QueryWindowGeometry(
+                PlatformCommandParser.ParseQueryWindowGeometry(envelope), desktopProcessId),
+            "query_cursor_monitor" => platformAdapter.QueryCursorMonitor(diagnosticCorrelationId),
+            "query_installed_applications" => platformAdapter.QueryInstalledApplications(
+                diagnosticCorrelationId, cancellationToken),
             "activate_window" => platformAdapter.ActivateWindow(
                 PlatformCommandParser.ParseActivateWindow(envelope), diagnosticCorrelationId, desktopProcessId),
             "begin_window_resize" => platformAdapter.BeginWindowResize(

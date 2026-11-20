@@ -113,6 +113,9 @@ pub(crate) fn link_panel_height(total_rows: usize, expanded: bool) -> f32 {
 pub(crate) struct LinkPanelSession {
     pub(crate) window: Option<AnyWindowHandle>,
     pub(crate) native_window_handle: i64,
+    pub(crate) monitor: Option<nxtools_protocol::CursorMonitorSnapshot>,
+    #[cfg(test)]
+    pub(crate) test_native_window_handle: Option<i64>,
     pub(crate) generation: u64,
     pub(crate) last_fingerprint: Option<(bool, String)>,
     pub(crate) last_fingerprint_at_unix_ms: i64,

@@ -12,6 +12,25 @@ namespace NxTools.PlatformHost.Windows;
 
 internal sealed partial class WindowsPlatformAdapter
 {
+    public WindowsCommandResult QueryWindowGeometry(QueryWindowGeometryCommand command, uint desktopProcessId) =>
+        NativeMethods.QueryWindowGeometry(new IntPtr(command.WindowHandle), desktopProcessId);
+
+    internal static WindowsCommandResult WindowGeometryResult(NativeWindowRectangle outer,
+        NativeWindowRectangle client, ulong displayId, uint dpi, bool visible)
+    {
+        if (outer.Width <= 0 || outer.Height <= 0 || client.Width <= 0 || client.Height <= 0 || dpi == 0)
+            return new WindowsCommandResult(false, "window_geometry_unavailable");
+
+        return new WindowsCommandResult(true, Data: System.Text.Json.JsonSerializer.Serialize(new
+        {
+            outer = new { left = outer.Left, top = outer.Top, right = outer.Right, bottom = outer.Bottom },
+            client = new { left = client.Left, top = client.Top, right = client.Right, bottom = client.Bottom },
+            display_id = displayId,
+            dpi,
+            visible
+        }));
+    }
+
     private static partial class NativeMethods
     {
         internal static int InputSize => Marshal.SizeOf<Input>();
@@ -200,6 +219,9 @@ private static extern bool GetClientRect(
 
         [DllImport("user32.dll")]
         private static extern IntPtr MonitorFromPoint(Point point, uint flags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr MonitorFromRect(in NativeWindowRectangle rectangle, uint flags);
 
         [DllImport("shcore.dll")]
         private static extern int GetDpiForMonitor(
@@ -630,6 +652,25 @@ private static extern bool GetClientRect(
                 GetForegroundWindow().ToInt64(),
                 bounds,
                 clientBounds);
+        }
+
+        internal static WindowsCommandResult QueryWindowGeometry(IntPtr window, uint desktopProcessId)
+        {
+            if (desktopProcessId == 0 || window == IntPtr.Zero ||
+                GetWindowThreadProcessId(window, out var ownerProcessId) == 0 || ownerProcessId != desktopProcessId)
+                return new WindowsCommandResult(false, "window_geometry_invalid_peer");
+
+            // GetWindowRect includes the real outer frame. The DWM visible rectangle
+            // used by CaptureWindowPresentation excludes invisible borders.
+            if (!AnchoredWindowPlacement.TryGetWindowRectangle(window, out var outer) ||
+                !TryGetClientScreenRectangle(window, out var client))
+                return new WindowsCommandResult(false, "window_geometry_unavailable",
+                    NativeErrorCode: Marshal.GetLastWin32Error());
+
+            const uint MonitorDefaultToNull = 0;
+            var monitor = MonitorFromRect(in outer, MonitorDefaultToNull);
+            return WindowGeometryResult(outer, client, unchecked((ulong)monitor.ToInt64()),
+                GetDpiForWindow(window), IsWindowVisible(window));
         }
 
         internal static WindowsCommandResult SetWindowBounds(
@@ -1219,7 +1260,15 @@ private static extern bool GetClientRect(
             {
                 dpi = dpiX;
             }
-            return new CursorLocation(position, GetDisplayIndex(monitor), dpi);
+            CursorMonitorSnapshot? snapshot = null;
+            var info = new NotificationMonitorInfo { Size = Marshal.SizeOf<NotificationMonitorInfo>() };
+            if (monitor != IntPtr.Zero && NotificationGetMonitorInfo(monitor, ref info) &&
+                info.Work.Width > 0 && info.Work.Height > 0)
+            {
+                snapshot = new CursorMonitorSnapshot(unchecked((ulong)monitor.ToInt64()),
+                    info.Work.Left, info.Work.Top, (uint)info.Work.Width, (uint)info.Work.Height, dpi);
+            }
+            return new CursorLocation(position, GetDisplayIndex(monitor), dpi, snapshot);
         }
 
         internal static bool IsPointerButtonDown(int virtualKey) =>
@@ -1289,7 +1338,8 @@ private static extern bool GetClientRect(
             public int Y;
         }
 
-        internal readonly record struct CursorLocation(Point Position, uint DisplayIndex, uint Dpi);
+        internal readonly record struct CursorLocation(Point Position, uint DisplayIndex, uint Dpi,
+            CursorMonitorSnapshot? Monitor = null);
 
         internal readonly record struct PointerTarget(
             long WindowHandle,

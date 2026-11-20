@@ -5,6 +5,8 @@ mod archive_virtual_drag;
 pub mod desktop_archive_intent;
 pub mod desktop_markdown_intent;
 mod floating_cleanup;
+#[cfg(windows)]
+pub mod install_archive_integration;
 pub mod raw_numbered_join;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
@@ -228,6 +230,10 @@ impl CommandRouter {
             // The native PDF STA has a 30-second deadline; allow the result to return after it.
             Message::PlatformCommand(PlatformCommand::PrintMarkdownPdf(_)) => {
                 Some(Duration::from_secs(35))
+            }
+            // The P206 native STA has a 15-second reply bound.
+            Message::PlatformCommand(PlatformCommand::ArchiveShellIntegration(_)) => {
+                Some(Duration::from_secs(20))
             }
             _ => Some(PENDING_COMMAND_TIMEOUT),
         };
@@ -1091,6 +1097,18 @@ async fn handle_connection(
         )
         .await;
     }
+    if matches!(
+        handshake.message,
+        Message::PlatformCommand(PlatformCommand::ArchiveShellIntegration(_))
+    ) {
+        return install_archive_integration::serve(
+            handshake,
+            endpoint,
+            desktop_authorized,
+            &mut writer,
+        )
+        .await;
+    }
     let Message::Hello(hello) = &handshake.message else {
         anyhow::bail!("platform host did not begin with a hello message");
     };
@@ -1234,6 +1252,12 @@ async fn handle_summon_connection(
             return Ok(());
         };
         let envelope = Envelope::decode_line(&frame).context("invalid summon frame")?;
+        if matches!(
+            envelope.message,
+            Message::PlatformCommand(PlatformCommand::ArchiveShellIntegration(_))
+        ) {
+            anyhow::bail!("archive integration requires the authenticated installer boundary");
+        }
         if matches!(envelope.message, Message::PlatformCommand(_)) {
             let request = envelope.clone();
             let (reply_sender, reply_receiver) = async_channel::bounded(1);

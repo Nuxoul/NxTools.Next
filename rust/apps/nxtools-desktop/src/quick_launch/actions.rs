@@ -697,6 +697,9 @@ pub(crate) fn quick_launch_action_available(
     result: &SearchResult,
     action: &QuickLaunchAction,
 ) -> bool {
+    if is_packaged_application(result) && !matches!(action, QuickLaunchAction::Open) {
+        return false;
+    }
     if (result.entry.id.starts_with("extension:")
         || result.entry.id.starts_with("extension-script:"))
         && matches!(
@@ -781,7 +784,8 @@ pub(crate) struct QuickLaunchResultCapabilities {
 pub(crate) fn quick_launch_result_capabilities(
     result: &SearchResult,
 ) -> QuickLaunchResultCapabilities {
-    let uses_native_file_integration = result.opens_target() && !is_settings_target(result);
+    let uses_native_file_integration =
+        result.opens_target() && !is_settings_target(result) && !is_packaged_application(result);
     QuickLaunchResultCapabilities {
         preview: uses_native_file_integration,
         shell_actions: uses_native_file_integration
@@ -790,6 +794,10 @@ pub(crate) fn quick_launch_result_capabilities(
         shell_icon: uses_native_file_integration
             || result.entry.source == ApplicationSource::CustomCommand,
     }
+}
+
+fn is_packaged_application(result: &SearchResult) -> bool {
+    nxtools_finder::is_packaged_application_target(&result.entry.target)
 }
 
 fn is_settings_target(result: &SearchResult) -> bool {
@@ -827,6 +835,14 @@ pub(crate) fn platform_command_for_action(
     action: &QuickLaunchAction,
     owner_window_handle: i64,
 ) -> Option<PlatformCommand> {
+    if is_packaged_application(result) {
+        return (matches!(action, QuickLaunchAction::Open) && result.opens_target()).then(|| {
+            PlatformCommand::OpenShellTarget(OpenShellTargetCommand {
+                target: result.entry.target.clone(),
+                action: ShellOpenAction::Open,
+            })
+        });
+    }
     if result.entry.id.starts_with("extension:") || result.entry.id.starts_with("extension-script:")
     {
         if matches!(

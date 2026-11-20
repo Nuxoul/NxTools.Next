@@ -10,6 +10,7 @@ use gpui_kit::component::Size;
 use gpui_kit::component::alert::Alert;
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::setting::{SelectIndex, SettingGroup, SettingItem, SettingPage, Settings};
+use gpui_kit::component::switch::Switch;
 
 #[cfg(test)]
 pub(crate) fn quick_find_scroll_target(
@@ -352,6 +353,17 @@ fn quick_launch_result_entrance_setting(
 impl MainWindow {
     pub(crate) fn render_quick_find(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let owner = cx.entity().downgrade();
+        let quick_launch = self.quick_launch.clone();
+        let (enabled, status) = quick_launch.upgrade().map_or_else(
+            || (false, "速启不可用".to_owned()),
+            |application| {
+                let application = application.read(cx);
+                (
+                    application.feature_enabled(),
+                    application.feature_configuration_status().to_owned(),
+                )
+            },
+        );
         let item = |page: QuickLaunchSettingsPage,
                     slot: usize,
                     title: &'static str,
@@ -558,6 +570,30 @@ impl MainWindow {
             )
             .child(
                 div()
+                    .debug_selector(|| "quick-launch-feature-enable".into())
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .px_4()
+                    .py_2()
+                    .child(
+                        Switch::new("quick-launch-enabled")
+                            .label("启用速启")
+                            .checked(enabled)
+                            .on_change(move |requested, _, cx| {
+                                let requested = *requested;
+                                let application = quick_launch.clone();
+                                cx.defer(move |cx| {
+                                    let _ = application.update(cx, |application, cx| {
+                                        application.set_feature_enabled(requested, cx);
+                                    });
+                                });
+                            }),
+                    )
+                    .child(div().text_color(self.theme.text_muted).child(status)),
+            )
+            .child(
+                div()
                     .debug_selector(|| "quick-launch-kit-settings".into())
                     .flex_1()
                     .min_h_0()
@@ -632,7 +668,12 @@ impl MainWindow {
             QuickLaunchHotkeyLifecycle::Applied => (
                 HotkeyFieldState::Applied,
                 settings.hotkey.display.clone(),
-                "已应用到 Windows 全局热键".to_owned(),
+                if settings.enabled {
+                    "已应用到 Windows 全局热键"
+                } else {
+                    "速启已停用，热键设置已保留"
+                }
+                .to_owned(),
             ),
             QuickLaunchHotkeyLifecycle::WaitingForAdapter { status } => (
                 HotkeyFieldState::Waiting,

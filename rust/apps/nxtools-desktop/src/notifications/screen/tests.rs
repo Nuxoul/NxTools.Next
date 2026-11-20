@@ -80,7 +80,7 @@ fn screen_notifications_do_not_render_inside_main_window_and_prepare_independent
         .try_receive_command_for_contract_test()
         .expect("screen prepare");
     assert!(
-        matches!(&command.message,nxtools_protocol::Message::PlatformCommand(PlatformCommand::PrepareNotificationWindow(p)) if p.position=="bottom_right"&&p.width==360&&p.height<=376&&p.window_handle!=p.source_window_handle)
+        matches!(&command.message,nxtools_protocol::Message::PlatformCommand(PlatformCommand::PrepareNotificationWindow(p)) if p.position=="top_center"&&p.width==360&&p.height<=376&&p.window_handle!=p.source_window_handle)
     );
     let surface = host.read_with(cx, |host, _| host.surface.as_ref().expect("popup").window);
     assert_ne!(surface, source);

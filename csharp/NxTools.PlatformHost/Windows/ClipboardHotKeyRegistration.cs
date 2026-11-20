@@ -11,6 +11,7 @@ internal sealed class ClipboardHotKeyRegistration
 {
     private readonly IClipboardHotKeyRegistrar _registrar;
     private ClipboardHotKeyBinding _current;
+    private bool _enabled = true;
 
     public ClipboardHotKeyRegistration(
         IClipboardHotKeyRegistrar registrar,
@@ -53,19 +54,26 @@ internal sealed class ClipboardHotKeyRegistration
         return RegisterCurrent();
     }
 
-    public WindowsCommandResult Apply(ClipboardHotKeyBinding requested)
+    public WindowsCommandResult Apply(ClipboardHotKeyBinding requested, bool enabled = true)
     {
+        _enabled = enabled;
         var previous = _current;
         var previousWasAvailable = IsAvailable;
         if (IsAvailable && !_registrar.Unregister())
         {
             return new WindowsCommandResult(
                 false,
-                $"Could not replace {_current.Display}: Win32={_registrar.LastError}.");
+                $"Could not replace {_current.Display}: Win32={_registrar.LastError}.",
+                NativeErrorCode: _registrar.LastError);
         }
 
         IsAvailable = false;
         IsRecording = false;
+        if (!enabled)
+        {
+            _current = requested;
+            return new WindowsCommandResult(true);
+        }
         if (_registrar.Register(requested.Modifiers, requested.VirtualKey))
         {
             _current = requested;
@@ -102,6 +110,11 @@ internal sealed class ClipboardHotKeyRegistration
 
     private WindowsCommandResult RegisterCurrent()
     {
+        if (!_enabled)
+        {
+            IsAvailable = false;
+            return new WindowsCommandResult(true);
+        }
         if (_registrar.Register(_current.Modifiers, _current.VirtualKey))
         {
             IsAvailable = true;

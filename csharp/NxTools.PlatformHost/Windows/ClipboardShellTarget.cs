@@ -22,7 +22,7 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
         "msconfig.exe", "taskmgr.exe", "services.msc", "devmgmt.msc", "diskmgmt.msc",
         "eventvwr.msc", "compmgmt.msc", "gpedit.msc", "secpol.msc", "optionalfeatures.exe",
         "cleanmgr.exe", "dxdiag.exe", "winver.exe", "resmon.exe", "perfmon.exe", "mrt.exe",
-        "cmd.exe", "powershell.exe", "regedit.exe", "control.exe", "notepad.exe"
+        "cmd.exe", "powershell.exe", "regedit.exe", "control.exe", "notepad.exe", "calc.exe", "mspaint.exe"
     };
 
     private static readonly string[] RegistryRoots =
@@ -70,7 +70,7 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
             return false;
         }
         if (kind == ShellTargetKind.SystemTool && !AllowedSystemTools.Contains(value) &&
-            !value.Equals("ms-settings:", StringComparison.OrdinalIgnoreCase))
+            !value.Equals("ms-settings:", StringComparison.OrdinalIgnoreCase) && !PackagedApplicationTarget.IsValid(value))
         {
             error = "The requested system tool is not allowlisted.";
             return false;
@@ -108,6 +108,7 @@ internal sealed record ShellTarget(ShellTargetKind Kind, string Target)
     }
 
     private static bool IsSafeOpenTarget(string value) =>
+        PackagedApplicationTarget.IsValid(value) ||
         File.Exists(value) ||
         Directory.Exists(value) ||
         (Uri.TryCreate(value, UriKind.Absolute, out var uri) &&

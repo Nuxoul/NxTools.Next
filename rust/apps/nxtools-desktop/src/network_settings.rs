@@ -2724,17 +2724,17 @@ mod tests {
         });
         assert_eq!(chooser.size.height, px(32.0));
         view.update(&mut surface, |view, _| {
-            view.notification_position = nxtools_core::NotificationPosition::TopCenter
+            view.notification_position = nxtools_core::NotificationPosition::BottomRight
         });
         application.update(&mut surface, |app, cx| app.close_window(cx));
         assert_eq!(std::fs::read(&path).expect("cancel has no write"), before);
         assert_eq!(
             center.read_with(&surface, |center, _| center.position()),
-            nxtools_core::NotificationPosition::BottomRight
+            nxtools_core::NotificationPosition::TopCenter
         );
         application.update(&mut surface, |app, cx| {
             let mut settings = app.config.system.clone();
-            settings.notification_position = nxtools_core::NotificationPosition::TopCenter;
+            settings.notification_position = nxtools_core::NotificationPosition::BottomRight;
             app.apply_global(
                 app.config.network.clone(),
                 settings,
@@ -2751,11 +2751,11 @@ mod tests {
                 .expect("saved location")
                 .system
                 .notification_position,
-            nxtools_core::NotificationPosition::TopCenter
+            nxtools_core::NotificationPosition::BottomRight
         );
         assert_eq!(
             center.read_with(&surface, |center, _| center.position()),
-            nxtools_core::NotificationPosition::TopCenter
+            nxtools_core::NotificationPosition::BottomRight
         );
         let good = std::fs::read(&path).expect("last good settings");
         std::fs::write(&path, b"corrupt fixture").expect("owned persistence failure");
@@ -2777,7 +2777,7 @@ mod tests {
         surface.run_until_parked();
         assert_eq!(
             center.read_with(&surface, |center, _| center.position()),
-            nxtools_core::NotificationPosition::TopCenter,
+            nxtools_core::NotificationPosition::BottomRight,
             "failed persistence never publishes draft position"
         );
         std::fs::write(&path, good).expect("restore owned fixture");

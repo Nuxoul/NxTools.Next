@@ -82,7 +82,8 @@ internal sealed record ArchiveAppliedValueFact(
 internal sealed record ArchiveIntegrationAppliedFacts(
     long DesiredRevision,
     IReadOnlyList<ArchiveAppliedValueFact> Values,
-    IReadOnlyDictionary<string, string?>? PriorUserChoices = null);
+    IReadOnlyDictionary<string, string?>? PriorUserChoices = null,
+    IReadOnlyList<string>? PendingChoiceRestorations = null);
 
 internal sealed record ArchiveIntegrationUninstallResult(
     int RemovedInstalledValues,

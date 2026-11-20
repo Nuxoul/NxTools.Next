@@ -339,6 +339,31 @@ def scenario_stop_failure(root: Path) -> None:
     assert (root / "events.txt").read_text(encoding="utf-8").splitlines() == ["processes"]
 
 
+def scenario_archive_restore_failed(root: Path) -> None:
+    paths = fixture(root)
+    ledger = write(paths["logs"].parent / "archive-shell-integration-applied.json", "prior choices and owned values")
+    effect_path = write(root / "fixture-archive-effects.ps1", """
+function Stop-NxToolsOwnedProcesses { Add-Content -LiteralPath $env:NXTOOLS_FIXTURE_EVENTS -Value 'processes' }
+function Remove-NxToolsBrowserRegistration { throw 'browser cleanup ran after failed archive restoration' }
+function Start-Process {
+    param([string]$FilePath, [string]$ArgumentList, [string]$WindowStyle, [switch]$Wait, [switch]$PassThru)
+    if (!$Wait -or !$PassThru -or $WindowStyle -ne 'Hidden' -or
+        $FilePath -ne (Join-Path $InstallDirectory 'NxTools.PlatformHost.exe') -or
+        $ArgumentList -ne "--uninstall-archive-integration $CorrelationId") { throw 'wrong native archive delegation' }
+    Add-Content -LiteralPath $env:NXTOOLS_FIXTURE_EVENTS -Value 'native-archive'
+    [pscustomobject]@{ ExitCode=11 } | Add-Member -MemberType ScriptMethod -Name Dispose -Value {} -PassThru
+}
+""")
+    result = invoke(paths, "Uninstall", True, effect_path)
+    assert result.returncode == 11, result.stdout + result.stderr
+    assert "archive_uninstall.terminal" in result.stdout and "exit_code=11" in result.stdout
+    assert "installer.uninstall_cleanup.completed" not in result.stdout
+    assert ledger.read_text(encoding="utf-8") == "prior choices and owned values"
+    assert (paths["config"] / "config.json").exists()
+    assert (paths["data"] / "downloads.sqlite3").exists()
+    assert (root / "events.txt").read_text(encoding="utf-8").splitlines() == ["processes", "native-archive"]
+
+
 def installer_contract() -> None:
     source = (ROOT / "installer" / "nxtools-next.iss").read_text(encoding="utf-8")
     initialize = re.search(r"function InitializeUninstall\(\): Boolean;(?P<body>.*?)procedure RunProtectedUninstallCleanup", source, re.S)
@@ -378,6 +403,7 @@ def main() -> int:
             ("repair", lambda root: scenario_upgrade_repair(root, "Repair")),
             ("stop-failure", scenario_stop_failure),
             ("archive-metadata-delete-failure", scenario_archive_metadata_delete_failure),
+            ("archive-default-restore-failure", scenario_archive_restore_failed),
         ]
         for name, scenario in scenarios:
             scenario(base / name)

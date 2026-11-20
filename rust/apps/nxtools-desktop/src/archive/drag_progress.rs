@@ -115,12 +115,15 @@ impl ArchiveApplication {
             let capture = Rc::new(std::cell::RefCell::new(None));
             let captured = capture.clone();
             let initial = event.clone();
-            let bounds = Bounds::centered(None, size(px(560.), px(300.)), cx);
+            let parent = self.windows.get(&event.session_id).map(|slot| slot.window);
+            let placement = crate::ui::monitor_placement::owner_monitor_placement(None, parent, cx);
+            let bounds = placement.centered(size(px(560.), px(300.)));
             let opened = cx.open_window(
                 WindowOptions {
                     focus: false,
                     show: false,
                     window_bounds: Some(WindowBounds::Windowed(bounds)),
+                    display_id: placement.display_id,
                     window_min_size: Some(size(px(480.), px(260.))),
                     app_id: Some(format!("NxTools.Archive.Drag.{operation}")),
                     ..crate::ui::components::titlebar::caption_window_options()
@@ -128,13 +131,13 @@ impl ArchiveApplication {
                 move |window, cx| {
                     window.set_window_title(crate::archive::progress::DRAG_TITLE);
                     let hwnd = crate::ui::native_window_handle(window).unwrap_or(0);
-                    let scale = window.scale_factor();
+                    let scale = placement.scale;
                     let native_bounds = SetWindowBoundsCommand {
                         window_handle: hwnd,
                         x: (bounds.origin.x.as_f32() * scale).round() as i32,
                         y: (bounds.origin.y.as_f32() * scale).round() as i32,
-                        width: (560. * scale).round() as i32,
-                        height: (300. * scale).round() as i32,
+                        width: (bounds.size.width.as_f32() * scale).round() as i32,
+                        height: (bounds.size.height.as_f32() * scale).round() as i32,
                     };
                     let view = cx.new(|cx| JobProgressView::new_drag(initial, owner, cx));
                     *captured.borrow_mut() = Some((view.downgrade(), hwnd, native_bounds));

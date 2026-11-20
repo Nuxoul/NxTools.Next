@@ -267,6 +267,84 @@ impl ArchiveShellIntegrationSettings {
     }
 }
 
+impl crate::AppConfig {
+    /// Initialization is confined to the untouched archive intent of a fresh installation.
+    /// An upgrade never invents a new intent or writes another section.
+    pub fn archive_integration_for_install(
+        path: &std::path::Path,
+        fresh: bool,
+    ) -> anyhow::Result<Self> {
+        Self::with_config_lock(path, || {
+            let mut config = if path.try_exists()? {
+                Self::load_from(path)?
+            } else {
+                Self::default()
+            };
+            let intent = &mut config.archive.shell_integration;
+            if fresh && *intent == ArchiveShellIntegrationSettings::default() {
+                intent.classic_cascade = true;
+                intent.open_with = true;
+                intent.set_default = true;
+                intent.extensions = ARCHIVE_SHELL_EXTENSIONS.map(str::to_owned).to_vec();
+                intent.desired_revision = 1;
+                config.save_to(path)?;
+            }
+            Ok(config)
+        })
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn archive_install_preserves_saved_custom_and_opted_out_intent() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join("config.json");
+    let off = crate::AppConfig::archive_integration_for_install(&path, false).unwrap();
+    assert_eq!(
+        off.archive.shell_integration,
+        ArchiveShellIntegrationSettings::default()
+    );
+    assert!(
+        !path.exists(),
+        "upgrade does not manufacture a fresh configuration"
+    );
+    let fresh = crate::AppConfig::archive_integration_for_install(&path, true).unwrap();
+    let intent = fresh.archive.shell_integration.clone();
+    assert!(intent.classic_cascade && intent.open_with && intent.set_default);
+    assert_eq!(
+        intent.extensions,
+        ARCHIVE_SHELL_EXTENSIONS.map(str::to_owned)
+    );
+    assert_eq!(intent.menu_commands, recommended_menu_commands());
+    assert_eq!(intent.desired_revision, 1);
+    assert_eq!(
+        crate::AppConfig::load_from(&path)
+            .unwrap()
+            .archive
+            .shell_integration,
+        intent
+    );
+
+    let mut config = fresh;
+    config.archive.shell_integration = ArchiveShellIntegrationSettings {
+        desired_revision: 14,
+        extensions: vec![".zip".into()],
+        menu_layout: ArchiveMenuLayout::Flat,
+        menu_commands: vec![],
+        ..ArchiveShellIntegrationSettings::default()
+    };
+    config.save_to(&path).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    for fresh in [false, true] {
+        let actual = crate::AppConfig::archive_integration_for_install(&path, fresh).unwrap();
+        assert_eq!(
+            actual.archive.shell_integration,
+            config.archive.shell_integration
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct ArchiveTempSettings {

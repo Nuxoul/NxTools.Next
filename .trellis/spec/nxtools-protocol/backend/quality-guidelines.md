@@ -55,3 +55,9 @@ plus exact request/generation match authorizes retirement; decoding alone is not
 See the owning [Indexer lifecycle contract](../../nxtools-indexer/backend/quality-guidelines.md).
 
 Ordinary numbered-file joining follows [the cross-layer contract](../../platformhost/raw-numbered-join.md): strict action-specific fields and reply identities, bounded numeric preview, native-private source versions and unchanged outer protocol1. Actual owner/reader/stream/UI tests accompany the wire test.
+
+Installed Windows applications use the parameterless `query_installed_applications` command and
+typed `installed_applications::InstalledApplications` snapshot inside original command-result
+data JSON string. Outer protocol1, envelope/request correlation and existing frame limits remain.
+See [installed application contract](../../nxtools-finder/backend/quality-guidelines.md#scenario-installed-windows-applications)
+for native ownership, snapshot replacement, target validation and required Rust/C# boundary tests.

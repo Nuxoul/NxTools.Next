@@ -5,6 +5,15 @@ internal static class TestEffects
 {
     private static readonly HashSet<string> Fixtures = new(StringComparer.Ordinal)
     {
+        // Injected enumeration/Process.Start, fake logs and bounded STA only; no live Shell reads or launches.
+        "InstalledApplicationTests.LocalizedApplicationsAndJson",
+        "InstalledApplicationTests.InvalidFactsAndEmptyResult",
+        "InstalledApplicationTests.FailureNeverPublishesPartial",
+        "InstalledApplicationTests.CancellationAndRetainedAdmission",
+        "InstalledApplicationTests.ExactPipeCommandAndResult",
+        "InstalledApplicationTests.OrdinaryShellDispatch",
+        "InstalledApplicationTests.RejectUnsafeShellActions",
+        "InstalledApplicationTests.DetachedRouting",
         // Explicit matching worker and GUID-owned copies; no GUI, Shell or user-source mutation.
         "ArchiveLargeCountTests.SuppliedSeventyThousand",
         "ArchiveParallelExtractionTests.NativeBeginsOverlap",
@@ -584,6 +593,7 @@ internal static class TestEffects
         "MinimizedCommandUsesRealNativeWindow",
         "NoActivateCommandPreservesNativeWindow",
         "WindowBoundsCommandPreservesPlacement",
+        "WindowGeometryReportsActualDevicePixels",
         "CenteredRectanglePreservesAnchorCenter",
         "CenteredNativeResizeUsesMovedWindowBounds",
         "CenteredResizeReappliesAfterNativeMoveEnd",

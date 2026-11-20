@@ -216,6 +216,9 @@ internal sealed class ArchiveIntegrationService
         ArchiveIntegrationAppliedFacts? facts;
         try { facts = _ledger.Load(); }
         catch (Exception) { return Failed(desiredRevision, "ledger_unreadable"); }
+        if (facts is { PendingChoiceRestorations.Count: > 0 })
+            return new(WireVersion, ArchiveShellIntegrationStates.RevertRequired, desiredRevision,
+                facts.DesiredRevision, facts.Values.Count, 0, 0, 0, "revert_incomplete");
         return facts is null
             ? new(WireVersion, ArchiveShellIntegrationStates.NotApplied, desiredRevision, null, 0, 0, 0, 0, null)
             : new(WireVersion, ArchiveShellIntegrationStates.Applied, desiredRevision, facts.DesiredRevision,
@@ -280,6 +283,9 @@ internal sealed class ArchiveIntegrationService
         if (existing is not null)
         {
             cancellation.ThrowIfCancellationRequested();
+            if (!RestoreChoices(existing, correlationId))
+                return new(WireVersion, ArchiveShellIntegrationStates.Failed, command.DesiredRevision,
+                    existing.DesiredRevision, existing.Values.Count, 0, 0, 0, "replace_revert_incomplete");
             try { replaced = ArchiveIntegrationTransaction.Uninstall(_store, existing); }
             catch (Exception)
             {
@@ -287,8 +293,7 @@ internal sealed class ArchiveIntegrationService
                 return new(WireVersion, ArchiveShellIntegrationStates.Failed, command.DesiredRevision,
                     existing.DesiredRevision, existing.Values.Count, 0, 0, 0, "replace_revert_incomplete");
             }
-            // Extensions the new revision claims again keep the choice; the rest get their original back.
-            RestoreChoices(existing, command.SetDefault ? plan.Extensions : [], correlationId);
+
             try { _ledger.Delete(); }
             catch (Exception)
             {
@@ -317,33 +322,30 @@ internal sealed class ArchiveIntegrationService
             return Failed(command.DesiredRevision, failure);
         }
 
+        // Do not overwrite a user choice whose prior value could not be observed.
+        Dictionary<string, string?>? priors = null;
+        var unobservedChoices = 0;
+        if (command.SetDefault && _defaultClaim is not null)
+        {
+            priors = new(StringComparer.OrdinalIgnoreCase);
+            foreach (var extension in plan.Extensions)
+            {
+                try
+                {
+                    var current = _defaultClaim.Current(extension);
+                    priors[extension] = SameChoice(current, ArchiveIntegrationPlan.ProgId) ? null : current;
+                }
+                catch (Exception) { unobservedChoices++; }
+            }
+        }
+
         ArchiveIntegrationAppliedFacts facts;
         try { facts = ArchiveIntegrationTransaction.Apply(_store, plan, cancellation); }
         catch (AggregateException) { return Fail("compensation_incomplete"); }
         catch (Exception) { return Fail("write_failed_compensated"); }
 
-        // The original Explorer choice of every claimed extension is recorded with the facts so
-        // Revert can write it back. A replaced revision's record wins over our own current choice.
-        if (command.SetDefault && _defaultClaim is not null)
-        {
-            var priors = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
-            foreach (var extension in plan.Extensions)
-            {
-                if (existing?.PriorUserChoices is { } earlier && earlier.TryGetValue(extension, out var original))
-                    priors[extension] = original;
-                else
-                {
-                    // Our own claim is never an original to return to: Revert then removes it.
-                    try
-                    {
-                        var current = _defaultClaim.Current(extension);
-                        priors[extension] = string.Equals(current, ArchiveIntegrationPlan.ProgId, StringComparison.OrdinalIgnoreCase) ? null : current;
-                    }
-                    catch (Exception) { priors[extension] = null; }
-                }
-            }
+        if (priors is not null)
             facts = facts with { PriorUserChoices = priors };
-        }
 
         // Observed facts become durable before success is reported. If the ledger cannot be
         // persisted, Revert could not prove ownership later, so the applied values are compensated.
@@ -370,8 +372,8 @@ internal sealed class ArchiveIntegrationService
         string? defaultFailure = null;
         if (command.SetDefault && _defaultClaim is not null)
         {
-            var unresolved = 0;
-            foreach (var extension in plan.Extensions)
+            var unresolved = unobservedChoices;
+            foreach (var extension in priors!.Keys)
             {
                 try { _defaultClaim.Set(extension, ArchiveIntegrationPlan.ProgId); }
                 catch (Exception) { unresolved++; }
@@ -402,36 +404,90 @@ internal sealed class ArchiveIntegrationService
         catch (Exception) { return false; }
     }
 
-    /// <summary>
-    /// Writes back the recorded original Explorer choice of each claimed extension that still
-    /// points at NxTools; a choice the user changed since is left alone.
-    /// </summary>
-    private void RestoreChoices(ArchiveIntegrationAppliedFacts facts, IReadOnlyCollection<string> keep, Guid correlationId)
+    /// <summary>Restores still-owned choices before removing their Classes evidence.</summary>
+    private bool RestoreChoices(ArchiveIntegrationAppliedFacts facts, Guid correlationId)
     {
-        if (facts.PriorUserChoices is null || _defaultClaim is null) return;
+        if (facts.PriorUserChoices is not { Count: > 0 } prior) return true;
+        if (_defaultClaim is null) return false;
+
+        var durablePending = new HashSet<string>(facts.PendingChoiceRestorations ?? [], StringComparer.OrdinalIgnoreCase);
+        var pending = new HashSet<string>(durablePending, StringComparer.OrdinalIgnoreCase);
+        var attempts = new List<string>();
         int restored = 0, preserved = 0, failed = 0;
-        foreach (var (extension, original) in facts.PriorUserChoices)
+        int? nativeCode = null;
+        void RecordFailure(Exception error)
         {
-            if (keep.Contains(extension, StringComparer.OrdinalIgnoreCase)) continue;
+            failed++;
+            nativeCode ??= error is System.ComponentModel.Win32Exception native ? native.NativeErrorCode : error.HResult;
+        }
+        foreach (var (extension, original) in prior)
+        {
             try
             {
-                if (!string.Equals(_defaultClaim.Current(extension), ArchiveIntegrationPlan.ProgId, StringComparison.OrdinalIgnoreCase))
+                var current = _defaultClaim.Current(extension);
+                if (SameChoice(current, ArchiveIntegrationPlan.ProgId) ||
+                    (pending.Contains(extension) && (current is null || SameChoice(current, original)) &&
+                        !ChoiceRestored(extension, current, original)))
                 {
-                    preserved++;
-                    continue;
+                    attempts.Add(extension);
+                    pending.Add(extension);
                 }
-                _defaultClaim.Set(extension, original);
-                restored++;
+                else
+                {
+                    pending.Remove(extension);
+                    preserved++;
+                }
             }
-            catch (Exception) { failed++; }
+            catch (Exception error) { RecordFailure(error); }
+        }
+
+        // A restore may remove the old choice before throwing. Record the attempt before
+        // mutation so retry can recover it without overwriting a different later user choice.
+        bool SavePending()
+        {
+            if (durablePending.SetEquals(pending)) return true;
+            try { _ledger.Save(facts with { PendingChoiceRestorations = pending.ToArray() }); }
+            catch (Exception error) { RecordFailure(error); return false; }
+            durablePending.Clear();
+            durablePending.UnionWith(pending);
+            return true;
+        }
+        if (SavePending() && attempts.Count > 0)
+        {
+            var written = new List<string>();
+            foreach (var extension in attempts)
+            {
+                try { _defaultClaim.Set(extension, prior[extension]); written.Add(extension); }
+                catch (Exception error) { RecordFailure(error); }
+            }
+            NotifyChanged();
+            foreach (var extension in written)
+            {
+                try
+                {
+                    if (ChoiceRestored(extension, _defaultClaim.Current(extension), prior[extension]))
+                    {
+                        pending.Remove(extension);
+                        restored++;
+                    }
+                    else failed++;
+                }
+                catch (Exception error) { RecordFailure(error); }
+            }
+            SavePending();
         }
         Write(failed > 0 ? "warn" : "info", "archive.shell_integration.default_restored", correlationId, new Dictionary<string, object?>
         {
-            ["restored"] = restored,
-            ["preserved"] = preserved,
-            ["failed"] = failed,
+            ["restored"] = restored, ["preserved"] = preserved, ["failed"] = failed, ["native_error_code"] = nativeCode,
         });
+        return failed == 0;
     }
+
+    private static bool SameChoice(string? left, string? right) =>
+        string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private bool ChoiceRestored(string extension, string? current, string? original) =>
+        SameChoice(current, original) && (original is null || _defaultClaim!.Resolves(extension, original));
 
     private ArchiveShellIntegrationResult Revert(long desiredRevision, Guid correlationId, CancellationToken cancellation)
     {
@@ -445,6 +501,9 @@ internal sealed class ArchiveIntegrationService
                 facts.Values.Count, 0, 0, 0, "apply_not_authorized");
 
         cancellation.ThrowIfCancellationRequested();
+        if (!RestoreChoices(facts, correlationId))
+            return new(WireVersion, ArchiveShellIntegrationStates.Failed, desiredRevision, facts.DesiredRevision,
+                facts.Values.Count, 0, 0, 0, "revert_incomplete");
         ArchiveIntegrationUninstallResult outcome;
         try { outcome = ArchiveIntegrationTransaction.Uninstall(_store, facts); }
         catch (Exception)
@@ -454,7 +513,7 @@ internal sealed class ArchiveIntegrationService
             return new(WireVersion, ArchiveShellIntegrationStates.Failed, desiredRevision, facts.DesiredRevision,
                 facts.Values.Count, 0, 0, 0, "revert_incomplete");
         }
-        RestoreChoices(facts, [], correlationId);
+
         try { _ledger.Delete(); }
         catch (Exception)
         {
@@ -501,10 +560,13 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
 
     public ArchiveIntegrationAppliedFacts? Load()
     {
-        if (!File.Exists(path)) return null;
-        var info = new FileInfo(path);
-        if (info.Length > MaxBytes) throw new InvalidDataException("Archive integration ledger exceeds its bound.");
-        var document = JsonSerializer.Deserialize<LedgerDocument>(File.ReadAllBytes(path), Protocol.JsonDefaults.Options)
+        FileStream stream;
+        try { stream = File.OpenRead(path); }
+        catch (FileNotFoundException) { return null; }
+        catch (DirectoryNotFoundException) { return null; }
+        using var retained = stream;
+        if (stream.Length > MaxBytes) throw new InvalidDataException("Archive integration ledger exceeds its bound.");
+        var document = JsonSerializer.Deserialize<LedgerDocument>(stream, Protocol.JsonDefaults.Options)
             ?? throw new InvalidDataException("Archive integration ledger was empty.");
         if (document.Version != Version || document.Values is null)
             throw new InvalidDataException("Unsupported archive integration ledger.");
@@ -518,7 +580,8 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
                     value.Prior is null ? null : FromWire(value.Prior),
                     value.MissingOwnedKeyPaths ?? []))).ToArray(),
             document.PriorUserChoices is null ? null
-                : new Dictionary<string, string?>(document.PriorUserChoices, StringComparer.OrdinalIgnoreCase));
+                : new Dictionary<string, string?>(document.PriorUserChoices, StringComparer.OrdinalIgnoreCase),
+            document.PendingChoiceRestorations);
     }
 
     public void Save(ArchiveIntegrationAppliedFacts facts)
@@ -531,7 +594,8 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
             fact.Prior.Exists,
             fact.Prior.Value is null ? null : ToWire(fact.Prior.Value),
             fact.Prior.MissingOwnedKeyPaths.ToArray())).ToArray(),
-            facts.PriorUserChoices?.ToDictionary(pair => pair.Key, pair => pair.Value));
+            facts.PriorUserChoices?.ToDictionary(pair => pair.Key, pair => pair.Value),
+            facts.PendingChoiceRestorations?.ToArray());
         var bytes = JsonSerializer.SerializeToUtf8Bytes(document, Protocol.JsonDefaults.Options);
         if (bytes.Length > MaxBytes) throw new InvalidDataException("Archive integration ledger exceeds its bound.");
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
@@ -553,7 +617,7 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
 
     public void Delete()
     {
-        if (File.Exists(path)) File.Delete(path);
+        File.Delete(path);
     }
 
     private static LedgerValue ToWire(ArchiveRegistryValue value) => value.Data switch
@@ -583,7 +647,9 @@ internal sealed class FileArchiveIntegrationLedger(string path) : IArchiveIntegr
     }
 
     private sealed record LedgerDocument(int Version, long DesiredRevision, LedgerFact[]? Values,
-        Dictionary<string, string?>? PriorUserChoices = null);
+        Dictionary<string, string?>? PriorUserChoices = null,
+        [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+        string[]? PendingChoiceRestorations = null);
     private sealed record LedgerFact(
         string KeyPath,
         string ValueName,

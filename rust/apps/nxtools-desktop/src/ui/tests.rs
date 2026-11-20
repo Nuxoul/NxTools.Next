@@ -905,12 +905,49 @@ fn clipboard_panel_keeps_300x440_logical_size_at_150_percent_dpi(cx: &mut TestAp
         cursor_y: 720,
         cursor_display_index: 0,
         cursor_monitor_dpi: 144,
+        cursor_monitor: None,
         requested_at_unix_ms: 1_000,
         event_sequence: 1,
     };
     let bounds =
         cx.update(|cx| panel_bounds(&request, nxtools_core::ClipboardPanelSize::default(), cx).0);
     assert_eq!(bounds.size, size(px(300.0), px(440.0)));
+}
+
+#[gpui_kit::test]
+fn multimonitor_clipboard_bounds_use_native_work_area_and_target_dpi(cx: &mut TestAppContext) {
+    for dpi in [96, 120, 144] {
+        let request = ClipboardPanelRequest {
+            target: nxtools_protocol::ForegroundContext {
+                window_handle: 1,
+                focus_window_handle: 1,
+                process_id: 1,
+                process_name: "editor".into(),
+                window_title: String::new(),
+            },
+            cursor_x: -30,
+            cursor_y: -30,
+            cursor_display_index: 1,
+            cursor_monitor_dpi: dpi,
+            cursor_monitor: Some(nxtools_protocol::CursorMonitorSnapshot {
+                display_id: 0xCAFE,
+                work_left: -1920,
+                work_top: -1080,
+                work_width: 1920,
+                work_height: 1040,
+                dpi,
+            }),
+            requested_at_unix_ms: 1_000,
+            event_sequence: 1,
+        };
+        let scale = dpi as f32 / 96.0;
+        let (bounds, _) =
+            cx.update(|cx| panel_bounds(&request, nxtools_core::ClipboardPanelSize::default(), cx));
+        let native = bounds.to_device_pixels(scale);
+        assert_eq!(i32::from(native.origin.x), -(300.0 * scale) as i32);
+        assert_eq!(i32::from(native.origin.y), -40 - (440.0 * scale) as i32);
+        assert_eq!(bounds.size, size(px(300.0), px(440.0)));
+    }
 }
 
 #[test]

@@ -9,7 +9,7 @@ param(
     [string]$LocalProductRoot,
     [string]$CloseLibraryPath,
     [switch]$RemovePersonalData,
-    [string]$CorrelationId = [Guid]::NewGuid().ToString('N'),
+    [string]$CorrelationId = [Guid]::NewGuid().ToString('D'),
     [string]$FixtureRoot = '',
     [string]$FixtureEffectsPath = ''
 )
@@ -137,101 +137,23 @@ function Get-NxToolsDirectoryIdentity([string]$Path) {
     [NxToolsUninstallNative]::DirectoryIdentity((Get-NxToolsFullPath $Path))
 }
 
-function Convert-NxToolsRegistryValue($Value) {
-    $kind = [string]$Value.Kind
-    $data = switch ($kind) {
-        'String' { [string]$Value.Text }
-        'ExpandString' { [string]$Value.Text }
-        'Dword' { [int]$Value.Number }
-        'Qword' { [long]$Value.Number }
-        'MultiString' { [string[]]@($Value.Strings) }
-        'Binary' { [Convert]::FromBase64String([string]$Value.Base64) }
-        default { throw [IO.InvalidDataException]::new('Unsupported archive integration Registry value kind.') }
-    }
-    [pscustomobject]@{ Kind = $kind; Data = $data }
-}
-
-function Get-NxToolsRegistryKind([string]$Kind) {
-    switch ($Kind) {
-        'String' { [Microsoft.Win32.RegistryValueKind]::String }
-        'ExpandString' { [Microsoft.Win32.RegistryValueKind]::ExpandString }
-        'Dword' { [Microsoft.Win32.RegistryValueKind]::DWord }
-        'Qword' { [Microsoft.Win32.RegistryValueKind]::QWord }
-        'MultiString' { [Microsoft.Win32.RegistryValueKind]::MultiString }
-        'Binary' { [Microsoft.Win32.RegistryValueKind]::Binary }
-        default { throw [IO.InvalidDataException]::new('Unsupported archive integration Registry value kind.') }
-    }
-}
-
-function Test-NxToolsRegistryValueEqual($ActualData, [Microsoft.Win32.RegistryValueKind]$ActualKind, $Expected) {
-    if ($ActualKind -ne (Get-NxToolsRegistryKind $Expected.Kind)) { return $false }
-    if ($Expected.Kind -eq 'Binary') {
-        $actualBytes = [byte[]]$ActualData; $expectedBytes = [byte[]]$Expected.Data
-        if ($actualBytes.Length -ne $expectedBytes.Length) { return $false }
-        for ($index = 0; $index -lt $actualBytes.Length; $index++) { if ($actualBytes[$index] -ne $expectedBytes[$index]) { return $false } }
-        return $true
-    }
-    if ($Expected.Kind -eq 'MultiString') {
-        $actualStrings = [string[]]$ActualData; $expectedStrings = [string[]]$Expected.Data
-        if ($actualStrings.Length -ne $expectedStrings.Length) { return $false }
-        for ($index = 0; $index -lt $actualStrings.Length; $index++) {
-            if (!$actualStrings[$index].Equals($expectedStrings[$index], [StringComparison]::Ordinal)) { return $false }
+function Restore-NxToolsArchiveIntegration([string]$InstallDirectory, [string]$CorrelationId) {
+    $archiveCorrelation = [Guid]::ParseExact($CorrelationId, 'D')
+    $platformHostPath = Join-Path $InstallDirectory 'NxTools.PlatformHost.exe'
+    $archiveWatch = [Diagnostics.Stopwatch]::StartNew()
+    Write-Output "installer.archive_uninstall.started correlation=$archiveCorrelation"
+    $archiveProcess = Start-Process -FilePath $platformHostPath -ArgumentList "--uninstall-archive-integration $archiveCorrelation" -WindowStyle Hidden -Wait -PassThru
+    try {
+        $archiveExit = $archiveProcess.ExitCode
+        Write-Output "installer.archive_uninstall.terminal correlation=$archiveCorrelation exit_code=$archiveExit elapsed_ms=$($archiveWatch.ElapsedMilliseconds)"
+        if ($archiveExit -ne 0) {
+            $archiveFailure = [InvalidOperationException]::new('Current-user archive integration restoration was not confirmed.')
+            $archiveFailure.Data['ArchiveIntegrationExit'] = $archiveExit
+            throw $archiveFailure
         }
-        return $true
+    } finally {
+        $archiveProcess.Dispose()
     }
-    return $ActualData -eq $Expected.Data
-}
-
-function Remove-NxToolsArchiveRegistration([string]$LedgerPath) {
-    if (!(Test-Path -LiteralPath $LedgerPath -PathType Leaf)) { return }
-    if ((Get-Item -LiteralPath $LedgerPath).Length -gt 1MB) { throw [IO.InvalidDataException]::new('Archive integration ledger exceeds its bound.') }
-    $ledger = Get-Content -LiteralPath $LedgerPath -Raw -Encoding UTF8 | ConvertFrom-Json
-    if ([int]$ledger.Version -ne 1 -or $null -eq $ledger.Values) { throw [IO.InvalidDataException]::new('Archive integration ledger is invalid.') }
-    $facts = @($ledger.Values)
-    [array]::Reverse($facts)
-    foreach ($fact in $facts) {
-        $keyPath = [string]$fact.KeyPath
-        $valueName = [string]$fact.ValueName
-        $cleanupRoot = [string]$fact.CleanupRootPath
-        if (!$keyPath.StartsWith('Software\Classes\', [StringComparison]::OrdinalIgnoreCase) -or
-            !$cleanupRoot.StartsWith('Software\Classes\', [StringComparison]::OrdinalIgnoreCase) -or
-            $keyPath.IndexOf('UserChoice', [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
-            (!$keyPath.Equals($cleanupRoot, [StringComparison]::OrdinalIgnoreCase) -and
-             !$keyPath.StartsWith($cleanupRoot + '\', [StringComparison]::OrdinalIgnoreCase))) {
-            throw [IO.InvalidDataException]::new('Archive integration ledger escaped current-user Classes ownership.')
-        }
-        $applied = Convert-NxToolsRegistryValue $fact.Applied
-        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($keyPath, $true)
-        try {
-            if ($null -eq $key -or !($key.GetValueNames() -contains $valueName)) { continue }
-            $actual = $key.GetValue($valueName, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
-            if (!(Test-NxToolsRegistryValueEqual $actual ($key.GetValueKind($valueName)) $applied)) { continue }
-            if ([bool]$fact.PriorExists) {
-                $prior = Convert-NxToolsRegistryValue $fact.Prior
-                $key.SetValue($valueName, $prior.Data, (Get-NxToolsRegistryKind $prior.Kind))
-            } else {
-                $key.DeleteValue($valueName, $false)
-            }
-        } finally {
-            if ($null -ne $key) { $key.Dispose() }
-        }
-        if (![bool]$fact.PriorExists) {
-            $missing = @($fact.MissingOwnedKeyPaths) | Sort-Object Length -Descending
-            foreach ($missingPath in $missing) {
-                $owned = $missingPath.Equals($cleanupRoot, [StringComparison]::OrdinalIgnoreCase) -or
-                    $missingPath.StartsWith($cleanupRoot + '\', [StringComparison]::OrdinalIgnoreCase)
-                if (!$owned) { continue }
-                $candidate = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey([string]$missingPath, $false)
-                try {
-                    if ($null -eq $candidate -or $candidate.ValueCount -ne 0 -or $candidate.SubKeyCount -ne 0) { continue }
-                } finally {
-                    if ($null -ne $candidate) { $candidate.Dispose() }
-                }
-                [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKey([string]$missingPath, $false)
-            }
-        }
-    }
-    Remove-Item -LiteralPath $LedgerPath -Force
 }
 
 function Remove-NxToolsBrowserRegistration([string]$InstallDirectory, [string]$LocalProductRoot) {
@@ -275,7 +197,7 @@ function Remove-NxToolsBrowserRegistration([string]$InstallDirectory, [string]$L
 }
 
 function Remove-NxToolsOwnedRegistrations([string]$InstallDirectory, [string]$LocalProductRoot) {
-    Remove-NxToolsArchiveRegistration (Join-Path $LocalProductRoot 'data\archive-shell-integration-applied.json')
+    Restore-NxToolsArchiveIntegration $InstallDirectory $CorrelationId
     Remove-NxToolsBrowserRegistration $InstallDirectory $LocalProductRoot
 }
 
@@ -467,7 +389,7 @@ function Remove-NxToolsKnownProjectData([string]$ConfigRoot, [string]$DataRoot, 
         Remove-NxToolsOwnedFile $entry.FullName
     }
     foreach ($name in @('downloads.sqlite3', 'downloads.sqlite3-wal', 'downloads.sqlite3-shm',
-        'quick-launch.db', 'quick-launch.db-wal', 'quick-launch.db-shm', 'archive-shell-integration-applied.json')) {
+        'quick-launch.db', 'quick-launch.db-wal', 'quick-launch.db-shm')) {
         Remove-NxToolsOwnedFile (Join-Path $DataRoot $name)
     }
     foreach ($name in @('desktop.lock', 'desktop.hints', 'indexer.lock', 'indexer.hints')) {
@@ -548,6 +470,12 @@ try {
 } catch {
     $failure = $_.Exception
     while ($failure.InnerException) { $failure = $failure.InnerException }
+    if ($failure.Data.Contains('ArchiveIntegrationExit')) {
+        $archiveExit = [int]$failure.Data['ArchiveIntegrationExit']
+        Write-Output "installer.uninstall_cleanup.failed correlation=$CorrelationId archive_exit_code=$archiveExit elapsed_ms=$($watch.ElapsedMilliseconds)"
+        if ($archiveExit -eq 12) { exit 12 }
+        exit 11
+    }
     $nativeCode = if ($failure -is [ComponentModel.Win32Exception]) { $failure.NativeErrorCode } elseif ($failure -is [UnauthorizedAccessException]) { 5 } else { 0 }
     Write-Output "installer.uninstall_cleanup.failed correlation=$CorrelationId native_code=$nativeCode exception_type=$($failure.GetType().FullName) elapsed_ms=$($watch.ElapsedMilliseconds)"
     if ($nativeCode -eq 5) { exit 5 }

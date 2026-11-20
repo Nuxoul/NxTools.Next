@@ -88,3 +88,6 @@ picker source. PlatformHost presents the WinForms image dialog through `PickerOw
 uses the authenticated source as the modal owner and temporarily suspends the owned floating TOPMOST
 floating TOPMOST surfaces until the modal call returns. Cancel remains quiet; the owner is checked
 again after the dialog exits.
+
+## Cursor-monitor search placement
+`FloatingAssistantCoordinator::Publish` samples the pointer, HMONITOR, work area and effective DPI for an admitted text drop. `FloatingAssistantContract.Event` carries the same optional `cursor_monitor` snapshot through the original generation/sequence/drop owner. `actions.rs::Route::Search` forwards it to the original Quick Launch request instead of assuming the primary display at96DPI. No action classification, foreground target, staging lease or search-input ownership changes.

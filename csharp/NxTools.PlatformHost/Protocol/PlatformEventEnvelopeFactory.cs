@@ -79,6 +79,7 @@ internal static class PlatformEventEnvelopeFactory
                     panel.CursorY,
                     panel.CursorDisplayIndex,
                     panel.CursorMonitorDpi,
+                    panel.CursorMonitor,
                     panel.RequestedAtUnixMs,
                     panel.EventSequence
                 }
@@ -93,6 +94,7 @@ internal static class PlatformEventEnvelopeFactory
                     panel.CursorY,
                     panel.CursorDisplayIndex,
                     panel.CursorMonitorDpi,
+                    panel.CursorMonitor,
                     panel.RequestedAtUnixMs,
                     panel.DirectoryNavigationContext,
                     panel.CorrelationId

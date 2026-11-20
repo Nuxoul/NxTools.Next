@@ -6,6 +6,191 @@
 use super::*;
 
 impl DownloadApplication {
+    pub(super) fn accept_controlled_progress_intent(
+        &mut self,
+        context: &ControlledBrowserDialogContext,
+        task_id: DownloadTaskId,
+        mode: DownloadSubmitMode,
+        delayed: bool,
+        (source, native_handle): (AnyWindowHandle, i64),
+        cx: &mut Context<Self>,
+    ) {
+        if !self.show_progress_window || mode != DownloadSubmitMode::StartNow {
+            let _ = source.update(cx, |_, window, _| window.remove_window());
+            return;
+        }
+        #[cfg(test)]
+        let native_handle = self
+            .new_download_native_handles_override
+            .map_or(native_handle, |(_, target)| target);
+        let placement = if delayed {
+            ControlledProgressPlacement::Background
+        } else if native_handle == 0 {
+            ControlledProgressPlacement::Centered
+        } else {
+            ControlledProgressPlacement::Capturing {
+                command_id: uuid::Uuid::new_v4(),
+                source,
+                started_at: Instant::now(),
+            }
+        };
+        self.pending_controlled_progress.insert(
+            task_id,
+            PendingControlledProgress {
+                correlation_id: context.correlation_id,
+                placement,
+            },
+        );
+        info!(event = "download.controlled_progress.accepted", correlation_id = %context.correlation_id,
+            task_id = %task_id.as_uuid(), delayed, "controlled progress intent retained until activation");
+        let ControlledProgressPlacement::Capturing { command_id, .. } = placement else {
+            let _ = source.update(cx, |_, window, _| window.remove_window());
+            if let Some(status) = self.task(task_id).map(|task| task.task.status()) {
+                self.reconcile_controlled_progress(task_id, status, cx);
+            }
+            return;
+        };
+        // Native capture must finish while the source HWND still exists. Use a
+        // separate one-shot key so an abandoned confirmation cannot position a
+        // later explicit open of the same task.
+        let command = PlatformCommand::StashWindowBounds(StashWindowBoundsCommand {
+            window_handle: native_handle,
+            key: command_id.to_string(),
+        });
+        if self
+            .platform
+            .send_command_with_id_correlated(command, command_id, context.correlation_id)
+            .is_err()
+        {
+            self.finish_controlled_progress_anchor(
+                command_id,
+                false,
+                "dispatch_rejected",
+                None,
+                cx,
+            );
+            return;
+        }
+        info!(event = "download.controlled_progress.anchor_started", correlation_id = %context.correlation_id,
+            %command_id, task_id = %task_id.as_uuid(), "native source anchor capture requested");
+        cx.spawn(async move |application, cx| {
+            cx.background_executor().timer(Duration::from_secs(5)).await;
+            let _ = application.update(cx, |application, cx| {
+                application
+                    .finish_controlled_progress_anchor(command_id, false, "timeout", None, cx);
+            });
+        })
+        .detach();
+    }
+
+    pub(super) fn finish_controlled_progress_anchor(
+        &mut self,
+        command_id: uuid::Uuid,
+        success: bool,
+        reason: &'static str,
+        native_error_code: Option<i32>,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some((task_id, pending, source, started_at)) = self
+            .pending_controlled_progress
+            .iter_mut()
+            .find_map(|(task_id, pending)| match pending.placement {
+                ControlledProgressPlacement::Capturing {
+                    command_id: current,
+                    source,
+                    started_at,
+                } if current == command_id => Some((*task_id, pending, source, started_at)),
+                _ => None,
+            })
+        else {
+            return false;
+        };
+        pending.placement = if success {
+            ControlledProgressPlacement::Captured(command_id)
+        } else {
+            ControlledProgressPlacement::Centered
+        };
+        info!(event = "download.controlled_progress.anchor_finished", correlation_id = %pending.correlation_id,
+            %command_id, task_id = %task_id.as_uuid(), success, reason, ?native_error_code,
+            elapsed_ms = started_at.elapsed().as_millis(), "native source anchor capture finished");
+        let _ = source.update(cx, |_, window, _| window.remove_window());
+        if let Some(status) = self.task(task_id).map(|task| task.task.status()) {
+            self.reconcile_controlled_progress(task_id, status, cx);
+        }
+        true
+    }
+
+    pub(super) fn retire_controlled_progress(
+        &mut self,
+        task_id: DownloadTaskId,
+        reason: &'static str,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(pending) = self.pending_controlled_progress.remove(&task_id) {
+            if let ControlledProgressPlacement::Capturing { source, .. } = pending.placement {
+                let _ = source.update(cx, |_, window, _| window.remove_window());
+            }
+            info!(event = "download.controlled_progress.retired", correlation_id = %pending.correlation_id,
+                task_id = %task_id.as_uuid(), reason, "controlled progress intent retired");
+        }
+    }
+
+    pub(super) fn reconcile_controlled_progress(
+        &mut self,
+        task_id: DownloadTaskId,
+        status: DownloadStatus,
+        cx: &mut Context<Self>,
+    ) {
+        if matches!(
+            status,
+            DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled
+        ) {
+            self.retire_controlled_progress(task_id, "task_terminal", cx);
+            return;
+        }
+        if !is_active_download_progress(status) {
+            return;
+        }
+        // Held tasks are Created; only the committed engine scheduler can
+        // enter an active phase. The snapshot also covers coalesced events.
+        let Some(pending) = self.pending_controlled_progress.get(&task_id) else {
+            return;
+        };
+        if !self.show_progress_window {
+            self.retire_controlled_progress(task_id, "disabled", cx);
+            return;
+        }
+        let placement = pending.placement;
+        if matches!(placement, ControlledProgressPlacement::Capturing { .. }) {
+            return;
+        }
+        let correlation_id = pending.correlation_id;
+        self.pending_controlled_progress.remove(&task_id);
+        let directive = match placement {
+            ControlledProgressPlacement::Background => self
+                .task_window_lifecycle
+                .request_background_progress(task_id),
+            _ => self.task_window_lifecycle.request_progress(task_id),
+        };
+        info!(event = "download.controlled_progress.consumed", %correlation_id, task_id = %task_id.as_uuid(),
+            ?directive, "committed task consumed its automatic progress intent");
+        if let (
+            ControlledProgressPlacement::Captured(anchor),
+            DownloadWindowDirective::OpenAndFocus(phase),
+        ) = (placement, directive)
+        {
+            self.open_task_window_with_anchor(
+                task_id,
+                phase,
+                Some(TaskWindowActivation::Fresh(phase)),
+                Some((anchor, correlation_id)),
+                cx,
+            );
+        } else {
+            self.apply_task_window_directive(task_id, directive, cx);
+        }
+    }
+
     pub(crate) fn request_task_window(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
         self.observe_opened_destination_conflict(task_id);
         let phase = self
@@ -156,6 +341,7 @@ impl DownloadApplication {
             window_generation = %entry.generation,
             "download task window closed natively; lifecycle registration released"
         );
+        self.retire_controlled_progress(task_id, "window_closed", cx);
         self.clear_task_window_registration(task_id);
         cx.notify();
     }
@@ -164,6 +350,7 @@ impl DownloadApplication {
     /// authoritative; otherwise the next task event targets a destroyed window
     /// and the recovery path produces a visible remove/re-create flash.
     pub(crate) fn close_task_window(&mut self, task_id: DownloadTaskId, cx: &mut Context<Self>) {
+        self.retire_controlled_progress(task_id, "window_closed", cx);
         if let Some(entry) = self.clear_task_window_registration(task_id) {
             entry.view.read(cx).cancel_source_draft();
             let _ = entry
@@ -192,6 +379,17 @@ impl DownloadApplication {
         task_id: DownloadTaskId,
         phase: DownloadWindowPhase,
         activation: Option<TaskWindowActivation>,
+        cx: &mut Context<Self>,
+    ) {
+        self.open_task_window_with_anchor(task_id, phase, activation, None, cx);
+    }
+
+    fn open_task_window_with_anchor(
+        &mut self,
+        task_id: DownloadTaskId,
+        phase: DownloadWindowPhase,
+        activation: Option<TaskWindowActivation>,
+        source_anchor: Option<(uuid::Uuid, uuid::Uuid)>,
         cx: &mut Context<Self>,
     ) {
         let application = cx.entity();
@@ -317,31 +515,45 @@ impl DownloadApplication {
                         generation: window_generation,
                     },
                 );
-                // Inherit the stashed predecessor position (the replaced dialog
-                // or the last closed window for this task) in the same command
-                // batch; a stash miss keeps the centered creation position.
+                // Keep the existing serial placement/show order. Native command
+                // results report the actual placement and visibility outcomes.
+                let send_presentation = |stage, command| {
+                    if let Some((_, correlation_id)) = source_anchor {
+                        if let Err(error) = self
+                            .platform
+                            .send_command_correlated(command, correlation_id)
+                        {
+                            warn!(event = "download.controlled_progress.presentation_rejected",
+                                %correlation_id, task_id = %task_id.as_uuid(), %window_generation,
+                                stage, %error, "progress presentation command was not queued");
+                        }
+                    } else {
+                        let _ = self.platform.send_command(command);
+                    }
+                };
                 let native_handle = *native_slot.borrow();
                 if native_handle != 0 {
                     let scale = *scale_slot.borrow();
-                    let _ = self
-                        .platform
-                        .send_command(PlatformCommand::MoveWindowCenteredOverKey(
+                    let key = source_anchor.map_or(*task_id.as_uuid(), |(key, _)| key);
+                    send_presentation(
+                        "placement",
+                        PlatformCommand::MoveWindowCenteredOverKey(
                             MoveWindowCenteredOverKeyCommand {
                                 window_handle: native_handle,
-                                key: task_id.as_uuid().to_string(),
+                                key: key.to_string(),
                                 width: (window_size.width.as_f32() * scale).round() as i32,
                                 height: (window_size.height.as_f32() * scale).round() as i32,
                             },
-                        ));
+                        ),
+                    );
                 }
-                let _ = self
-                    .platform
-                    .send_command(PlatformCommand::SetWindowVisibility(
-                        SetWindowVisibilityCommand {
-                            window_handle: *native_slot.borrow(),
-                            visible: true,
-                        },
-                    ));
+                send_presentation(
+                    "visibility",
+                    PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+                        window_handle: native_handle,
+                        visible: true,
+                    }),
+                );
                 if activation.is_none()
                     && matches!(
                         phase,

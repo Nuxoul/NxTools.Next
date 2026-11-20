@@ -297,9 +297,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
 
     public Task<WindowsCommandResult> ConfigureClipboardAsync(
         ConfigureClipboardCommand command,
+        Guid correlationId,
         CancellationToken cancellationToken)
         => (_window ?? throw new InvalidOperationException("Windows message window is unavailable."))
-            .EnqueueClipboardConfiguration(command, cancellationToken);
+            .EnqueueClipboardConfiguration(command, correlationId, cancellationToken);
 
     public Task<WindowsCommandResult> SetClipboardCapturePausedAsync(
         SetClipboardCapturePausedCommand command, Guid correlationId, CancellationToken cancellationToken)

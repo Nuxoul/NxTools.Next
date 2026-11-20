@@ -23,6 +23,28 @@ pub(super) struct PendingIntegration {
     reply: IntegrationReply,
 }
 
+pub(crate) fn integration_command(
+    action: ArchiveShellIntegrationAction,
+    desired: nxtools_core::archive::ArchiveShellIntegrationSettings,
+) -> ArchiveShellIntegrationCommand {
+    ArchiveShellIntegrationCommand {
+        version: VERSION,
+        action,
+        desired_revision: desired.desired_revision,
+        classic_cascade: desired.classic_cascade,
+        open_with: desired.open_with,
+        extensions: desired.extensions,
+        double_click_action: desired.double_click_action.wire_name().into(),
+        set_default: desired.set_default,
+        menu_layout: desired.menu_layout.wire_name().into(),
+        menu_commands: desired
+            .menu_commands
+            .iter()
+            .map(|command| command.wire_name().to_owned())
+            .collect(),
+    }
+}
+
 /// Requests one explicit integration action through the existing archive owner.
 pub(crate) fn request(
     action: ArchiveShellIntegrationAction,
@@ -109,22 +131,8 @@ impl ArchiveApplication {
         reply: IntegrationReply,
         cx: &mut Context<Self>,
     ) {
-        let command = ArchiveShellIntegrationCommand {
-            version: VERSION,
-            action,
-            desired_revision: desired.desired_revision,
-            classic_cascade: desired.classic_cascade,
-            open_with: desired.open_with,
-            extensions: desired.extensions,
-            double_click_action: desired.double_click_action.wire_name().into(),
-            set_default: desired.set_default,
-            menu_layout: desired.menu_layout.wire_name().into(),
-            menu_commands: desired
-                .menu_commands
-                .iter()
-                .map(|command| command.wire_name().to_owned())
-                .collect(),
-        };
+        let desired_revision = desired.desired_revision;
+        let command = integration_command(action, desired);
         let correlation_id = Uuid::new_v4();
         let finish = |reply: IntegrationReply, outcome, cx: &mut Context<Self>| {
             cx.defer(move |cx| reply(outcome, cx));
@@ -163,7 +171,7 @@ impl ArchiveApplication {
             finish(reply, IntegrationOutcome::NotDelivered("disconnected"), cx);
             return;
         }
-        tracing::info!(event = "archive.shell_integration.request_started", %correlation_id, action = ?action, desired_revision = desired.desired_revision, "archive integration request accepted");
+        tracing::info!(event = "archive.shell_integration.request_started", %correlation_id, action = ?action, desired_revision, "archive integration request accepted");
     }
 
     /// Returns true when the result belonged to an integration request.
@@ -277,7 +285,10 @@ mod tests {
         assert_eq!(wire.desired_revision, 7);
         assert_eq!(wire.extensions, vec![".zip".to_owned(), ".7z".to_owned()]);
         assert_eq!(wire.double_click_action, "smart");
-        assert!(wire.set_default, "the saved default claim reaches the native owner");
+        assert!(
+            wire.set_default,
+            "the saved default claim reaches the native owner"
+        );
         assert_eq!(wire.menu_layout, "flat");
         assert_eq!(wire.menu_commands, vec!["test", "create"]);
         assert!(endpoint.try_receive_command_for_contract_test().is_err());

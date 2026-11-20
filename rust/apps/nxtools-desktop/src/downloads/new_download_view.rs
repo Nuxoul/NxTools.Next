@@ -1365,6 +1365,7 @@ impl NewDownloadView {
                 handoff_id = %context.handoff_id,
                 "scheduling controlled browser handoff acceptance"
             );
+            let delayed = request.scheduled_at_unix_ms.is_some();
             cx.defer(move |cx| {
                 if !context.is_active_owner(source_window) {
                     let _ = view.update(cx, |view, cx| {
@@ -1380,8 +1381,17 @@ impl NewDownloadView {
                         .accept_controlled_browser_handoff(&context, request, mode, resolution, cx)
                 });
                 match result {
-                    Ok(_) if context.mark_held(source_window) => {
-                        let _ = source_window.update(cx, |_, window, _| window.remove_window());
+                    Ok(task_id) if context.mark_held(source_window) => {
+                        application.update(cx, |application, cx| {
+                            application.accept_controlled_progress_intent(
+                                &context,
+                                task_id,
+                                mode,
+                                delayed,
+                                (source_window, source_native_handle),
+                                cx,
+                            );
+                        });
                     }
                     Ok(_) => {
                         application.update(cx, |application, cx| {

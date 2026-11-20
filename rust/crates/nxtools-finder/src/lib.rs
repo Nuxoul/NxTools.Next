@@ -13,6 +13,9 @@ mod extensions;
 mod pinyin;
 mod query;
 mod ranking;
+mod windows_applications;
+use windows_applications::system_application_aliases;
+pub use windows_applications::{InstalledApplication, is_packaged_application_target};
 
 #[cfg(test)]
 use ranking::unified_search_rank;
@@ -252,6 +255,8 @@ impl ApplicationMatchMaterial {
 
 pub struct FinderCatalog {
     entries: Vec<ApplicationEntry>,
+    root_entries: Vec<ApplicationEntry>,
+    installed_entries: Vec<ApplicationEntry>,
     match_materials: Vec<ApplicationMatchMaterial>,
     history: Connection,
     history_path: PathBuf,
@@ -295,13 +300,11 @@ impl FinderCatalog {
         let query_usage = load_query_history(&history)?;
         let recent_directories = load_recent_directories(&history)?;
         let snapshot = scan_application_roots(roots);
-        Ok(Self {
-            match_materials: snapshot
-                .entries
-                .iter()
-                .map(ApplicationMatchMaterial::build)
-                .collect(),
-            entries: snapshot.entries,
+        let mut catalog = Self {
+            root_entries: snapshot.entries,
+            installed_entries: Vec::new(),
+            match_materials: Vec::new(),
+            entries: Vec::new(),
             history,
             history_path: history_path.to_path_buf(),
             usage,
@@ -309,7 +312,9 @@ impl FinderCatalog {
             recent_directories,
             status: snapshot.status,
             roots: roots.to_vec(),
-        })
+        };
+        catalog.rebuild_application_entries();
+        Ok(catalog)
     }
 
     pub fn entries(&self) -> &[ApplicationEntry] {
@@ -366,13 +371,9 @@ impl FinderCatalog {
     }
 
     pub fn replace_snapshot(&mut self, snapshot: ApplicationCatalogSnapshot) {
-        self.match_materials = snapshot
-            .entries
-            .iter()
-            .map(ApplicationMatchMaterial::build)
-            .collect();
-        self.entries = snapshot.entries;
+        self.root_entries = snapshot.entries;
         self.status = snapshot.status;
+        self.rebuild_application_entries();
     }
 
     pub fn apply_refresh_snapshot(
@@ -565,8 +566,8 @@ impl FinderCatalog {
                         .chain(
                             system_application_aliases(entry)
                                 .iter()
-                                .find(|alias| **alias == query)
-                                .and_then(|alias| file_query.score_literal(alias, &entry.target)),
+                                .filter_map(|alias| file_query.score_literal(alias, &entry.target))
+                                .max(),
                         )
                         .max();
                     // The pinyin channel only contributes below the direct tiers so a
@@ -1101,6 +1102,8 @@ fn system_entries() -> Vec<ApplicationEntry> {
         ("注册表编辑器", "regedit.exe"),
         ("控制面板", "control.exe"),
         ("记事本", "notepad.exe"),
+        ("计算器", "calc.exe"),
+        ("画图", "mspaint.exe"),
         ("设置", "ms-settings:"),
     ]
     .into_iter()
@@ -1111,17 +1114,6 @@ fn system_entries() -> Vec<ApplicationEntry> {
         source: ApplicationSource::System,
     })
     .collect()
-}
-
-fn system_application_aliases(entry: &ApplicationEntry) -> &'static [&'static str] {
-    if entry.source != ApplicationSource::System {
-        return &[];
-    }
-    match entry.target.as_str() {
-        "notepad.exe" => &["notepad", "windows notepad"],
-        "ms-settings:" => &["settings", "windows settings", "系统设置"],
-        _ => &[],
-    }
 }
 
 fn stable_entry_id(target: &str) -> String {

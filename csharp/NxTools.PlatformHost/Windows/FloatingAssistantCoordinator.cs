@@ -479,7 +479,27 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
     {
         // Only the fixed STA calls Publish; rejected delivery retires its exact staging owner.
         if (_stopping) return false;
-        try { return _publish(FloatingAssistantContract.Event(command, id, ++_sequence, kind, x, y, delta, fullscreen, drop, imagePath, dropId)); }
+        try
+        {
+            CursorMonitorSnapshot? cursorMonitor = null;
+            if (kind == "drop" && Native.GetCursorPos(out var cursor))
+            {
+                x = cursor.X;
+                y = cursor.Y;
+                var monitor = Native.MonitorFromPoint(cursor, 2);
+                var info = new Native.MonitorInfo { Size = Marshal.SizeOf<Native.MonitorInfo>() };
+                if (monitor != IntPtr.Zero && Native.GetMonitorInfoW(monitor, ref info))
+                {
+                    var dpi = Native.GetDpiForMonitor(monitor, 0, out var dpiX, out _) == 0
+                        ? dpiX : Native.GetDpiForWindow(new IntPtr(command.WindowHandle));
+                    cursorMonitor = new CursorMonitorSnapshot(unchecked((ulong)monitor.ToInt64()),
+                        info.Work.Left, info.Work.Top, (uint)(info.Work.Right - info.Work.Left),
+                        (uint)(info.Work.Bottom - info.Work.Top), Math.Max(96u, dpi));
+                }
+            }
+            return _publish(FloatingAssistantContract.Event(command, id, ++_sequence, kind, x, y,
+                delta, fullscreen, drop, imagePath, dropId, cursorMonitor));
+        }
         catch { return false; }
     }
 
@@ -687,6 +707,7 @@ internal sealed class FloatingAssistantCoordinator : IDisposable
         [DllImport("user32.dll", ExactSpelling = true)] internal static extern IntPtr GetAncestor(IntPtr window, uint flags);
         [DllImport("user32.dll", ExactSpelling = true)] internal static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll", ExactSpelling = true)] internal static extern IntPtr MonitorFromPoint(Point point, uint flags);
+        [DllImport("user32.dll", ExactSpelling = true)] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetCursorPos(out Point point);
         [DllImport("user32.dll", ExactSpelling = true)] internal static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
         [DllImport("shcore.dll", ExactSpelling = true)] internal static extern int GetDpiForMonitor(IntPtr monitor, int type, out uint x, out uint y);
         [DllImport("user32.dll", ExactSpelling = true)] internal static extern uint GetDpiForWindow(IntPtr window);

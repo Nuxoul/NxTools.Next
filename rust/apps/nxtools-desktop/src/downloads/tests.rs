@@ -3765,7 +3765,7 @@ fn assert_shared_dialog_shell(
     assert_eq!(footer.bottom(), shell.bottom());
 }
 
-fn download_application_for_window_test_with_platform(
+pub(super) fn download_application_for_window_test_with_platform(
     cx: &mut TestAppContext,
     label: &str,
 ) -> (

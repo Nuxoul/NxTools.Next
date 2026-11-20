@@ -21,6 +21,7 @@ internal sealed class PlatformCommandSequenceDispatcher
         "prepare_notification_window",
         "prepare_main_window",
         "activate_window",
+        "query_installed_applications",
         "query_shell_actions",
         "query_shell_submenu",
         "invoke_shell_action",

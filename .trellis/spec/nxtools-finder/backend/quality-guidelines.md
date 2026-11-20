@@ -123,3 +123,42 @@ ordinary Desktop completion, trust/identity/cancellation and attached-mode regre
 Wrong: compute/rank local results, keep only is_empty, then compute/rank again for publication.
 Correct: shared candidate visitor stops on the first valid ordinary hit; one original complete rank
 still owns visible results. Allocation/work reduction is not installed input-to-visible latency.
+
+## Scenario: Installed Windows applications
+### 1. Scope / Trigger
+Quick Launch application coverage includes packaged Windows/Store apps without Start Menu files.
+### 2. Signatures
+`FinderCatalog::replace_installed_applications(Vec<InstalledApplication>) -> Result<()>` consumes
+`{name:String,target:String}`. `PlatformCommand::QueryInstalledApplications` serializes as
+`{"command":"query_installed_applications"}`; original command-result data is a JSON string
+`{"applications":[{"name":"计算器","target":"shell:AppsFolder\\Microsoft.WindowsCalculator_8wekyb3d8bbwe!App"}]}`.
+### 3. Contracts
+C# `AppsFolderApplicationSource` owns STA/COM and package-family/AUMID/localized-name facts;
+`InstalledApplicationQuery::ExecuteBounded` runs detached with single native admission,5s logical
+wait and original1MiB frame accounting. Unknown installed packages require no allowlist. Rust owns
+root/installed snapshots separately, one merged catalog/rank/history and known bilingual aliases.
+Native packages supersede their classic fallback; known exact StartMenu/Desktop shortcuts also
+supersede static fallbacks. Calculator/Paint retain calc.exe/mspaint.exe when not superseded.
+QuickLaunchApplication registers one correlation/connection before dispatch; requests coalesce.
+Current receipt refreshes only the live ordinary query; closed/action-mode panels remain unchanged.
+AppsFolder targets use ordinary Shell Open, not file preview/icons/reveal/path-copy/elevation.
+Diagnostics carry accepted/start/terminal elapsed/native-code facts, not names/AUMIDs.
+### 4. Validation & Error Matrix
+Missing/invalid name or target rejects the entire Finder replacement. Exact AppsFolder prefix and
+one nonempty family!application,<=128ASCII letters/digits/._-! match native AUMID validation.
+Native exception/cancellation/budget failure has no partial data and retains last-good catalog;
+successful empty snapshot removes installed rows. Filesystem refresh preserves installed rows.
+Timeout15s/disconnect/disable retires Desktop ownership; stale replies cannot publish or reveal.
+### 5. Good/Base/Bad Cases
+Good: an unknown future installed app is searchable by its localized name. Base: legacy tools and
+filesystem roots keep original search/history. Bad: aliases manufacture absent package entries.
+### 6. Tests Required
+`tests/windows_applications.rs` covers bilingual/partial matches, unknown/absent apps, fallback
+suppression, root refresh/history, atomic invalid replacement, removal and native target parity.
+Desktop `windows_apps_` exercises original receipts, coalescing, failure/empty, connection/disable/
+timeout retirement, live/closed panel refresh and real action construction. C# exact
+`installed applications fixture` tests query/Shell routes with injected enumeration/process start;
+actual AppsFolder/activation acceptance requires separately authorized native execution.
+### 7. Wrong vs Correct
+Wrong: add one hardcoded executable for each reported missing app.
+Correct: enumerate installed packaged applications, merge complete snapshots, add aliases as metadata.

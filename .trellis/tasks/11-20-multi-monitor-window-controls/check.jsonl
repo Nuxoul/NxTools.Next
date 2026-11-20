@@ -1,0 +1,11 @@
+{"file":".trellis/spec/shared/verification.md","reason":"Scoped commands, effects review and evidence levels"}
+{"file":".trellis/spec/shared/engineering.md","reason":"Immediate result registration, stale ownership and section persistence"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Actual official Switch and existing Settings structure"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Production GPUI lifecycle, bounds and callbacks"}
+{"file":".trellis/spec/nxtools-core/backend/quality-guidelines.md","reason":"Default/explicit-value preservation"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Wire serialization/parser compatibility"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Applied native bounds/foreground and transactional integration results"}
+{"file":".trellis/spec/platformhost/installer-preparation.md","reason":"Original-user context and existing installation changes"}
+{"file":".trellis/spec/browser-extension/controlled-handoff.md","reason":"No progress activation before browser Commit"}
+{"file":".trellis/tasks/11-20-multi-monitor-window-controls/research/boundaries.md","reason":"Requirement-specific evidence and regression boundaries"}
+{"file":".trellis/tasks/11-20-multi-monitor-window-controls/research/listary-placement.md","reason":"Assert cursor/work-area/outer-width/quarter-height placement and per-summon reuse against verified Listary boundary"}

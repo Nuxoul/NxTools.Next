@@ -344,12 +344,13 @@ internal sealed partial class WindowsPlatformAdapter
 
         public Task<WindowsCommandResult> EnqueueClipboardConfiguration(
             ConfigureClipboardCommand command,
+            Guid correlationId,
             CancellationToken cancellationToken)
         {
             var completion = new TaskCompletionSource<WindowsCommandResult>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             _configurationRequests.Enqueue(new ClipboardConfigurationRequest(
-                command, cancellationToken, completion));
+                command, correlationId, cancellationToken, completion));
             if (!NativeMethods.PostMessage(Handle, WmConfigureClipboard, IntPtr.Zero, IntPtr.Zero))
             {
                 completion.TrySetResult(new WindowsCommandResult(
@@ -2526,7 +2527,7 @@ internal sealed partial class WindowsPlatformAdapter
         private void PublishPanelRequest()
         {
             var decision = QuickLaunchSummonGate.DispatchObserved(
-                triggerEnabled: true,
+                triggerEnabled: _clipboardPause.IsEnabled,
                 suppressInFullscreen: _clipboardSuppressInFullscreen,
                 trigger: QuickLaunchSummonTrigger.ClipboardHotKey,
                 queryFullscreenState: QuickLaunchSummonGate.QueryWindowsFullscreenState,
@@ -2573,7 +2574,7 @@ internal sealed partial class WindowsPlatformAdapter
                 cursor.Dpi,
                 requestedAtUnixMs,
                 eventSequence,
-                correlationId));
+                correlationId, cursor.Monitor));
         }
 
         private void PublishQuickLaunchPanelRequest(QuickLaunchSummonTrigger trigger)
@@ -2637,7 +2638,7 @@ internal sealed partial class WindowsPlatformAdapter
                 cursor.Dpi,
                 requestedAtUnixMs,
                 directoryNavigationContext,
-                correlationId));
+                correlationId, cursor.Monitor));
             if (directoryNavigationContext is null && !oneCommander &&
                 DirectoryNavigationAdapter.IsPotentialElevatedHost(target))
             {
@@ -2722,7 +2723,11 @@ internal sealed partial class WindowsPlatformAdapter
                     request.Completion.TrySetCanceled(request.CancellationToken);
                     continue;
                 }
-                request.Completion.TrySetResult(ApplyClipboardConfiguration(request.Command));
+                var started = Stopwatch.GetTimestamp();
+                WriteClipboardConfigurationDiagnostic("started", request, started, null);
+                var result = ApplyClipboardConfiguration(request.Command);
+                WriteClipboardConfigurationDiagnostic("completed", request, started, result);
+                request.Completion.TrySetResult(result);
             }
         }
 
@@ -2820,23 +2825,33 @@ internal sealed partial class WindowsPlatformAdapter
             // Privacy exclusions do not depend on whether the requested global hotkey is available.
             _captureExclusions = requestedExclusions;
 
-            var registration = _hotKeyRegistration.Apply(binding);
+            var capture = ApplyClipboardCaptureEnabled(command.Enabled);
+            var registration = _hotKeyRegistration.Apply(binding, command.Enabled && capture.Success);
+            if (!capture.Success) return capture;
             if (!registration.Success)
             {
                 return registration;
             }
             _captureLimits = requestedLimits;
             _clipboardSuppressInFullscreen = command.SuppressInFullscreen;
-            _log.Write("info", "clipboard.configuration_applied", null,
-                new Dictionary<string, object?>
-                {
-                    ["hotkey"] = binding.Display,
-                    ["excluded_process_count"] = _captureExclusions.ProcessNames.Count,
-                    ["max_text_bytes"] = _captureLimits.MaxTextBytes,
-                    ["max_image_bytes"] = _captureLimits.MaxImageBytes,
-                    ["max_image_pixels"] = _captureLimits.MaxImagePixels
-                });
             return new WindowsCommandResult(true);
+        }
+
+        private void WriteClipboardConfigurationDiagnostic(string stage, ClipboardConfigurationRequest request,
+            long started, WindowsCommandResult? result)
+        {
+            try
+            {
+                _log.Write(result?.Success == false ? "warning" : "info", "clipboard.configuration." + stage,
+                    request.CorrelationId, new Dictionary<string, object?>
+                    {
+                        ["enabled"] = request.Command.Enabled,
+                        ["success"] = result?.Success,
+                        ["native_error_code"] = result?.NativeErrorCode,
+                        ["elapsed_ms"] = Stopwatch.GetElapsedTime(started).TotalMilliseconds
+                    });
+            }
+            catch { /* Diagnostics do not alter applied feature availability. */ }
         }
 
 
@@ -3330,6 +3345,7 @@ internal sealed partial class WindowsPlatformAdapter
 
     private sealed record ClipboardConfigurationRequest(
         ConfigureClipboardCommand Command,
+        Guid CorrelationId,
         CancellationToken CancellationToken,
         TaskCompletionSource<WindowsCommandResult> Completion);
 

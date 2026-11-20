@@ -73,11 +73,21 @@ Reconciled against the actual old NxTools sources:
 
 NxTools.Next keeps these boundaries in Rust/C# form: `PopupLifecycle` owns the current reusable
 popup, `PreviewSession` owns one independent preview, C# owns native hotkeys and Windows focus APIs,
-and worker-confirmed actions update usage only after success. The current C# hotkey boundary also
+and worker-confirmed actions update usage only after success. The C# hotkey boundary uses a tested
+350ms debouncer in `ClipboardHotKeyDebouncer.cs`.
 - The old ViewModel marks ordinary paste usage before the Windows paste result is known. NxTools.Next
-  deliberately does not copy that failure-prone ordering: usage is persisted only after a successful
-  platform result, and failed actions must not reorder history.
-uses a tested 350ms debouncer in `ClipboardHotKeyDebouncer.cs`.
+  persists usage only after a successful platform result; failed actions must not reorder history.
+
+Multi-monitor/feature-toggle boundary (2026-11-20): rechecked old popup constructors/show/hide and PlaceNear/PlaceAtWithinWorkingArea in `D:\Code\NxTools\Views\ClipboardHistoryPopupWindow.axaml.cs:61-167,206-288`, plus passive `ClipboardPreviewWindow.cs:29-95`. Next's cursor display ordinal must not be compared to GPUI's HMONITOR-derived DisplayId. Keep one coherent cursor-monitor/work-area/DPI snapshot, final device-pixel bounds before reveal, parent-bound passive preview, and deferred session/generation checks. Persistent enabled intent is distinct from runtime temporary capture pause: disable actual native hotkey/capture and retire pending popup/detection/reveal, while retaining history and pause preferences. Link placement must use current sampled work area rather than primary_display. Exact source chains: `.trellis/tasks/11-20-multi-monitor-window-controls/research/boundaries.md`.
+
+`link_detection.rs` defers matched content to the original ClipboardApplication presentation owner.
+`link_placement.rs` samples the current monitor, hides reused content, applies NOACTIVATE and stages
+one offscreen frame, then hides, moves to the target monitor, applies final device-pixel client
+bounds and confirms passive show. Distinct stage receipts share one correlation; close, disable,
+pause generation, replacement, timeout or disconnect retires late work. The same LinkPanelSession
+and HWND are reused; no capture-triggered activation or primary-display fallback is used for a
+successfully sampled presentation.
+
 The old NxTools `ClipboardHistoryService.CleanupOrphanedImageFiles` scans only active recent rows
 after soft deletion; that can delete files still reachable through a recoverable deleted row. NxTools.Next
 must keep the stronger remaining-database-reference check instead of copying that cleanup shortcut.

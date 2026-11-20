@@ -593,7 +593,7 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
         .clipboard
         .upgrade()
         .map(|application| application.read(cx).link_panel_settings())
-        .unwrap_or((false, 6, LinkPanelPosition::Center));
+        .unwrap_or((false, 6, LinkPanelPosition::default()));
     let clipboard = this.clipboard.clone();
     let platform = this.platform.clone();
     let window_size = size(px(460.0), px(320.0));

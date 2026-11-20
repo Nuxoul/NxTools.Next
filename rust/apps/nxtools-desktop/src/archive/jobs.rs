@@ -10,6 +10,9 @@ use nxtools_protocol::{PlatformCommand, PlatformEvent, archive_job::*, archive_p
 use std::collections::VecDeque;
 #[path = "batch_jobs.rs"]
 mod batch_jobs;
+#[path = "job_activation.rs"]
+mod job_activation;
+use job_activation::{JobActivation, JobPresentation};
 
 pub(super) struct FormSlot {
     pub view: WeakEntity<OperationForm>,
@@ -62,6 +65,7 @@ pub(super) struct JobRecord {
     pub terminal: Option<ArchiveJobTerminal>,
     pub prompt: Option<ArchiveJobPrompt>,
     pub window: Option<(AnyWindowHandle, WeakEntity<JobProgressView>)>,
+    pub(super) placement: crate::ui::monitor_placement::MonitorPlacement,
     pub started: Instant,
     pub paused: bool,
     pub active_operation: Uuid,
@@ -146,6 +150,9 @@ pub(super) struct Jobs {
     retired: VecDeque<Uuid>,
     defer_pump: bool,
     defer_presentation: bool,
+    activations: HashMap<Uuid, JobActivation>,
+    #[cfg(test)]
+    activation_test_hwnd: Option<i64>,
     pub(super) readmissions: HashMap<Uuid, super::readmission::Readmission>,
     pub(super) attempts: HashMap<Uuid, Uuid>,
     pub(super) spaces: HashMap<Uuid, super::space_requests::Pending>,
@@ -664,6 +671,7 @@ impl ArchiveApplication {
                 },
             )
             .map_err(|_| "压缩包队列已满或资源预算不可用；请等待当前任务结束。".to_owned())?;
+        let placement = crate::ui::monitor_placement::active_monitor_placement(cx);
         self.jobs.records.insert(
             id,
             JobRecord {
@@ -684,6 +692,7 @@ impl ArchiveApplication {
                 terminal: None,
                 prompt: None,
                 window: None,
+                placement,
                 started: cx.background_executor().now(),
                 paused: false,
                 active_operation: id,
@@ -1459,6 +1468,9 @@ impl ArchiveApplication {
                 correlation_id,
                 result,
             } => {
+                if self.job_activation_result(*correlation_id, result, cx) {
+                    return true;
+                }
                 if self.create_output_result(*correlation_id, result, cx) {
                     return true;
                 }
@@ -1546,6 +1558,7 @@ impl ArchiveApplication {
                 false
             }
             PlatformNotification::Disconnected { generation, .. } => {
+                self.job_activations_disconnected(*generation);
                 self.clipboard_disconnected(*generation, cx);
                 self.create_output_disconnected(*generation, cx);
                 self.space_disconnected(cx);
@@ -1628,6 +1641,10 @@ impl ArchiveApplication {
         if record.terminal.is_some() {
             return;
         }
+        let connection = self.platform.connection_generation();
+        let current_terminal = connection.is_some()
+            && (record.connection == connection
+                || record.connection.is_none() && !self.jobs.queue.is_running(id));
         if let Some(created) = record.created.take() {
             terminal.files_committed = created.files_committed;
             terminal.bytes_committed = created.bytes_committed;
@@ -1753,7 +1770,7 @@ impl ArchiveApplication {
             }
         }
         self.notify_job(id, cx);
-        self.record_batch_terminal(id);
+        self.present_job_terminal(id, current_terminal, cx);
         if open_directory {
             self.locate_job_result(id, cx);
         }
@@ -2292,12 +2309,21 @@ impl ArchiveApplication {
             .and_then(|r| r.window.clone())
         {
             self.refresh_job(id, cx);
+            let owner = cx.entity().downgrade();
             cx.defer(move |cx| {
+                if !owner
+                    .read_with(cx, |app, _| {
+                        app.job_is_selected(id) && app.job_window_is_current(surface_id, window)
+                    })
+                    .unwrap_or(false)
+                {
+                    return;
+                }
                 let _ = window.update(cx, |_, window, cx| {
                     let _ = view.update(cx, |view, cx| view.show_detail(window, cx));
-                    window.activate_window();
                 });
             });
+            self.activate_job(id, JobPresentation::Reuse, cx);
             return;
         }
         let keep_open = record.completion.keep_open || record.terminal.is_some();
@@ -2305,10 +2331,12 @@ impl ArchiveApplication {
         let closing_owner = owner.clone();
         let capture = Rc::new(std::cell::RefCell::new(None));
         let captured = capture.clone();
-        let bounds = Bounds::centered(None, size(px(560.0), px(260.0)), cx);
+        let placement = record.placement;
+        let bounds = placement.centered(size(px(560.0), px(260.0)));
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                display_id: placement.display_id,
                 window_min_size: Some(size(px(480.0), px(260.0))),
                 app_id: Some(format!("NxTools.Archive.Job.{id}")),
                 ..crate::ui::components::titlebar::caption_window_options()
@@ -2317,10 +2345,15 @@ impl ArchiveApplication {
                 window.set_window_title("压缩包任务 — NxTools");
                 let view = cx.new(|cx| JobProgressView::new(id, owner, keep_open, cx));
                 *captured.borrow_mut() = Some(view.downgrade());
+                let closing_window = window.window_handle();
                 window.on_window_should_close(cx, move |_, cx| {
                     let owner = closing_owner.clone();
                     cx.defer(move |cx| {
-                        let _ = owner.update(cx, |app, cx| app.background_job(surface_id, cx));
+                        let _ = owner.update(cx, |app, cx| {
+                            if app.job_window_is_current(surface_id, closing_window) {
+                                app.background_job(surface_id, cx);
+                            }
+                        });
                     });
                     false
                 });
@@ -2332,6 +2365,7 @@ impl ArchiveApplication {
                 record.window = Some((window.into(), view));
             }
             self.refresh_job(id, cx);
+            self.activate_job(id, JobPresentation::Show, cx);
         }
     }
     pub(crate) fn background_job(&mut self, id: Uuid, cx: &mut Context<Self>) {
@@ -2366,6 +2400,7 @@ impl ArchiveApplication {
             .get_mut(&surface_id)
             .and_then(|record| record.window.take())
         {
+            self.retire_job_activation(surface_id, "retired");
             tracing::info!(event="archive.job.presentation_closed", job_id=%id, "archive progress closed without cancellation");
             let platform = self.platform.clone();
             cx.defer(move |cx| {
@@ -2607,10 +2642,18 @@ impl ArchiveApplication {
                     })
             })
             .unwrap_or_default();
-        let bounds = Bounds::centered(None, size(px(width), px(600.0)), cx);
+        let placement = modify
+            .as_ref()
+            .and_then(|(_, (id, _, _))| self.windows.get(id).map(|slot| slot.window))
+            .map(|owner| {
+                crate::ui::monitor_placement::owner_monitor_placement(None, Some(owner), cx)
+            })
+            .unwrap_or_else(|| crate::ui::monitor_placement::active_monitor_placement(cx));
+        let bounds = placement.centered(size(px(width), px(600.0)));
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
+                display_id: placement.display_id,
                 window_min_size: Some(size(px(480.0), px(360.0))),
                 ..crate::ui::components::titlebar::caption_window_options()
             },

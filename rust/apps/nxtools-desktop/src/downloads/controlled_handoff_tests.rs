@@ -10,6 +10,7 @@ struct ProbeServer {
     address: std::net::SocketAddr,
     requests: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
+    hold_response: Arc<AtomicBool>,
     worker: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -24,6 +25,8 @@ impl ProbeServer {
         let requests = Arc::new(AtomicUsize::new(0));
         let stop = Arc::new(AtomicBool::new(false));
         let worker_requests = Arc::clone(&requests);
+        let hold_response = Arc::new(AtomicBool::new(false));
+        let worker_hold_response = Arc::clone(&hold_response);
         let worker_stop = Arc::clone(&stop);
         let worker = std::thread::spawn(move || {
             while !worker_stop.load(Ordering::Acquire) {
@@ -38,6 +41,12 @@ impl ProbeServer {
                         let mut request = [0_u8; 4096];
                         let _ = stream.read(&mut request);
                         worker_requests.fetch_add(1, Ordering::AcqRel);
+                        while worker_hold_response.load(Ordering::Acquire) {
+                            if worker_stop.load(Ordering::Acquire) {
+                                return;
+                            }
+                            std::thread::sleep(Duration::from_millis(5));
+                        }
                         let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 8\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\nfixture!");
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
@@ -51,6 +60,7 @@ impl ProbeServer {
             address,
             requests,
             stop,
+            hold_response,
             worker: Some(worker),
         }
     }
@@ -70,6 +80,12 @@ impl ProbeServer {
             .expect("controlled probe worker")
             .join()
             .expect("bounded controlled probe worker");
+    }
+}
+
+impl Drop for ProbeServer {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Release);
     }
 }
 
@@ -618,4 +634,353 @@ fn controlled_edited_and_reprobed_resource_cannot_replace_browser_original(
     cx.run_until_parked();
     server.finish();
     let _ = std::fs::remove_dir_all(directory);
+}
+
+fn click_controlled_confirmation(
+    cx: &mut TestAppContext,
+    target: AnyWindowHandle,
+    selector: &'static str,
+) {
+    let mut surface = VisualTestContext::from_window(target, cx);
+    surface.refresh().expect("controlled confirmation");
+    let action = surface.debug_bounds(selector).expect("confirmation action");
+    surface.simulate_click(action.center(), Modifiers::default());
+    surface.run_until_parked();
+}
+
+fn commit_controlled(
+    application: &Entity<DownloadApplication>,
+    cx: &TestAppContext,
+    handoff_id: uuid::Uuid,
+    task_id: DownloadTaskId,
+) {
+    assert!(matches!(
+        engine_outcome(
+            application,
+            cx,
+            DownloadCommand::BrowserCommitHandoff { handoff_id, task_id },
+            handoff_id,
+        ),
+        DownloadCommandOutcome::BrowserHandoff {
+            state: BrowserHandoffState::Committed,
+            task_id: Some(committed),
+            ..
+        } if committed == task_id
+    ));
+}
+
+#[gpui_kit::test]
+fn controlled_progress_stashes_live_source_and_opens_once_only_after_commit(
+    cx: &mut TestAppContext,
+) {
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    let (application, directory, endpoint) =
+        super::tests::download_application_for_window_test_with_platform(cx, "controlled-progress");
+    let server = ProbeServer::new();
+    let existing = [8, 24].map(|limit| {
+        let mut request = controlled_request(&directory, server.url(&format!("older-{limit}.bin")));
+        request.connection_limit = Some(limit);
+        let task_id = application.read_with(cx, |app, _| {
+            app.engine
+                .enqueue(request, RequestOrigin::Internal)
+                .expect("seed existing request")
+        });
+        (task_id, limit)
+    });
+    let handoff_id = uuid::Uuid::new_v4();
+    let (source, _) = prepare_controlled(
+        &application,
+        cx,
+        controlled_request(&directory, server.url("progress.bin")),
+        handoff_id,
+    );
+    let (target, _) = wait_for_fixed_confirmation(&application, cx, source);
+    endpoint.set_connected_for_contract_test(true);
+    application.update(cx, |app, _| {
+        app.task_window_native_handle_override = Some(703)
+    });
+    server.hold_response.store(true, Ordering::Release);
+    let probe_requests = server.request_count();
+    click_controlled_confirmation(cx, target, "download-start-now");
+    let (state, task_id) = handoff_status(&application, cx, handoff_id);
+    assert_eq!(state, BrowserHandoffState::Held);
+    let task_id = task_id.expect("confirmed task");
+    assert_eq!(server.request_count(), probe_requests);
+    assert!(application.read_with(cx, |app, _| app.task_windows.is_empty()));
+    assert!(
+        target.update(cx, |_, _, _| {}).is_ok(),
+        "the source must live until native capture replies"
+    );
+    let (capture_id, key) =
+        std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .find_map(|envelope| match envelope.message {
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::StashWindowBounds(
+                    command,
+                )) => {
+                    assert_eq!(command.window_handle, 702);
+                    assert_eq!(envelope.correlation_id, Some(handoff_id));
+                    Some((envelope.id, command.key))
+                }
+                _ => None,
+            })
+            .expect("native capture of the fixed confirmation");
+    application.update(cx, |app, cx| {
+        app.handle_platform_notification(
+            PlatformNotification::CommandResult {
+                correlation_id: capture_id,
+                result: PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: None,
+                },
+            },
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    assert!(target.update(cx, |_, _, _| {}).is_err());
+    application.read_with(cx, |app, _| {
+        assert!(app.task_windows.is_empty());
+        assert!(app.task_window_activation_commands.borrow().is_empty());
+        assert_eq!(
+            app.engine
+                .task(task_id)
+                .expect("read task")
+                .expect("held task")
+                .task
+                .request()
+                .connection_limit,
+            Some(16)
+        );
+        for (existing_task, limit) in existing {
+            assert_eq!(
+                app.engine
+                    .task(existing_task)
+                    .expect("read existing task")
+                    .expect("existing task")
+                    .task
+                    .request()
+                    .connection_limit,
+                Some(limit)
+            );
+        }
+        assert_eq!(
+            app.default_queue()
+                .expect("default queue")
+                .max_concurrent_tasks,
+            Some(3)
+        );
+    });
+
+    commit_controlled(&application, cx, handoff_id, task_id);
+    cx.run_until_parked();
+    let window = application.read_with(cx, |app, _| {
+        assert_eq!(app.task_window_activation_commands.borrow().len(), 1);
+        app.task_windows
+            .get(&task_id)
+            .expect("progress on the same committed task")
+            .window
+    });
+    let mut presentation =
+        std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .filter(|envelope| envelope.correlation_id == Some(handoff_id))
+            .map(|envelope| envelope.message);
+    assert!(
+        matches!(presentation.next(), Some(nxtools_protocol::Message::PlatformCommand(
+        PlatformCommand::MoveWindowCenteredOverKey(command)))
+        if command.window_handle == 703 && command.key == key)
+    );
+    assert!(
+        matches!(presentation.next(), Some(nxtools_protocol::Message::PlatformCommand(
+        PlatformCommand::SetWindowVisibility(command)))
+        if command.window_handle == 703 && command.visible)
+    );
+    commit_controlled(&application, cx, handoff_id, task_id);
+    application.update(cx, |app, cx| app.refresh(cx));
+    assert_eq!(
+        application.read_with(cx, |app, _| app.task_windows[&task_id].window),
+        window
+    );
+
+    application.update(cx, |app, cx| {
+        app.close_task_window(task_id, cx);
+        app.refresh(cx);
+    });
+    cx.run_until_parked();
+    assert!(window.update(cx, |_, _, _| {}).is_err());
+    application.read_with(cx, |app, _| {
+        assert!(!app.task_windows.contains_key(&task_id));
+        assert_eq!(app.task_window_activation_commands.borrow().len(), 1);
+        assert!(app.engine.task(task_id).expect("task read").is_some());
+    });
+    server.finish();
+    let _ = std::fs::remove_dir_all(directory);
+}
+
+#[gpui_kit::test]
+fn controlled_progress_skips_queue_only_disabled_delayed_and_aborted_work(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    for (name, selector) in [
+        ("queue-only", "download-add-to-queue"),
+        ("disabled", "download-start-now"),
+        ("delayed", "download-start-now"),
+        ("aborted", "download-start-now"),
+    ] {
+        let (application, directory, endpoint) =
+            super::tests::download_application_for_window_test_with_platform(cx, name);
+        let server = ProbeServer::new();
+        let handoff_id = uuid::Uuid::new_v4();
+        application.update(cx, |app, _| {
+            app.task_window_native_handle_override = Some(703);
+            app.show_progress_window = name != "disabled";
+        });
+        let (source, _) = prepare_controlled(
+            &application,
+            cx,
+            controlled_request(&directory, server.url("suppressed.bin")),
+            handoff_id,
+        );
+        let (target, view) = wait_for_fixed_confirmation(&application, cx, source);
+        endpoint.set_connected_for_contract_test(name == "aborted");
+        if name == "delayed" {
+            let due = Local::now() + ChronoDuration::minutes(10);
+            view.update(cx, |view, _| {
+                view.committed_schedule = Some(DelayedStartSelection {
+                    date: due.date_naive(),
+                    hour: due.hour(),
+                    minute: due.minute(),
+                })
+            });
+        }
+        server.hold_response.store(true, Ordering::Release);
+        click_controlled_confirmation(cx, target, selector);
+        let capture_id = if name == "aborted" {
+            assert!(target.update(cx, |_, _, _| {}).is_ok());
+            Some(
+                std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+                    .find(|envelope| {
+                        matches!(
+                            envelope.message,
+                            nxtools_protocol::Message::PlatformCommand(
+                                PlatformCommand::StashWindowBounds(_)
+                            )
+                        )
+                    })
+                    .expect("capture requested before abort")
+                    .id,
+            )
+        } else {
+            assert!(target.update(cx, |_, _, _| {}).is_err());
+            None
+        };
+        let (state, task_id) = handoff_status(&application, cx, handoff_id);
+        assert_eq!(state, BrowserHandoffState::Held);
+        let task_id = task_id.expect("held task");
+        let delayed_due = application.read_with(cx, |app, _| {
+            let task = app
+                .engine
+                .task(task_id)
+                .expect("read task")
+                .expect("held task");
+            let due = task.task.request().scheduled_at_unix_ms;
+            if let Some(due) = due {
+                assert_eq!(
+                    app.engine
+                        .process_due_schedules_at(due)
+                        .expect("Held schedule check"),
+                    0
+                );
+            }
+            due
+        });
+        assert_eq!(delayed_due.is_some(), name == "delayed");
+        if name == "aborted" {
+            assert!(matches!(
+                engine_outcome(
+                    &application,
+                    cx,
+                    DownloadCommand::BrowserAbortHandoff { handoff_id },
+                    handoff_id
+                ),
+                DownloadCommandOutcome::BrowserHandoff {
+                    state: BrowserHandoffState::Aborted,
+                    ..
+                }
+            ));
+        } else {
+            commit_controlled(&application, cx, handoff_id, task_id);
+        }
+        cx.run_until_parked();
+        if let Some(capture_id) = capture_id {
+            assert!(target.update(cx, |_, _, _| {}).is_err());
+            application.update(cx, |app, cx| {
+                app.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: capture_id,
+                        result: PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            native_error_code: None,
+                            data: None,
+                        },
+                    },
+                    cx,
+                );
+                assert!(app.pending_controlled_progress.is_empty());
+            });
+        }
+        application.read_with(cx, |app, _| {
+            assert!(app.task_windows.is_empty(), "{name}");
+            assert!(
+                app.task_window_activation_commands.borrow().is_empty(),
+                "{name}"
+            );
+        });
+        if let Some(due) = delayed_due {
+            application.read_with(cx, |app, _| {
+                assert_eq!(
+                    app.engine
+                        .process_due_schedules_at(due)
+                        .expect("committed delayed start"),
+                    1
+                );
+            });
+            cx.run_until_parked();
+            application.update(cx, |app, cx| {
+                assert!(app.task_windows.contains_key(&task_id));
+                assert!(
+                    app.task_window_activation_commands.borrow().is_empty(),
+                    "delayed progress must stay passive"
+                );
+                app.close_task_window(task_id, cx);
+            });
+        }
+        if name == "queue-only" {
+            application.update(cx, |app, cx| {
+                app.batch_action(vec![task_id], DownloadBatchAction::Resume, cx)
+            });
+            let deadline = Instant::now() + Duration::from_secs(4);
+            while application.read_with(cx, |app, _| app.batch_busy()) {
+                cx.run_until_parked();
+                assert!(Instant::now() < deadline, "explicit list start completes");
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            let first_window =
+                application.read_with(cx, |app, _| app.task_windows[&task_id].window);
+            application.update(cx, |app, cx| app.close_task_window(task_id, cx));
+            assert!(first_window.update(cx, |_, _, _| {}).is_err());
+            application
+                .update(cx, |app, cx| app.retry(task_id, cx))
+                .expect("explicit retry on admitted work");
+            let retry_window =
+                application.read_with(cx, |app, _| app.task_windows[&task_id].window);
+            assert!(retry_window.update(cx, |_, _, _| {}).is_ok());
+            application.update(cx, |app, cx| app.close_task_window(task_id, cx));
+        }
+        server.finish();
+        let _ = std::fs::remove_dir_all(directory);
+    }
 }

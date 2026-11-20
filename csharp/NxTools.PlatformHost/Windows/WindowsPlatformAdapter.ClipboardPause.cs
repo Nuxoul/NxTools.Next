@@ -70,6 +70,29 @@ internal sealed partial class WindowsPlatformAdapter
             if (publicationByteLimit is { } byteLimit) _clipboardPublicationByteLimit = byteLimit;
         }
 
+        internal WindowsCommandResult ApplyClipboardCaptureEnabled(bool enabled)
+        {
+            lock (_clipboardPauseSync)
+            {
+                if (_clipboardPause.IsEnabled == enabled) return new(true);
+                if (!enabled) _clipboardPause.SetEnabled(false, null);
+                try
+                {
+                    ClearPendingClipboardRead();
+                    uint? baseline = enabled ? _clipboardCapture.Sequence() : null;
+                    if (baseline == 0) throw new InvalidOperationException("Clipboard enable sequence is unavailable.");
+                    _clipboardPause.SetEnabled(enabled, baseline);
+                    return new(true);
+                }
+                catch (Exception error)
+                {
+                    _clipboardPause.SetEnabled(false, null);
+                    return new(false, "Could not apply clipboard feature capture state.",
+                        NativeErrorCode: ClipboardPauseNativeCode(error));
+                }
+            }
+        }
+
         internal (bool Paused, bool HasPendingSource, int Attempts, int PendingCommands) ClipboardCaptureState
         {
             get

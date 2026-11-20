@@ -26,6 +26,12 @@ The [result-motion slice](../../.trellis/tasks/11-09-desktop-interaction-polish/
 
 Rechecked exact managed lifecycle chain: LauncherSearchWindowFactory.cs18 → LauncherSearchWindow.cs24/base → SearchWindowBase.cs268 event wiring; ShowWindow333–348 reaches base.Show, ActivateWindow323–329 reaches native foreground and input focus, Hide274 reaches base.Hide. LauncherSearchWindow.cs50–69 owns position and its PreviewPopup remains adjacent. SwiftList QuickSearchWindowController.cs71–75 constructs position/foreground owners; ShowWindow127–207 prepares layout/position before Show191/activation; HideWindow314–404 resets preview before query reset and token-checks deferred Hide361/focus restoration367. Listary native engine source remains unavailable; legacy NxTools has no Quick Launch implementation. Reference geometry is historical evidence; the explicit current viewport/motion change is product-approved.
 
+### Multi-monitor summon boundary (2026-11-20)
+
+Canonical `D:\Code\Listary.Decompiled\6.3.5.94\managed\Listary` review: `Core/Launcher/Class292.cs:132-168` recreates a nonvisible launcher through `Main/Views/LauncherSearchWindowFactory.cs:18-20`; `LauncherSearchWindow.xaml.cs:24-32,91-96` binds SourceInitialized to `ah:50-69`. Default placement reads actual HWND outer width and `Screen.FromPoint(Cursor.Position).WorkingArea`, horizontally centers and sets the top edge to work.Top+work.Height/4 using SetWindowPos(NOACTIVATE|NOSIZE|NOZORDER). Saved X/Y are a separate reference preference. `SearchBarViewModel.cs:791-862` -> `SearchWindowBase.cs:318-399` reaches real Show/Hide/Close and separate native foreground; `Core/Utils/WindowUtils.cs:188-225` verifies foreground readback. The native engine source is not available.
+
+Next retains its existing reusable HWND and recomputes monitor/work-area placement on every summon. C# monitor enumeration ordinal is not GPUI Windows DisplayId: the latter is HMONITOR (`vendor/gpui-pre-windows-039/src/display.rs:39,79`). Keep sampled cursor/monitor DPI and native pixel identity coherent, clamp to work area, bind preview to its parent monitor, and retain deferred generation-checked noactivate/bounds/show/focus boundaries. Task evidence: `.trellis/tasks/11-20-multi-monitor-window-controls/research/listary-placement.md`.
+
 ## Reference roots
 
 | Root | Status |

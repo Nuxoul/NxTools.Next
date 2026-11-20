@@ -19,6 +19,14 @@ internal static class Program
     {
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("installed applications fixture localized complete JSON", InstalledApplicationTests.LocalizedApplicationsAndJson),
+            ("installed applications fixture invalid facts and empty", InstalledApplicationTests.InvalidFactsAndEmptyResult),
+            ("installed applications fixture failure discards partial", InstalledApplicationTests.FailureNeverPublishesPartial),
+            ("installed applications fixture cancellation retained admission", InstalledApplicationTests.CancellationAndRetainedAdmission),
+            ("installed applications fixture exact pipe command result", InstalledApplicationTests.ExactPipeCommandAndResult),
+            ("installed applications fixture ordinary shell dispatch", InstalledApplicationTests.OrdinaryShellDispatch),
+            ("installed applications fixture rejects unsafe shell actions", InstalledApplicationTests.RejectUnsafeShellActions),
+            ("installed applications fixture detached routing", InstalledApplicationTests.DetachedRouting),
             ("archive HZ4 process fixture capability release gate", Hz4ProcessTests.CapabilityAndReleaseGate),
             ("archive HZ4 process fixture no durable restart authority", Hz4ProcessTests.OriginalSessionHasNoRestartAuthority),
             ("archive extraction dual progress fixture wire", ArchiveJobTerminalTests.ExtractionProgressWire),
@@ -546,6 +554,7 @@ internal static class Program
             ("minimized command shows a hidden native window minimized without focus", MinimizedCommandUsesRealNativeWindow),
             ("no-activate command preserves native window", NoActivateCommandPreservesNativeWindow),
             ("window-bounds command preserves physical placement", WindowBoundsCommandPreservesPlacement),
+            ("window geometry reports actual device-pixel rectangles", WindowGeometryReportsActualDevicePixels),
             ("centered rectangle preserves the anchor visual center", CenteredRectanglePreservesAnchorCenter),
             ("centered native resize follows the HWND after a user move", CenteredNativeResizeUsesMovedWindowBounds),
             ("centered resize reapplies after move end using the latest HWND center", CenteredResizeReappliesAfterNativeMoveEnd),
@@ -958,6 +967,8 @@ internal static class Program
                 TestEffect.Fixture,"Reviewed: explicitly enabled service over fake store/in-memory ledger only; no Registry/files/process/COM/Explorer/system"),
             new TestCase("archive Phase F P206 service set default claims class", ArchiveIntegrationServiceTests.SetDefaultClaimsClassAndExplorerChoice,
                 TestEffect.Fixture,"Reviewed: explicitly enabled service over fake store/in-memory ledger and fake Explorer choice owner only; no Registry/files/process/COM/Explorer/system"),
+            new TestCase("archive Phase F P206 incomplete default restoration", ArchiveIntegrationServiceTests.IncompleteDefaultRestoreRetainsRetryEvidence,
+                TestEffect.Fixture,"Reviewed: memory store and ledger, injected partial Explorer choice restoration; no Registry, process or Shell effects"),
             new TestCase("archive Phase F P206 user choice proof", ArchiveIntegrationServiceTests.UserChoiceProofIsStableAndMinuteScoped,
                 TestEffect.Fixture,"Reviewed: pure proof computation over fixed inputs; no Registry/files/process/COM/Explorer/system"),
             new TestCase("archive Phase F P206 service failures compensate", ArchiveIntegrationServiceTests.ApplyFailuresCompensateAndNeverReportApplied,
@@ -5929,6 +5940,31 @@ internal static class Program
         Assert(command.WindowHandle == 780L);
         Assert(command.X == 120 && command.Y == 240);
         Assert(command.Width == 400 && command.Height == 410);
+        return Task.CompletedTask;
+    }
+
+    private static Task WindowGeometryReportsActualDevicePixels()
+    {
+        var envelope = ProtocolEnvelope.Create("platform_command", new
+        {
+            Command = "query_window_geometry",
+            Data = new { WindowHandle = 780L }
+        });
+        Assert(PlatformCommandParser.ParseQueryWindowGeometry(envelope).WindowHandle == 780L);
+        var outer = new NativeWindowRectangle(-1610, 74, -758, 166);
+        var client = new NativeWindowRectangle(-1600, 80, -768, 160);
+        var result = WindowsPlatformAdapter.WindowGeometryResult(outer, client, 0xABCDUL, 120, false);
+        Assert(result.Success && result.Data is not null);
+        using var json = System.Text.Json.JsonDocument.Parse(result.Data!);
+        var geometry = json.RootElement;
+        Assert(geometry.GetProperty("outer").GetProperty("left").GetInt32() == -1610);
+        Assert(geometry.GetProperty("outer").GetProperty("right").GetInt32() == -758);
+        Assert(geometry.GetProperty("client").GetProperty("left").GetInt32() == -1600);
+        Assert(geometry.GetProperty("client").GetProperty("bottom").GetInt32() == 160);
+        Assert(geometry.GetProperty("display_id").GetUInt64() == 0xABCDUL);
+        Assert(geometry.GetProperty("dpi").GetUInt32() == 120);
+        Assert(!geometry.GetProperty("visible").GetBoolean());
+        Assert(!WindowsPlatformAdapter.WindowGeometryResult(default, client, 0, 120, false).Success);
         return Task.CompletedTask;
     }
 

@@ -27,6 +27,7 @@ fn fixture(
     tempfile::TempDir,
     Entity<ClipboardApplication>,
     ClipboardCaptureWorkerHandle,
+    nxtools_ipc::PlatformServerEndpoint,
 ) {
     cx.update(gpui_kit::init);
     cx.executor().allow_parking();
@@ -41,7 +42,8 @@ fn fixture(
         1_000,
     )
     .expect("link detection history worker");
-    let (platform, _endpoint) = nxtools_ipc::platform_bridge(64);
+    let (platform, endpoint) = nxtools_ipc::platform_bridge(64);
+    endpoint.set_connected_for_contract_test(true);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let config = AppConfig::default();
     let path = directory.path().join("config.json");
@@ -60,11 +62,49 @@ fn fixture(
             )
         })
     });
-    (directory, owner, worker)
+    owner.update(cx, |owner, _| {
+        owner.link_panel.test_native_window_handle = Some(9002)
+    });
+    (directory, owner, worker, endpoint)
 }
 
-fn drain_detection(cx: &mut TestAppContext, owner: &Entity<ClipboardApplication>) {
+fn drain_detection(
+    cx: &mut TestAppContext,
+    owner: &Entity<ClipboardApplication>,
+    endpoint: &nxtools_ipc::PlatformServerEndpoint,
+) {
     ClipboardApplication::wait_for_link_detection(cx, owner);
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        let data = matches!(
+            envelope.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::QueryCursorMonitor)
+        )
+        .then(|| {
+            serde_json::to_string(&nxtools_protocol::CursorMonitorSnapshot {
+                display_id: 1,
+                work_left: 0,
+                work_top: 0,
+                work_width: 1920,
+                work_height: 1040,
+                dpi: 96,
+            })
+            .expect("monitor wire")
+        });
+        owner.update(cx, |owner, cx| {
+            owner.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: envelope.id,
+                    result: nxtools_protocol::PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        data,
+                        native_error_code: None,
+                    },
+                },
+                cx,
+            )
+        });
+    }
 }
 
 struct HeldProbe {
@@ -151,7 +191,7 @@ fn visible_targets(cx: &mut TestAppContext, owner: &Entity<ClipboardApplication>
 
 #[gpui_kit::test]
 fn link_detection_runs_filesystem_work_off_gpui(cx: &mut TestAppContext) {
-    let (_directory, owner, worker) = fixture(cx);
+    let (_directory, owner, worker, endpoint) = fixture(cx);
     let ui_thread = std::thread::current().id();
     let (probed, observed) = mpsc::channel();
     cx.update(|cx| {
@@ -166,7 +206,7 @@ fn link_detection_runs_filesystem_work_off_gpui(cx: &mut TestAppContext) {
         });
     });
     let probe_thread = observed.recv_timeout(Duration::from_secs(3));
-    drain_detection(cx, &owner);
+    drain_detection(cx, &owner, &endpoint);
     worker
         .shutdown()
         .expect("stop link detection fixture worker");
@@ -175,7 +215,7 @@ fn link_detection_runs_filesystem_work_off_gpui(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn link_detection_keeps_one_worker_and_only_the_latest_waiting_capture(cx: &mut TestAppContext) {
-    let (_directory, owner, worker) = fixture(cx);
+    let (_directory, owner, worker, endpoint) = fixture(cx);
     let mut probe = hold_first_probe(cx, &owner);
     cx.update(|cx| {
         owner.update(cx, |owner, cx| {
@@ -208,7 +248,7 @@ fn link_detection_keeps_one_worker_and_only_the_latest_waiting_capture(cx: &mut 
         "GPUI remained responsive during blocked work"
     );
     probe.release();
-    drain_detection(cx, &owner);
+    drain_detection(cx, &owner, &endpoint);
     assert_eq!(probe.next(), "https://example.com/latest");
     assert!(probe.entered.try_recv().is_err());
     assert_eq!(
@@ -220,7 +260,7 @@ fn link_detection_keeps_one_worker_and_only_the_latest_waiting_capture(cx: &mut 
 
 #[gpui_kit::test]
 fn link_detection_new_empty_capture_retires_pending_and_active_results(cx: &mut TestAppContext) {
-    let (_directory, owner, worker) = fixture(cx);
+    let (_directory, owner, worker, endpoint) = fixture(cx);
     let mut probe = hold_first_probe(cx, &owner);
     cx.update(|cx| {
         owner.update(cx, |owner, cx| {
@@ -236,7 +276,7 @@ fn link_detection_new_empty_capture_retires_pending_and_active_results(cx: &mut 
         })
     });
     probe.release();
-    drain_detection(cx, &owner);
+    drain_detection(cx, &owner, &endpoint);
     assert!(probe.entered.try_recv().is_err());
     assert!(visible_targets(cx, &owner).is_empty());
     assert!(!probe.timed_out.load(Ordering::SeqCst));
@@ -248,7 +288,7 @@ fn link_detection_disable_pause_rules_and_disconnect_retire_inflight_results(
     cx: &mut TestAppContext,
 ) {
     for change in 0..4 {
-        let (_directory, owner, worker) = fixture(cx);
+        let (_directory, owner, worker, endpoint) = fixture(cx);
         let mut probe = hold_first_probe(cx, &owner);
         cx.update(|cx| {
             owner.update(cx, |owner, cx| {
@@ -278,7 +318,7 @@ fn link_detection_disable_pause_rules_and_disconnect_retire_inflight_results(
             })
         });
         probe.release();
-        drain_detection(cx, &owner);
+        drain_detection(cx, &owner, &endpoint);
         assert!(probe.entered.try_recv().is_err());
         assert!(visible_targets(cx, &owner).is_empty());
         assert!(!probe.timed_out.load(Ordering::SeqCst));
@@ -288,7 +328,7 @@ fn link_detection_disable_pause_rules_and_disconnect_retire_inflight_results(
 
 #[gpui_kit::test]
 fn link_detection_duplicate_delivery_preserves_the_current_request(cx: &mut TestAppContext) {
-    let (_directory, owner, worker) = fixture(cx);
+    let (_directory, owner, worker, endpoint) = fixture(cx);
     let mut probe = hold_first_probe(cx, &owner);
     let text = "https://example.com/duplicated";
     cx.update(|cx| {
@@ -306,7 +346,7 @@ fn link_detection_duplicate_delivery_preserves_the_current_request(cx: &mut Test
         })
     });
     probe.release();
-    drain_detection(cx, &owner);
+    drain_detection(cx, &owner, &endpoint);
     assert!(probe.entered.try_recv().is_err());
     assert_eq!(visible_targets(cx, &owner), vec![text]);
     assert!(!probe.timed_out.load(Ordering::SeqCst));

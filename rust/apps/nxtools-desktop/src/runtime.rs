@@ -845,6 +845,35 @@ fn spawn_platform_host(path: &Path) -> std::io::Result<Child> {
         .spawn()
 }
 
+#[cfg(windows)]
+pub(crate) fn apply_installed_archive_integration(
+    paths: &AppPaths,
+    config_pipe: &str,
+    platform_host: &Path,
+    correlation_id: uuid::Uuid,
+    command: nxtools_protocol::archive_shell_integration::ArchiveShellIntegrationCommand,
+) -> Result<nxtools_protocol::PlatformCommandResult> {
+    use nxtools_ipc::install_archive_integration::apply;
+    let _instance = match acquire_desktop_instance(paths, Duration::ZERO) {
+        Ok(guard) => guard,
+        Err(error) if error.is::<DesktopInstanceConflict>() => {
+            info!(event = "archive.install.forwarding", %correlation_id);
+            return apply(config_pipe, correlation_id, command);
+        }
+        Err(error) => return Err(error),
+    };
+    // Cold install owns just the original platform bridge/child; do not initialize the
+    // main window, indexer, download host, tray or GPUI as a side effect of registration.
+    let (_bridge, endpoint) = nxtools_ipc::platform_bridge(256);
+    start_platform_server(DEFAULT_PLATFORM_PIPE_NAME.into(), endpoint)?;
+    let _host = spawn_platform_host(platform_host)
+        .context("failed to start archive integration PlatformHost")?;
+    // The original parent monitor retires the Host at process exit. Do not terminate it
+    // in response to an unconfirmed result while its native transaction is unwinding.
+    info!(event = "archive.install.waiting_platform", %correlation_id);
+    apply(DEFAULT_PLATFORM_PIPE_NAME, correlation_id, command)
+}
+
 /// No main-HWND hint is needed: a cold owner's archive queue is ready before GPUI registration.
 pub(crate) fn forward_running_archive(
     intent: &nxtools_protocol::desktop_archive_intent::DesktopArchiveIntent,

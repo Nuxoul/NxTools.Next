@@ -23,6 +23,11 @@ try {
     $production=Get-Content (Join-Path $root 'installer\nxtools-next.iss') -Raw -Encoding UTF8
     $callback=[regex]::Match($production,'(?s)var\s+UpgradeFilesCommitted.*?(?=function SameOwnedPath)').Value
     if(!$callback){throw 'Missing production callbacks'}
+    # The archive callback has its own installer fixture; this scenario only stages BrowserHost.
+    $callback = $callback.Replace('{#MyAppExeName}', 'NxTools.exe').Replace('    ApplyInstalledArchiveIntegration();', '')
+    $callback = $callback.Replace('#include "runtime-dependencies.iss"', [IO.File]::ReadAllText((Join-Path $root 'installer\runtime-dependencies.iss')))
+    $probePath = Join-Path $work 'NxTools.PlatformHost.exe'
+    Add-Type -TypeDefinition 'public static class ReplacementDependencyProbe { public static int Main(string[] args) { return args.Length == 1 && args[0] == "--check-runtime" ? 0 : 77; } }' -OutputAssembly $probePath -OutputType ConsoleApplication
     $callback = $callback.Replace('{localappdata}\NxTools\NxTools.Next\logs\installer\', $work + '\diagnostics\')
     # Never let installed service discovery request real UAC in this isolated fixture.
     $callback = $callback.Replace("RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\NxToolsIndexerV1')", 'False')
@@ -118,6 +123,7 @@ Source: "$work\close-owned-processes.ps1"; Flags: dontcopy
 Source: "$work\upgrade-library.ps1"; Flags: dontcopy
 Source: "$work\NxTools.release.json"; Flags: dontcopy
 Source: "$work\NxTools.release.sig"; Flags: dontcopy
+Source: "$probePath"; Flags: dontcopy
 Source: "$newPath"; DestDir: "{app}"; DestName: "NxTools.BrowserHost.exe"; Flags: ignoreversion
 $failureFile
 [Code]

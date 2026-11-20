@@ -312,6 +312,44 @@ internal static class ArchiveIntegrationServiceTests
         return Task.CompletedTask;
     }
 
+    internal static Task IncompleteDefaultRestoreRetainsRetryEvidence()
+    {
+        foreach (var replacement in new[] { false, true })
+        {
+            var store = new FakeArchiveIntegrationStore();
+            var ledger = new MemoryLedger();
+            var choices = new FakeDefaultClaim();
+            choices.Choices[".zip"] = "Other.OriginalZip";
+            choices.Choices[".rar"] = "Other.OriginalRar";
+            var service = new ArchiveIntegrationService(store, ledger, NullPlatformLog.Instance,
+                () => Executable, () => { }, applyEnabled: true, _ => new ApprovalLease(), choices);
+            Check(service.Execute(Command("apply", 1, false, false, ".zip", ".rar") with { SetDefault = true },
+                Guid.NewGuid()).State == "applied", "fixture claimed both choices");
+            var appliedClasses = store.SnapshotValues();
+            if (replacement)
+                choices.Choices[".rar"] = "Other.UserChanged";
+            choices.DeleteThenFail = ".zip";
+            var restore = replacement ? Command("apply", 2, false, true, ".7z") : Command("revert", 2, false, false);
+            var failed = service.Execute(restore, Guid.NewGuid());
+            Check(failed.State == "failed" && failed.AppliedRevision == 1 && ledger.Deletes == 0 &&
+                ledger.Facts?.PriorUserChoices?[".zip"] == "Other.OriginalZip" && store.ValuesEqual(appliedClasses),
+                "failed default restoration must retain its original choices and Classes, before replacement or revert");
+            Check(choices.Choices[".rar"] == (replacement ? "Other.UserChanged" : "Other.OriginalRar"),
+                "independent restorations continue and a later user choice is preserved");
+            Check(service.Execute(Command("status", 2, false, false), Guid.NewGuid()).State == "revert_required",
+                "a retained partial restoration is not reported as fully applied");
+            if (!replacement)
+                Check(ArchiveInstallCommands.Revert(service, Guid.NewGuid()) == 11 && ledger.Deletes == 0,
+                    "uninstall observes restoration failure and leaves the original ledger alone");
+            choices.DeleteThenFail = null;
+            var completed = replacement ? service.Execute(restore, Guid.NewGuid()).State == "applied"
+                : ArchiveInstallCommands.Revert(service, Guid.NewGuid()) == 0;
+            Check(completed && ledger.Deletes == 1 && choices.Choices[".zip"] == "Other.OriginalZip",
+                "retry restores the recorded original after a partial native write removed our choice");
+        }
+        return Task.CompletedTask;
+    }
+
     internal static Task UserChoiceProofIsStableAndMinuteScoped()
     {
         const string sid = "S-1-5-21-1000000000-2000000000-3000000000-1001";
@@ -338,7 +376,17 @@ internal static class ArchiveIntegrationServiceTests
         internal bool Locked { get; init; }
         internal int Writes;
         public string? Current(string extension) => Choices.GetValueOrDefault(extension);
-        public void Set(string extension, string? progId) { Writes++; if (!Locked) Choices[extension] = progId; }
+        internal string? DeleteThenFail;
+        public void Set(string extension, string? progId)
+        {
+            Writes++;
+            if (extension == DeleteThenFail)
+            {
+                Choices[extension] = null;
+                throw new IOException("injected partial choice restoration");
+            }
+            if (!Locked) Choices[extension] = progId;
+        }
         public bool Resolves(string extension, string progId) => Current(extension) == progId;
     }
 

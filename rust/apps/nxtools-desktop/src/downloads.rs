@@ -477,14 +477,35 @@ fn should_open_admitted_progress_window(
     status: DownloadStatus,
 ) -> bool {
     (awaiting_delayed_progress || (!known_to_desktop && origin == RequestOrigin::Cli))
-        && matches!(
-            status,
-            DownloadStatus::Probing
-                | DownloadStatus::Waiting
-                | DownloadStatus::Downloading
-                | DownloadStatus::Finalizing
-                | DownloadStatus::Verifying
-        )
+        && is_active_download_progress(status)
+}
+
+fn is_active_download_progress(status: DownloadStatus) -> bool {
+    matches!(
+        status,
+        DownloadStatus::Probing
+            | DownloadStatus::Waiting
+            | DownloadStatus::Downloading
+            | DownloadStatus::Finalizing
+            | DownloadStatus::Verifying
+    )
+}
+
+#[derive(Clone, Copy)]
+enum ControlledProgressPlacement {
+    Background,
+    Centered,
+    Capturing {
+        command_id: uuid::Uuid,
+        source: AnyWindowHandle,
+        started_at: Instant,
+    },
+    Captured(uuid::Uuid),
+}
+
+struct PendingControlledProgress {
+    correlation_id: uuid::Uuid,
+    placement: ControlledProgressPlacement,
 }
 
 fn refresh_immediately_after_remove() -> bool {
@@ -668,6 +689,7 @@ pub(crate) struct DownloadApplication {
     failed_task_icon_resources: HashMap<String, DownloadTaskIconFailure>,
     pending_task_icon_resources: HashMap<String, uuid::Uuid>,
     awaiting_delayed_progress: HashSet<DownloadTaskId>,
+    pending_controlled_progress: HashMap<DownloadTaskId, PendingControlledProgress>,
     task_window_lifecycle: DownloadWindowLifecycle,
     task_windows: HashMap<DownloadTaskId, DownloadTaskWindow>,
     pending_task_window_activations: HashMap<uuid::Uuid, PendingTaskWindowActivation>,
@@ -886,6 +908,7 @@ impl DownloadApplication {
             pending_task_icon_resources: HashMap::new(),
             failed_task_icon_resources: HashMap::new(),
             awaiting_delayed_progress,
+            pending_controlled_progress: HashMap::new(),
             task_window_lifecycle,
             task_windows: HashMap::new(),
             pending_task_window_activations: HashMap::new(),
@@ -1280,6 +1303,7 @@ impl DownloadApplication {
             return self.action_error("无法继续下载", error, cx);
         }
         self.refresh(cx);
+        self.present_explicit_task_start(task_id, false, cx);
         Ok(())
     }
     pub(crate) fn retry(
@@ -1291,7 +1315,38 @@ impl DownloadApplication {
             return self.action_error("无法重试下载", error.to_string(), cx);
         }
         self.refresh(cx);
+        self.present_explicit_task_start(task_id, false, cx);
         Ok(())
+    }
+
+    fn present_explicit_task_start(
+        &mut self,
+        task_id: DownloadTaskId,
+        background: bool,
+        cx: &mut Context<Self>,
+    ) {
+        self.awaiting_delayed_progress.remove(&task_id);
+        if !self.show_progress_window
+            || self.pending_controlled_progress.contains_key(&task_id)
+            || self
+                .task(task_id)
+                .is_none_or(|task| task.task.status() == DownloadStatus::Cancelled)
+        {
+            return;
+        }
+        if background {
+            if self
+                .task(task_id)
+                .is_some_and(|task| is_active_download_progress(task.task.status()))
+            {
+                let directive = self
+                    .task_window_lifecycle
+                    .request_background_progress(task_id);
+                self.apply_task_window_directive(task_id, directive, cx);
+            }
+        } else {
+            self.request_task_window(task_id, cx);
+        }
     }
 
     pub(crate) fn redownload(
@@ -3112,6 +3167,17 @@ impl DownloadApplication {
             if let Some(pending) = self.pending_new_download_handoff.as_ref() {
                 self.finish_new_download_handoff(pending.command_id, false, "disconnected", cx);
             }
+            let pending_captures = self
+                .pending_controlled_progress
+                .values()
+                .filter_map(|pending| match pending.placement {
+                    ControlledProgressPlacement::Capturing { command_id, .. } => Some(command_id),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            for command_id in pending_captures {
+                self.finish_controlled_progress_anchor(command_id, false, "disconnected", None, cx);
+            }
             self.disconnect_artifact_actions(cx);
             self.pending_task_icons.clear();
             self.pending_task_icon_resources.clear();
@@ -3163,6 +3229,15 @@ impl DownloadApplication {
         else {
             return;
         };
+        if self.finish_controlled_progress_anchor(
+            correlation_id,
+            result.success,
+            "native_result",
+            result.native_error_code,
+            cx,
+        ) {
+            return;
+        }
         if self
             .pending_new_download_handoff
             .as_ref()
@@ -3638,7 +3713,15 @@ impl DownloadApplication {
             .iter()
             .map(|task| (task.task.id(), task.task.status()))
             .collect::<Vec<_>>();
+        let mut unseen_progress = self
+            .pending_controlled_progress
+            .keys()
+            .copied()
+            .collect::<HashSet<_>>();
         for (task_id, status) in task_states {
+            if unseen_progress.remove(&task_id) {
+                self.reconcile_controlled_progress(task_id, status, cx);
+            }
             let mut directive = self.task_window_lifecycle.task_changed(task_id, status);
             if !self.show_completion_window
                 && matches!(
@@ -3650,6 +3733,9 @@ impl DownloadApplication {
                 directive = DownloadWindowDirective::None;
             }
             self.apply_task_window_directive(task_id, directive, cx);
+        }
+        for task_id in unseen_progress {
+            self.retire_controlled_progress(task_id, "task_removed", cx);
         }
         cx.notify();
     }
@@ -3756,6 +3842,7 @@ impl DownloadApplication {
             DownloadEvent::TaskRemoved { task_id } => {
                 self.latest_progress.remove(&task_id);
                 self.awaiting_delayed_progress.remove(&task_id);
+                self.retire_controlled_progress(task_id, "task_removed", cx);
                 let directive = self.task_window_lifecycle.task_removed(task_id);
                 self.apply_task_window_directive(task_id, directive, cx);
             }
@@ -3787,16 +3874,9 @@ impl DownloadApplication {
             );
         }
         if let Some(task_id) = admitted_progress_task {
-            let still_active = self.task(task_id).is_some_and(|task| {
-                matches!(
-                    task.task.status(),
-                    DownloadStatus::Probing
-                        | DownloadStatus::Waiting
-                        | DownloadStatus::Downloading
-                        | DownloadStatus::Finalizing
-                        | DownloadStatus::Verifying
-                )
-            });
+            let still_active = self
+                .task(task_id)
+                .is_some_and(|task| is_active_download_progress(task.task.status()));
             if still_active {
                 let use_background_policy = task_event_diagnostic
                     .as_ref()

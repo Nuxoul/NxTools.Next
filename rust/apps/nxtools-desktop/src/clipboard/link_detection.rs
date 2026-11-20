@@ -203,7 +203,7 @@ impl ClipboardApplication {
                                         count = links.len(),
                                         "link detector recognized clipboard targets"
                                     );
-                                    application.show_link_panel(links, cx);
+                                    application.request_link_panel(links, cx);
                                 }
                             });
                         }

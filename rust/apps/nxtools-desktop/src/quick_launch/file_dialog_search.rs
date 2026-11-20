@@ -996,7 +996,9 @@ impl QuickLaunchApplication {
         host: QuickLaunchFileDialogSearchHost,
         cx: &mut Context<Self>,
     ) {
-        if !self.config.quick_launch.enabled || !self.config.quick_launch.file_dialog_search {
+        if !self.admits_feature_event(host.changed_at_unix_ms)
+            || !self.config.quick_launch.file_dialog_search
+        {
             return;
         }
         self.file_dialog_search.host = Some(host.clone());
@@ -1006,11 +1008,14 @@ impl QuickLaunchApplication {
         }
         if self.file_dialog_search.window.is_none() {
             self.open_file_dialog_search_window(&host, cx);
+            let opened = self.file_dialog_search.window.as_ref().map(|window| window.window);
             let application = cx.entity().downgrade();
             schedule_application_update(
                 application,
-                |application, cx| {
-                    application.initialize_file_dialog_search_window(cx);
+                move |application, cx| {
+                    if opened.is_some() && application.file_dialog_search.window.as_ref().map(|window| window.window) == opened {
+                        application.initialize_file_dialog_search_window(cx);
+                    }
                 },
                 cx,
             );
@@ -1191,6 +1196,18 @@ impl QuickLaunchApplication {
             warn!(%error, "could not initialize file-dialog search window as topmost");
         }
         self.apply_file_dialog_search_window_placement(cx);
+    }
+
+    pub(super) fn retire_file_dialog_search(&mut self, cx: &mut Context<Self>) {
+        self.cancel_file_dialog_index_search("disabled", cx);
+        self.file_dialog_search.invalidate_index();
+        self.file_dialog_search.host = None;
+        self.file_dialog_search.last_placement = None;
+        if let Some(search_window) = self.file_dialog_search.window.take() {
+            let _ = search_window
+                .window
+                .update(cx, |_, window, _| window.remove_window());
+        }
     }
 
     pub(super) fn hide_file_dialog_search_window(&mut self, cx: &mut Context<Self>) {

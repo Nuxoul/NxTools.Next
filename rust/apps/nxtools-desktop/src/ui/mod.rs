@@ -10,6 +10,7 @@ mod icon_colors;
 pub(crate) mod markdown_document;
 mod markdown_edit;
 pub(crate) mod metrics;
+pub(crate) mod monitor_placement;
 pub(crate) mod motion;
 #[cfg(debug_assertions)]
 pub(crate) mod native_acceptance;
@@ -3896,28 +3897,18 @@ pub(crate) fn panel_bounds(
     cx: &App,
 ) -> (Bounds<gpui_kit::Pixels>, Option<gpui_kit::DisplayId>) {
     let desired_size = size(px(panel_size.width as f32), px(panel_size.height as f32));
-    let displays = cx.displays();
-    let display = displays
-        .iter()
-        .find(|display| u64::from(display.id()) == u64::from(request.cursor_display_index))
-        .cloned()
-        .or_else(|| displays.first().cloned());
-    let scale = (request.cursor_monitor_dpi.max(96) as f32) / 96.0;
+    let placement = monitor_placement::cursor_monitor_placement(
+        request.cursor_monitor,
+        request.cursor_display_index,
+        request.cursor_monitor_dpi,
+        cx,
+    );
+    let scale = placement.scale;
     let cursor = point(
         px(request.cursor_x as f32 / scale),
         px(request.cursor_y as f32 / scale),
     );
-    let Some(display) = display else {
-        return (
-            Bounds {
-                origin: point(cursor.x + px(12.0), cursor.y + px(12.0)),
-                size: desired_size,
-            },
-            None,
-        );
-    };
-
-    let screen = display.bounds();
+    let screen = placement.work_area;
     let panel_size = size(
         desired_size.width.min(screen.size.width),
         desired_size.height.min(screen.size.height),
@@ -3933,7 +3924,7 @@ pub(crate) fn panel_bounds(
             origin,
             size: panel_size,
         },
-        Some(display.id()),
+        placement.display_id,
     )
 }
 

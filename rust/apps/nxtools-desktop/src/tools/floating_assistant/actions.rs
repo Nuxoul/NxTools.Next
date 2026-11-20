@@ -352,7 +352,8 @@ impl FloatingAssistantApplication {
                     cursor_x: event.x,
                     cursor_y: event.y,
                     cursor_display_index: 0,
-                    cursor_monitor_dpi: 96,
+                    cursor_monitor_dpi: event.cursor_monitor.map_or(96, |monitor| monitor.dpi),
+                    cursor_monitor: event.cursor_monitor,
                     requested_at_unix_ms: nxtools_ipc::unix_time_ms(),
                     correlation_id: Some(id),
                 };
@@ -541,6 +542,7 @@ mod tests {
             kind: FloatingAssistantEventKind::Drop,
             x: 0,
             y: 0,
+            cursor_monitor: None,
             delta: 0,
             fullscreen: false,
             text: None,

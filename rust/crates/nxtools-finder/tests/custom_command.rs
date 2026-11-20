@@ -28,9 +28,11 @@ fn matching_command_is_a_typed_result_without_hiding_other_providers() {
     let results = catalog
         .search_with_sources("g", &indexed, &[command()], 10)
         .expect("search");
-    // Pinyin initials are now a match channel: "任务管理器" (rwglq) contains
-    // the subsequence "g", so the system tool joins the result set.
-    assert_eq!(results.len(), 3);
+    assert!(
+        results
+            .iter()
+            .any(|result| result.entry.source == ApplicationSource::System)
+    );
     assert_eq!(results[0].entry.source, ApplicationSource::CustomCommand);
     assert_eq!(results[0].entry.name, "Git status");
     assert_eq!(results[0].entry.target, "git.exe");

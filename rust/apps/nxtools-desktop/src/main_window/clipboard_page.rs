@@ -2,6 +2,7 @@ use super::*;
 use gpui_kit::component::form::{Field, Form};
 use gpui_kit::component::group_box::GroupBoxVariant;
 use gpui_kit::component::setting::{SettingGroup, SettingItem, SettingPage, Settings};
+use gpui_kit::component::switch::Switch;
 use tracing::error;
 
 pub(crate) fn custom_command_selection_after_removal(
@@ -710,6 +711,16 @@ impl MainWindow {
                 .resettable(false)
                 .group(SettingGroup::new().title("大图浮窗").item(image_setting)),
         ];
+        let clipboard = self.clipboard.clone();
+        let status = clipboard.upgrade().map_or_else(
+            || "剪贴板不可用".to_owned(),
+            |application| {
+                application
+                    .read(cx)
+                    .feature_configuration_status()
+                    .to_owned()
+            },
+        );
         div()
             .size_full()
             .flex()
@@ -722,23 +733,31 @@ impl MainWindow {
                     "剪贴板",
                     metadata,
                 )
-                .trailing(
-                    div()
-                        .text_size(px(TEXT_LABEL))
-                        .line_height(px(LINE_HEIGHT_LABEL))
-                        .text_color(if settings.enabled {
-                            self.theme.accent_text
-                        } else {
-                            self.theme.text_muted
-                        })
-                        .child(if settings.enabled {
-                            "捕获已启用"
-                        } else {
-                            "捕获已停用"
-                        })
-                        .into_any_element(),
-                )
                 .render(self.theme),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "clipboard-feature-enable".into())
+                    .flex()
+                    .items_center()
+                    .gap_3()
+                    .px_4()
+                    .py_2()
+                    .child(
+                        Switch::new("clipboard-enabled")
+                            .label("启用剪贴板")
+                            .checked(settings.enabled)
+                            .on_change(move |requested, _, cx| {
+                                let requested = *requested;
+                                let application = clipboard.clone();
+                                cx.defer(move |cx| {
+                                    let _ = application.update(cx, |application, cx| {
+                                        application.set_feature_enabled(requested, cx);
+                                    });
+                                });
+                            }),
+                    )
+                    .child(div().text_color(self.theme.text_muted).child(status)),
             )
             .child(
                 div()

@@ -162,6 +162,37 @@ user confirms a post-completion action):
   resurrect it (`task_changed` returns `None` when nothing is registered); only a genuine terminal
   transition may open the passive fallback.
 
+### Controlled-browser progress and explicit starts — 2026-11-20
+
+- ABDM `AppComponent.kt:648–652,883–911` opens progress on a first job start only when enabled,
+  reuses/fronts the matching task dialog, and removes presentation independently of work. The keyed
+  `ShowDownloadDialogs.kt:53–79,95–98,167–168` selects task state and reaches `CustomWindow.kt:387–399`
+  and Compose `Window`; the native Compose base was not inspected.
+- Legacy `MainWindowViewModel.cs:1172–1186,1454–1459,2207–2210` routes Resume Selected through each
+  task's explicit Resume and requests progress for Resume and Download Now, not Add Only or automatic
+  retries. Next uses the same keyed foreground owner for a single accepted start and its bounded
+  passive policy when a bulk selection starts work.
+- `MainWindow.axaml.cs:2152–2177,2200–2225,2858–2879`
+  captures the visible Add window center, reuses the task window and reaches `Window.Show` before
+  foregrounding. `DownloadProgressWindow.axaml.cs:26–59,84–101` attaches animation/subscriptions and
+  transforms the existing window on completion; `WindowAnimationService.cs:24–43` reaches `Window.Close`
+  without cancelling the task. Avalonia's native base was not inspected.
+- Next's engine `engine/controlled_handoff.rs:225–261,312–359` persists a Browser task as `Created`
+  while Held, then commits queue eligibility and scheduling before it can enter an active state. Accept
+  never requests progress. Keep a one-shot presentation intent only for confirmed Start Now; use the
+  original keyed window owner once the same task is actually active, and keep delayed admission passive
+  and capped. Queue Only, cancellation/removal and the disabled setting do not grant presentation.
+- Capture the fixed confirmation HWND's actual native rectangle before destroying it. An enqueue alone
+  does not capture it: `WindowsPlatformAdapter.NativeMethods.cs:1081–1101` checks `IsWindow` and reads
+  the rectangle in PlatformHost. Wait for the existing typed result (or a bounded failure) before
+  closing, then let `MoveWindowCenteredOverKey:1109–1157` consume the captured anchor at progress creation.
+  Retire the Rust intent on cancellation/removal, and use the normal centered fallback if no anchor
+  is available. Do not activate during Held, recreate on ordinary updates after close, or replace the
+  existing GPUI controls/layout or native activation owner.
+- Core's default parallel connection limit for new Desktop download requests is 16. Explicit old/custom
+  values and persisted task requests remain unchanged; simultaneous default-queue concurrency and CLI
+  submission semantics retain their separate owners.
+
 ### Legacy failure and migration invariants
 
 - Active transient states are restored as paused instead of automatically restarting unknown work.

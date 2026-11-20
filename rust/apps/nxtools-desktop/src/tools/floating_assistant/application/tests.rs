@@ -298,6 +298,7 @@ fn drop_event(
         kind: FloatingAssistantEventKind::Drop,
         x: 40,
         y: 180,
+        cursor_monitor: None,
         delta: 0,
         fullscreen: false,
         text: None,

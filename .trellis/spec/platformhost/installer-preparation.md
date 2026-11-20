@@ -156,3 +156,65 @@ before application file replacement. Fixture success is not actual installed acc
 Wrong: compare the maintenance sequence to every new application release sequence.
 Correct: compare it to the explicitly required Bootstrap compatibility floor while retaining
 original publisher, registration, hash, marker, recovery and signed-package verification.
+
+## Required runtime admission
+
+Normal and maintenance Setup call `CheckRuntimeDependencies` from
+`repo:installer/runtime-dependencies.iss` in `PrepareToInstall`, before bootstrap recovery,
+process closing, service maintenance or installed-file replacement. Extract the original
+bundled PlatformHost and run `--check-runtime`; framework resolution must succeed before
+`Program.Main` returns0 without pinning an image, creating logs, initializing Windows APIs
+or contacting services. Do not substitute registry presence, PATH dotnet or a newer major/x86
+runtime for the actual x64 application's framework resolution.
+
+The mandatory dependency is .NET8 Windows Desktop Runtime x64, including its core runtime.
+On failure, return a blocking Setup error naming that dependency, the native launch/exit code
+and the official .NET8 download page. Interactive Setup offers to open the page only after
+consent; failed browser delivery leaves the address visible. Silent/suppressed Setup must not
+open a browser or install prerequisites automatically. Extraction failure reports package
+repair rather than asserting a missing runtime. WebView2 is feature-specific PDF export
+support, not a whole-product installation prerequisite.
+
+Setup diagnostics own `installer.dependency.started/completed/failed` with the install
+correlation, fixed dependency/stage, elapsed time and actual launch/exit code. Optional
+`download_failed` retains its browser native code. The probe itself has no side effects or
+logging dependency. Original trusted-update authentication, recovery and postinstall checks
+remain unchanged.
+
+`repo:tests/architecture/installer-runtime.ps1` covers actual Setup callbacks, child exit,
+missing/load failure, consent/decline, silent mode and browser failure. `-Maintenance` exercises
+the real maintenance admission callback without service effects; `-RuntimeProbePath` accepts
+a freshly published Host for actual framework resolution. Original BrowserHost replacement
+fixtures retain their production dependency callback. Package gates run these before compiling
+the normal installer. Fixtures are not actual installed upgrade or visual acceptance.
+
+## Installed archive integration (Phase F P206/P207)
+
+`repo:installer/nxtools-next.iss#CurStepChanged` starts `--install-archive-integration <GUID>
+fresh|upgrade` with `ExecAsOriginalUser(..., ewWaitUntilTerminated)` after trusted preparation
+and committed file finalization. This post-install action is required even in silent Setup and
+has no dependency on the optional Desktop launch. Package finalization remains committed on
+integration error. Exit 0 is observed Apply (or acknowledged opt-out), 10 is an applied plan
+with an unconfirmed Windows default association, 11 is unconfirmed/failed Apply, and 12 means
+the original user was not established. Interactive Setup shows the corresponding message;
+silent Setup retains the exit code and correlation in its log.
+
+`repo:rust/apps/nxtools-desktop/src/install_archive_integration.rs#run` waits through an approved
+matching protected Desktop redirect. A Windows original-user probe rejects SYSTEM or a token
+not matching the session Shell user before profile access; a pre-elevated launch without
+the original account cannot substitute another profile. Fresh untouched archive intent is
+initialized through the original config lock; upgrades reuse the saved intent without writing
+other settings. The stand-alone entry uses only the original platform bridge/Host on cold start
+and the same authenticated desktop pipe when another instance holds the lock. Only a validated
+correlated native terminal (including desired/applied revisions) completes the install action.
+
+`repo:installer/uninstall-cleanup.ps1#Restore-NxToolsArchiveIntegration` waits for the installed
+PlatformHost's `--uninstall-archive-integration <GUID>` under the current interactive user after
+owned-process shutdown. The original native Revert service, not PowerShell, owns the applied
+ledger, prior choice restoration and exact Classes cleanup. Failure aborts before personal data
+or installed-file removal and preserves retry facts. No raw association cleanup or separate
+ledger deletion is allowed in the installer. The injected uninstall cleanup fixture asserts
+that an incomplete native result stops the actual script boundary. `installer-runtime.ps1`
+provides isolated silent Setup callbacks with a fake Desktop child and exits 0/10/11/12;
+running those installers and real original-user/alternate-elevation Shell acceptance require
+separate authorization.

@@ -386,14 +386,18 @@ Default-app result success requires `success=true,data="opened"` (Shell accepted
 original pending/correlation/timeout/disconnect and deferred publication; native diagnostics record
 accepted/start/terminal, elapsed/native code, never request payloads. Saving/revision/request
 acceptance is not applied state; only validated native facts may report applied, with revision.
-Only explicit Apply/Revert mutates HKCU Software\Classes. Product composition always retains the
+Only the explicit Settings or [installed archive integration](installer-preparation.md#installed-archive-integration-phase-f-p206p207)
+Apply/Revert boundaries mutate HKCU Software\Classes. Product composition always retains the
 original approved Desktop resolver and `OpenArchiveRelease` helper lease; missing/null/unapproved
 helper refuses without capture/write or grouped-to-per-file fallback. Original transaction owns all
 pre-capture/attempt-before-write/reverse compensation/exact compare-before-restore. Detached reader
 dispatch calls the original bounded STA runner (one active operation, 15s reply bound; actual cleanup
 retains its slot after timeout). Pipe cancellation propagates before admission and mutation; Apply
-observes cancellation between captures/writes and compensates attempted writes. Revert, once admitted,
-finishes exact owned cleanup and durable ledger retirement. Save/status/UI close is not Apply.
+observes cancellation between captures/writes and compensates attempted writes. Revert/replacement
+first restore still-owned recorded UserChoices, durably recording attempts and confirming readback.
+Incomplete restoration retains the ledger and prevents Classes cleanup/replacement; a later different
+choice is preserved. Newer Windows choice keys are not deleted by the legacy writer. Only complete
+restoration and exact Classes cleanup retire the ledger. Save/status/UI close is not Apply.
 
 ### 4. Validation & Error Matrix
 Fixed-command null/array/extra field/URI/path -> strict parse failure, no native operation.

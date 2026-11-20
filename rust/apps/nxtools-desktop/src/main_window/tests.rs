@@ -817,6 +817,178 @@ fn module_switching_keeps_one_compact_header_and_sidebar_rhythm(cx: &mut TestApp
 }
 
 #[gpui_kit::test]
+fn feature_total_switches_persist_one_requested_value_per_pointer_and_key(cx: &mut TestAppContext) {
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    let temp = tempfile::tempdir().expect("temporary feature settings");
+    let path = temp.path().join("config.json");
+    let mut config = AppConfig::default();
+    config.quick_launch.auto_quick_switch = false;
+    config.clipboard.link_detector_enabled = false;
+    config.save_to(&path).expect("seed settings");
+    let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
+        .expect("feature switch catalog");
+    let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
+        temp.path().join("clipboard.db"),
+        temp.path().join("images"),
+        nxtools_clipboard::ClipboardRetentionPolicy {
+            max_items: 100,
+            retention_days: 30,
+        },
+        1_000,
+    )
+    .expect("feature switch capture worker");
+    let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
+    let (platform, endpoint) = platform_bridge(8);
+    endpoint.set_connected_for_contract_test(true);
+    let platform = Rc::new(platform);
+    let (indexer, _indexer_endpoint) = crate::runtime::indexer_bridge(8);
+    let clipboard = cx.update(|cx| {
+        cx.new(|cx| {
+            ClipboardApplication::new(
+                worker.clone(),
+                platform.clone(),
+                config.clone(),
+                path.clone(),
+                notifications.clone(),
+                cx,
+            )
+        })
+    });
+    let quick_launch = cx.update(|cx| {
+        cx.new(|_| {
+            QuickLaunchApplication::new(
+                catalog,
+                platform,
+                Rc::new(indexer),
+                config,
+                path.clone(),
+                temp.path().join("logs"),
+                notifications.clone(),
+            )
+        })
+    });
+    let clipboard_for_window = clipboard.downgrade();
+    let quick_launch_for_window = quick_launch.downgrade();
+    let (main, window) = cx.add_window_view(move |window, cx| {
+        window.resize(size(px(1060.), px(600.)));
+        let mut main = MainWindow::new(
+            clipboard_for_window,
+            quick_launch_for_window,
+            gpui_kit::WeakEntity::new_invalid(),
+            MainWindowShellContext {
+                settings: None,
+                platform: None,
+                system_settings: Rc::new(RefCell::new(SystemSettings::default())),
+            },
+            notifications,
+            window,
+            cx,
+        );
+        main.shell.activate(MainModule::QuickFind);
+        main
+    });
+
+    for (module, selector, label, settings_selector) in [
+        (
+            MainModule::QuickFind,
+            "quick-launch-feature-enable",
+            "启用速启",
+            "quick-launch-kit-settings",
+        ),
+        (
+            MainModule::Clipboard,
+            "clipboard-feature-enable",
+            "启用剪贴板",
+            "clipboard-settings-workspace",
+        ),
+    ] {
+        window.update(|_, cx| {
+            main.update(cx, |main, cx| {
+                main.shell.activate(module);
+                cx.notify();
+            })
+        });
+        window.refresh().expect("render feature page");
+        let row = window.debug_bounds(selector).expect("feature switch row");
+        let settings = window
+            .debug_bounds(settings_selector)
+            .expect("original Settings");
+        assert!(row.bottom() <= settings.top());
+        let switch_snapshot = |window: &mut VisualTestContext| {
+            window.update(|window, _| {
+                gpui_kit::base::test_support::snapshots(window)
+                    .into_iter()
+                    .find(|node| {
+                        node.label() == Some(label) && node.role() == Some(gpui_kit::Role::Switch)
+                    })
+                    .expect("named official switch")
+            })
+        };
+        let switch = switch_snapshot(window);
+        assert_eq!(switch.checked(), Some(true));
+        window.simulate_click(switch.bounds().center(), Modifiers::default());
+        window.run_until_parked();
+        let saved = AppConfig::load_from(&path).expect("reload pointer disable");
+        if module == MainModule::QuickFind {
+            assert!(!saved.quick_launch.enabled);
+        } else {
+            assert!(!saved.clipboard.enabled);
+        }
+        assert!(!saved.quick_launch.auto_quick_switch);
+        assert!(!saved.clipboard.link_detector_enabled);
+        let command = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one disable command")
+            .message;
+        match (module, command) {
+            (
+                MainModule::QuickFind,
+                Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(command)),
+            ) => assert!(!command.enabled),
+            (
+                MainModule::Clipboard,
+                Message::PlatformCommand(PlatformCommand::ConfigureClipboard(command)),
+            ) => assert!(!command.enabled),
+            unexpected => panic!("unexpected disable transition: {unexpected:?}"),
+        }
+        assert!(endpoint.try_receive_command_for_contract_test().is_err());
+
+        window.refresh().expect("off switch remains focusable");
+        assert_eq!(switch_snapshot(window).checked(), Some(false));
+        let key = Keystroke::parse("space").expect("Space gesture");
+        window.simulate_event(KeyDownEvent {
+            keystroke: key.clone(),
+            is_held: false,
+            prefer_character_input: false,
+        });
+        window.simulate_event(gpui_kit::KeyUpEvent { keystroke: key });
+        window.run_until_parked();
+        window.refresh().expect("keyboard re-enabled the feature");
+        assert_eq!(switch_snapshot(window).checked(), Some(true));
+        let saved = AppConfig::load_from(&path).expect("reload keyboard enable");
+        assert!(saved.quick_launch.enabled && saved.clipboard.enabled);
+        let command = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("one enable command")
+            .message;
+        match (module, command) {
+            (
+                MainModule::QuickFind,
+                Message::PlatformCommand(PlatformCommand::ConfigureQuickLaunch(command)),
+            ) => assert!(command.enabled),
+            (
+                MainModule::Clipboard,
+                Message::PlatformCommand(PlatformCommand::ConfigureClipboard(command)),
+            ) => assert!(command.enabled),
+            unexpected => panic!("unexpected enable transition: {unexpected:?}"),
+        }
+        assert!(endpoint.try_receive_command_for_contract_test().is_err());
+    }
+    worker.shutdown().expect("stop feature switch worker");
+}
+
+#[gpui_kit::test]
 fn clipboard_settings_keep_one_continuous_scrollable_surface(cx: &mut TestAppContext) {
     cx.update(gpui_kit::init);
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
@@ -6499,14 +6671,14 @@ fn tool_card_toggles_and_configure_opens_without_toggling(cx: &mut TestAppContex
     settings_window
         .refresh()
         .expect("render actual position Select");
-    // Center is the current item; one Down and Enter confirm TopRight through Kit.
+    // TopRight is the current item; one Down and Enter confirm TopLeft through Kit.
     settings_window.simulate_keystrokes("down");
     settings_window.simulate_keystrokes("enter");
     settings_window.run_until_parked();
     let saved = AppConfig::load_from(&config_path).expect("reload saved tool settings");
     assert_eq!(
         saved.clipboard.link_panel_position,
-        LinkPanelPosition::TopRight
+        LinkPanelPosition::TopLeft
     );
 
     let close = settings_window

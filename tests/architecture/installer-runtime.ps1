@@ -1,9 +1,18 @@
-param([ValidateSet('success','failure','owned-process','exited-process','exited-cim-null','trusted-success','trusted-failure','migration-success','migration-cancel','migration-failure','migration-tampered','repair-success','repair-cancel','repair-failure','repair-tampered','detection-failure','protected-success','protected-cancel','protected-failure')][string]$Scenario = 'success', [string]$UpgradeHelperPath = '')
+param([ValidateSet('success','failure','owned-process','exited-process','exited-cim-null','trusted-success','trusted-failure','migration-success','migration-cancel','migration-failure','migration-tampered','repair-success','repair-cancel','repair-failure','repair-tampered','detection-failure','protected-success','protected-cancel','protected-failure','dependency-missing','dependency-open','dependency-decline','dependency-silent','dependency-launch-failure','dependency-browser-failure','archive-warning','archive-failure','archive-wrong-user')][string]$Scenario = 'success', [string]$UpgradeHelperPath = '', [string]$RuntimeProbePath = '', [switch]$Maintenance)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $source = Get-Content (Join-Path $root 'installer\nxtools-next.iss') -Raw -Encoding UTF8
 $callback = [regex]::Match($source, '(?s)var\s+UpgradeFilesCommitted.*?(?=function SameOwnedPath)').Value
 if (!$callback) { throw 'Missing production PrepareToInstall callback' }
+if ($Maintenance) {
+    if ($Scenario -ne 'success' -and !$Scenario.StartsWith('dependency-')) { throw 'Maintenance admission fixture supports only dependency scenarios and success' }
+    $maintenanceSource = [IO.File]::ReadAllText((Join-Path $root 'installer\nxtools-maintenance.iss'))
+    $maintenancePrepare = [regex]::Match($maintenanceSource, '(?s)function PrepareToInstall.*?(?=procedure InitializeWizard)').Value
+    if (!$maintenancePrepare -or !$maintenanceSource.Contains('#include "runtime-dependencies.iss"')) { throw 'Missing maintenance dependency boundary' }
+    $callback = [regex]::Replace($callback, '(?s)function PrepareToInstall.*?(?=procedure FinalizeUpgradeFiles)', $maintenancePrepare)
+}
+$callback = $callback.Replace('{#MyAppExeName}', 'NxTools.exe')
+if ($Maintenance) { $callback = $callback.Replace('    ApplyInstalledArchiveIntegration();', '') }
 $compiler = @(${env:ProgramFiles(x86)},$env:ProgramFiles) | ForEach-Object {Join-Path $_ 'Inno Setup 6\ISCC.exe'} | Where-Object {Test-Path $_} | Select-Object -First 1
 $work = Join-Path $env:PI_SCRATCH_DIR ('installer-runtime-' + [Guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory $work | Out-Null
@@ -11,6 +20,39 @@ $target = Join-Path $work 'target'
 New-Item -ItemType Directory $target | Out-Null
 $owned = $null
 $extraFiles = ''
+$dependencyFailure = $Scenario.StartsWith('dependency-')
+$probeDirectory = Join-Path $work 'runtime-probe'
+New-Item -ItemType Directory $probeDirectory | Out-Null
+$probePath = Join-Path $probeDirectory 'NxTools.PlatformHost.exe'
+if ($RuntimeProbePath) {
+    Copy-Item -LiteralPath $RuntimeProbePath -Destination $probePath
+} elseif ($Scenario -eq 'dependency-launch-failure') {
+    [IO.File]::WriteAllText($probePath, 'not an executable')
+} else {
+    $probeCode = if ($dependencyFailure) { '-2147450730' } else { '0' }
+    Add-Type -TypeDefinition ('public static class DependencyProbeFixture { public static int Main(string[] args) { return args.Length == 1 && args[0] == "--check-runtime" ? ' + $probeCode + ' : 77; } }') -OutputAssembly $probePath -OutputType ConsoleApplication
+}
+$dependencyInclude = Join-Path $root 'installer\runtime-dependencies.iss'
+if (Test-Path $dependencyInclude) {
+    $dependencySource = [IO.File]::ReadAllText($dependencyInclude)
+    # Only user choice and browser delivery are adapted; detection uses a real child exit.
+    if ($dependencyFailure -and $Scenario -ne 'dependency-silent') {
+        $dependencySource = $dependencySource.Replace('not WizardSilent', 'True')
+        $answer = if ($Scenario -in @('dependency-open','dependency-browser-failure')) { 'IDYES' } else { 'IDNO' }
+        $dependencySource = $dependencySource.Replace('SuppressibleMsgBox(DependencyPrompt, mbError, MB_YESNO, IDNO)', $answer)
+    }
+    $browserResult = if ($Scenario -eq 'dependency-browser-failure') { 'False' } else { 'True' }
+    $browserAdapter = @"
+function FixtureOpenDependency(const Verb, FileName, Params, WorkingDir: String; ShowCmd: Integer; Wait: TExecWait; var ResultCode: Integer): Boolean;
+begin
+  SaveStringToFile('$work\browser-url.txt', FileName, False);
+  ResultCode := 31;
+  Result := $browserResult;
+end;
+"@
+    $dependencySource = $dependencySource.Replace("ShellExec('open',", "FixtureOpenDependency('open',")
+    $callback = $callback.Replace('#include "runtime-dependencies.iss"', $browserAdapter + $dependencySource)
+}
 if ($Scenario -in @('trusted-success','trusted-failure')) {
     $trustedCode = if ($Scenario -eq 'trusted-failure') { 1 } else { 0 }
     $trustedHost = Join-Path $target 'NxTools.PlatformHost.exe'
@@ -135,6 +177,25 @@ if ($protected) {
 $helperFile = Join-Path $work 'close-owned-processes.ps1'
 $helperText = [IO.File]::ReadAllText($helperFile).Replace('[string]$NewSignaturePath', '[string]$DiagnosticPath,[string]$NewSignaturePath')
 $helperText = [regex]::Replace($helperText, '(?m)^(param\([^\r\n]+\))', '$1' + "`r`n" + 'if ($DiagnosticPath) { [IO.File]::WriteAllText($DiagnosticPath,''{"schema":1,"event":"fixture"}'') }')
+$archivePayload = ''
+$archiveCode = switch ($Scenario) { 'archive-warning' { 10 } 'archive-failure' { 11 } 'archive-wrong-user' { 12 } default { 0 } }
+if (!$Maintenance) {
+    $archiveDesktop = Join-Path $work 'NxTools.exe'
+    $archiveStub = @"
+public static class InstallerArchiveFixture {
+    public static int Main(string[] args) {
+        System.Guid correlation;
+        if (args.Length != 3 || args[0] != "--install-archive-integration" ||
+            !System.Guid.TryParseExact(args[1], "D", out correlation) || correlation == System.Guid.Empty ||
+            (args[2] != "fresh" && args[2] != "upgrade")) return 91;
+        System.IO.File.WriteAllText(System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "archive-apply.txt"), args[1]);
+        return $archiveCode;
+    }
+}
+"@
+    Add-Type -TypeDefinition $archiveStub -OutputAssembly $archiveDesktop -OutputType ConsoleApplication
+    $archivePayload = 'Source: "' + $archiveDesktop + '"; DestDir: "{app}"; Flags: ignoreversion'
+}
 [IO.File]::WriteAllText($helperFile, $helperText, [Text.UTF8Encoding]::new($true))
 $definition = @"
 [Setup]
@@ -155,8 +216,10 @@ Source: "$work\close-owned-processes.ps1"; Flags: dontcopy
 Source: "$work\NxTools.release.json"; Flags: dontcopy
 Source: "$work\NxTools.release.sig"; Flags: dontcopy
 Source: "$work\bootstrap-migration.ps1"; Flags: dontcopy
+Source: "$probePath"; Flags: dontcopy
 $payloadFiles
 $extraFiles
+$archivePayload
 Source: "$work\marker.txt"; DestDir: "{app}"
 [Code]
 $callback
@@ -172,7 +235,22 @@ try {
     $runtimeText = Get-Content $log -Raw
     $helperRan = Test-Path (Join-Path $target 'helper-ran.txt')
     $markerInstalled = Test-Path (Join-Path $target 'marker.txt')
-    if ($Scenario -eq 'protected-success') {
+    if ($dependencyFailure) {
+        $passed = $runner.ExitCode -ne 0 -and !$helperRan -and !$markerInstalled -and
+            $runtimeText -match 'installer.dependency.failed' -and
+            $runtimeText -notmatch 'bootstrap_migration.detecting|upgrade_close.started|trusted_update.started' -and
+            $runtimeText -match 'https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0'
+        $browserFile = Join-Path $work 'browser-url.txt'
+        if ($Scenario -in @('dependency-open','dependency-browser-failure')) {
+            $passed = $passed -and (Test-Path $browserFile) -and
+                ([IO.File]::ReadAllText($browserFile) -eq 'https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0')
+        } else { $passed = $passed -and !(Test-Path $browserFile) }
+        if ($Scenario -eq 'dependency-browser-failure') { $passed = $passed -and $runtimeText -match 'installer.dependency.download_failed.*code=31' }
+    } elseif ($Maintenance) {
+        $passed = $runner.ExitCode -eq 0 -and !$helperRan -and $markerInstalled -and
+            $runtimeText -match 'installer.dependency.completed' -and
+            $runtimeText -notmatch 'bootstrap_migration.detecting|upgrade_close.started'
+    } elseif ($Scenario -eq 'protected-success') {
         $passed = $runner.ExitCode -eq 0 -and $helperRan -and $markerInstalled -and (Test-Path (Join-Path $target 'elevated-ran.txt')) -and ([regex]::Matches($runtimeText,'protected_elevation_requested')).Count -eq 1
     } elseif ($Scenario -eq 'protected-cancel') {
         $passed = $runner.ExitCode -ne 0 -and !$helperRan -and !$markerInstalled -and $runtimeText -match 'upgrade_close.failed.*code=1223'
@@ -187,7 +265,9 @@ try {
     } elseif ($Scenario -in @('migration-success','repair-success')) {
         $passed = $runner.ExitCode -eq 0 -and $helperRan -and $markerInstalled -and ([regex]::Matches($runtimeText,'bootstrap_migration.elevation_requested')).Count -eq 1
     } else {
-    if($Scenario -eq 'trusted-failure') {
+    if ($Scenario.StartsWith('archive-')) {
+        $passed = $runner.ExitCode -eq $archiveCode -and $helperRan -and $markerInstalled
+    } elseif ($Scenario -eq 'trusted-failure') {
         $passed = $runner.ExitCode -eq 9 -and $helperRan -and $markerInstalled -and
             $runtimeText -match 'trusted_update.started' -and $runtimeText -notmatch 'trusted_update.completed'
     } elseif($Scenario -eq 'failure') {
@@ -197,13 +277,29 @@ try {
     }
     }
     $diagnosticFiles = @(Get-ChildItem -LiteralPath (Join-Path $work 'diagnostics') -File -Recurse -ErrorAction SilentlyContinue)
+    $archiveReceipt = Join-Path $target 'archive-apply.txt'
+    if (!$Maintenance -and $markerInstalled -and $Scenario -ne 'trusted-failure') {
+        $passed = $passed -and (Test-Path -LiteralPath $archiveReceipt)
+        if (Test-Path -LiteralPath $archiveReceipt) {
+            $receipt = [regex]::Escape([IO.File]::ReadAllText($archiveReceipt))
+            $passed = $passed -and $runtimeText -match ('installer.archive_integration.terminal correlation=' + $receipt + ' .*started=1 code=' + $archiveCode + '\b')
+        }
+    } else {
+        $passed = $passed -and !(Test-Path -LiteralPath $archiveReceipt) -and $runtimeText -notmatch 'installer.archive_integration.started'
+    }
     if ($helperRan) {
         $passed = $passed -and @($diagnosticFiles | Where-Object Name -eq 'launch.txt').Count -eq 1 -and @($diagnosticFiles | Where-Object Name -eq 'preparation.jsonl').Count -eq 1
     } elseif ($Scenario -eq 'protected-cancel') {
         $passed = $passed -and @($diagnosticFiles | Where-Object Name -eq 'launch.txt').Count -eq 1
     }
-    $passed=$passed -and @($diagnosticFiles|Where-Object Name -eq 'bootstrap-detection.jsonl').Count -eq 1
-    $passed=$passed -and $runtimeText -match ('bootstrap_migration.detected started=1 exit='+$detectCode)
+    if (!$dependencyFailure -and !$Maintenance) {
+        $passed=$passed -and @($diagnosticFiles|Where-Object Name -eq 'bootstrap-detection.jsonl').Count -eq 1
+        $passed=$passed -and $runtimeText -match ('bootstrap_migration.detected started=1 exit='+$detectCode)
+        $passed=$passed -and $runtimeText -match 'installer.dependency.completed'
+    } else {
+        $passed=$passed -and $diagnosticFiles.Count -eq 0
+        if (!$dependencyFailure) { $passed=$passed -and $runtimeText -match 'installer.dependency.completed' }
+    }
     $passed = $passed -and $runtimeText -notmatch 'Type Mismatch'
     if ($Scenario -eq 'trusted-failure') {
         $passed = $passed -and $runtimeText -match 'trusted_update.failed.*code=1'

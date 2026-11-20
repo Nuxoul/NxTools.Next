@@ -66,6 +66,8 @@ pub struct FloatingAssistantEvent {
     pub kind: FloatingAssistantEventKind,
     pub x: i32,
     pub y: i32,
+    #[serde(default)]
+    pub cursor_monitor: Option<crate::CursorMonitorSnapshot>,
     pub delta: i32,
     pub fullscreen: bool,
     pub text: Option<String>,

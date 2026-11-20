@@ -923,3 +923,69 @@ Real task/queue/SQLite reload, actual local HTTP writer success, multiqueue wait
 Production-pump regressions hold UI observation across accept/remove, out/back and success-before-intention-command using real HTTP/writer/SQLite, then require no countdown/native request. Stopped retry coverage requires immediate event-driven cancellation, no worker while stopped, stable admission/attempt on duplicate, later real success and exactly one typed fake action; no direct coordinator updates or extra sampling loop substitute for the pump.
 ### 7. Wrong vs Correct
 Wrong: persist countdown authority or infer successful cleanup from cx.quit. Correct: persist intention only, consume successful attempt/round once, and verify each original resource owner separately.
+
+## Scenario: Coherent cursor-monitor placement and passive auxiliaries
+
+### 1. Scope / Trigger
+Quick Launch/Clipboard summon, assistant search, passive preview or link presentation and owned archive task/form creation. References: [Listary placement](../../../tasks/11-20-multi-monitor-window-controls/research/listary-placement.md), [Clipboard](../../../../docs/reference-code/clipboard.md), [Quick Launch](../../../../docs/reference-code/quick-launch-research.md).
+
+### 2. Signatures
+`CursorMonitorSnapshot { display_id: u64, work_left: i32, work_top: i32, work_width: u32, work_height: u32, dpi: u32 }`; optional serde-default `cursor_monitor` on both panel requests and FloatingAssistantEvent. `PlatformCommand::QueryCursorMonitor`; `QueryWindowGeometry(QueryWindowGeometryCommand { window_handle })` returns JSON-string `WindowGeometry { outer, client, display_id, dpi, visible }` through PlatformCommandResult. Rectangles contain device-pixel left/top/right/bottom.
+
+### 3. Contracts
+C# samples cursor/HMONITOR/work area/effective DPI together. `DisplayId` on Windows represents HMONITOR, not a display enumeration ordinal. Rust converts the complete sampled work area using that same scale; final native commands use absolute device pixels. Legacy missing snapshots use the ordinal only as an ordinal. Do not select a display by containment in overlapping mixed-DPI logical rectangles. Owned previews query their actual parent display and reuse one passive HWND.
+
+`quick_launch/monitor_presentation.rs` owns one session/HWND/connection-scoped presentation on the original QuickLaunchApplication. Hide, size/stage outside all monitors, confirm an offscreen frame, hide, prepare the target monitor/DPI, query actual outer/client geometry, apply and verify final hidden bounds, confirm passive show, then request original native foreground/input activation. Rust centers actual outer width and sets top to work_top+work_height/4, clamping the entire outer frame. Approximate content origin is not published before native confirmation; suppress preview while primary presentation is pending. Explicit hide/disable/replacement/disconnect retires the presentation.
+
+`clipboard/link_placement.rs` keeps original LinkPanelSession/content/auto-hide/action ownership. Monitor query and each hide/NOACTIVATE/stage/frame/target-DPI-bounds/show receipt share one operation correlation; local generation and temporary-pause generation must remain current. Link detection never activates the popup. Archive JobRecord retains submitting owner work area for new/reopened task windows; visible reuse keeps user placement. Forms and drag progress follow their actual GPUI parent. GPUI callbacks defer cross-entity work beyond the current leased entity/window.
+
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+| Negative origin/nonzero work-area inset/96–144DPI | Same sampled monitor and coherent final device rectangle |
+| Wrong/missing geometry or target-DPI mismatch | Retire/hide current presentation; never infer readiness |
+| Close, newer generation, disconnect or timeout | No subsequent reveal or foreground request |
+| Native bounds/show failure | Failure at original presentation owner, native code retained |
+| Passive auxiliary creation/update | NOACTIVATE, no task activation or primary focus loss |
+
+### 5. Good/Base/Bad Cases
+Good: cursor on left/above monitor -> real work-area snapshot -> outer-width centering -> confirmed show/activation. Base: reopen reuses the original HWND with a fresh snapshot. Bad: ordinal equals DisplayId; primary_display for every link; client width treated as native outer width; queued SetWindowPos treated as applied.
+
+### 6. Tests Required
+`multimonitor_` covers negative work areas, nonzero taskbar origins, 96/120/144DPI, first show/reuse, passive command order, stale close/failure and retained archive placement. `r1_popup_presentation_` drives original IPC receipts with different outer/client widths and retired connections. Native geometry/serialization fixtures exercise real DTO/parser boundaries without user HWND effects. Physical mixed-DPI first-frame/focus/interaction acceptance remains separate.
+
+### 7. Wrong vs Correct
+Wrong: compare cursor_display_index to display.id(), calculate remaining-height/4 and show before target bounds. Correct: coherent snapshot, work-height/4 top, actual outer geometry, final native receipt, current-session show and activation.
+
+## Scenario: Persistent total feature controls and task-presentation defaults
+
+### 1. Scope / Trigger
+Main Quick Launch/Clipboard enable rows, native reconnect, archive show/terminal transitions, controlled-browser post-Commit progress and newly initialized defaults.
+
+### 2. Signatures
+Official Kit0.8.0 Medium `Switch::new().checked().label().on_change()` precedes the existing Settings compound on each main feature page. Original `set_feature_enabled(bool, cx)` saves its section before publishing live intent. `ConfigureClipboardCommand.enabled` defaults true when omitted; C# `ConfigureClipboardAsync(command, correlationId, cancellationToken)` carries that ID through the original Windows event queue.
+
+### 3. Contracts
+One requested bool, one deferred callback; no clickable parent toggler or Toolbar adaptation. Save failure leaves prior live/durable state. Desired state, pending native application and confirmed success/failure are distinct; reconnect reapplies current intent. Clipboard enabled composes with independent temporary capture pause, unregisters its hotkey and blocks native reads/publication while off. Re-enable samples sequence baseline without backfill and preserves history/assets/preferences/pause deadline. Quick Launch off rejects queued/native/assistant/file-dialog/quick-switch entry, invalidates query/preview/reveal/activation and removes feature-owned transient surfaces without changing the indexer service.
+
+Archive intentional show/reuse and retained visible completion request confirmed ActivateWindow for the current job/attempt/batch/window/HWND/connection. Ordinary progress and background terminal never reopen or front a window. Controlled-browser StartNow retains original source anchor/presentation intent while Held, consumes once only after actual post-Commit active state, and uses the existing keyed window. Explicit close/background/abort/removal retires intent. QueueOnly, automatic-progress-off and unstarted delay do not open progress.
+
+Core defaults are `LinkPanelPosition::TopRight`, `NotificationPosition::TopCenter` and new-task `default_connection_limit=16`. Preserve all explicit saved positions/connection limits and existing DownloadRequest values; simultaneous-task queue concurrency is unchanged. Diagnostics carry accepted/start/terminal/elapsed/native error without payloads; logging cannot change application results.
+
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+| Save failure | Prior switch/live state retained; visible existing error channel |
+| Native reject/timeout/disconnect | No false applied status; reapply desired intent on reconnect |
+| Disabled/retired queued capture, load, preview or summon | Discard and clean its owned staging; no late surface |
+| Held/duplicate/closed controlled download | No premature, duplicate or resurrected progress |
+| Explicit old8connections or old placement | Retained through section updates/reload |
+
+### 5. Good/Base/Bad Cases
+Good: disable -> durable section -> local retirement/native ACK; re-enable restores preferences. Base: ordinary immediate download still uses its original keyed progress. Bad: use persistent enabled for temporary pause, clear data on disable, open progress at Held acceptance, or rewrite an explicit old default as unset.
+
+### 6. Tests Required
+Actual main-page `feature_total_switches_persist_one_requested_value_per_pointer_and_key`; `feature_disable_retires` save-failure/queued/re-enable tests; native fake hotkey/read/publication gates; protocol enabled roundtrip. `r3_archive_`, `controlled_progress_`, original keyed-close/lifecycle tests, Core default/missing/explicit-section tests and actual new-request propagation. No compiled TestWindow assertion certifies installed/user/DPI acceptance.
+
+### 7. Wrong vs Correct
+Wrong: unchecked UI only, default16simultaneous tasks, or activate every progress event. Correct: original feature owner plus native enabled boundary,16connections per new task, and transition-scoped task-window presentation.

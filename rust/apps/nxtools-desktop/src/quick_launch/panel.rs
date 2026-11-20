@@ -47,6 +47,8 @@ pub(super) fn quick_launch_focusable_row(
 pub(crate) struct QuickLaunchPanel {
     pub(crate) theme: Theme,
     pub(crate) row_style: nxtools_core::QuickLaunchRowStyle,
+    pub(super) native_resize_limits:
+        Option<(super::monitor_presentation::PopupResizeLimits, (i32, i32))>,
     pub(crate) result_entrance: nxtools_core::QuickLaunchResultEntrance,
     pub(crate) result_entrances: super::result_motion::ResultEntrances,
     pub(crate) result_motion_available: bool,
@@ -221,6 +223,7 @@ impl QuickLaunchPanel {
         Self {
             theme: Theme::zed_dark(),
             row_style: nxtools_core::QuickLaunchRowStyle::default(),
+            native_resize_limits: None,
             result_entrance: nxtools_core::QuickLaunchResultEntrance::default(),
             result_entrances: super::result_motion::ResultEntrances::default(),
             result_admission_pending: false,
@@ -270,6 +273,7 @@ impl QuickLaunchPanel {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.native_resize_limits = None;
         self.dismiss_preview(cx);
         self.finish_result_entrances("show", cx);
         self.target = target;
@@ -399,11 +403,25 @@ impl QuickLaunchPanel {
     pub(crate) fn desired_content_size(&self, window: &Window, cx: &App) -> Size<Pixels> {
         let mut desired = size(px(PANEL_WIDTH), px(self.content_height()));
         if let Some(display) = window.display(cx) {
-            let screen = display.bounds();
+            let screen = display.visible_bounds();
             desired.width = desired.width.min(screen.size.width);
             desired.height = desired
                 .height
                 .min((screen.bottom() - window.bounds().top()).max(px(COLLAPSED_PANEL_HEIGHT)));
+        }
+        if let Some((limits, origin)) = self.native_resize_limits {
+            let scale = window.scale_factor();
+            let constrained = limits.constrain(
+                origin,
+                (
+                    (desired.width.as_f32() * scale).round() as i32,
+                    (desired.height.as_f32() * scale).round() as i32,
+                ),
+            );
+            desired = size(
+                px(constrained.0 as f32 / scale),
+                px(constrained.1 as f32 / scale),
+            );
         }
         desired
     }
@@ -2233,22 +2251,22 @@ pub(crate) fn quick_launch_bounds(
             COLLAPSED_PANEL_HEIGHT
         }),
     );
-    let display = cx
-        .displays()
-        .into_iter()
-        .find(|display| u64::from(display.id()) == u64::from(request.cursor_display_index))
-        .or_else(|| cx.displays().into_iter().next());
-    let Some(display) = display else {
-        return (Bounds::new(point(px(100.0), px(100.0)), desired), None);
-    };
-    let screen = display.bounds();
+    let placement = crate::ui::monitor_placement::cursor_monitor_placement(
+        request.cursor_monitor,
+        request.cursor_display_index,
+        request.cursor_monitor_dpi,
+        cx,
+    );
+    let screen = placement.work_area;
     let panel_size = size(
         desired.width.min(screen.size.width),
         desired.height.min(screen.size.height),
     );
     let x = screen.left() + (screen.size.width - panel_size.width) / 2.0;
-    let y = screen.top() + (screen.size.height - panel_size.height) / 4.0;
-    (Bounds::new(point(x, y), panel_size), Some(display.id()))
+    let y = (screen.top() + screen.size.height / 4.0)
+        .min(screen.bottom() - panel_size.height)
+        .max(screen.top());
+    (Bounds::new(point(x, y), panel_size), placement.display_id)
 }
 
 #[cfg(test)]

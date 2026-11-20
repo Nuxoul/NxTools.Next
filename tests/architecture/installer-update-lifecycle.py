@@ -56,4 +56,34 @@ assert 'Remove-UpgradeExactFile $backup $entry.old_sha256' in cleanup
 assert 'Incomplete backup cleanup evidence.' in cleanup
 assert 'Complete-UpgradeSetCleanup $InstallRoot $StateFile $State' in helper
 assert '# Deliberately outside the pre-commit compensation catch.' in helper
+dependencies = (root / 'installer/runtime-dependencies.iss').read_text(encoding='utf-8')
+maintenance = (root / 'installer/nxtools-maintenance.iss').read_text(encoding='utf-8')
+program = (root / 'csharp/NxTools.PlatformHost/Program.cs').read_text(encoding='utf-8')
+assert '#include "runtime-dependencies.iss"' in source and '#include "runtime-dependencies.iss"' in maintenance
+assert prepare.index('CheckRuntimeDependencies(UpgradeCorrelation)') < prepare.index('EnsureBootstrapMigration()')
+assert prepare.index('CheckRuntimeDependencies(UpgradeCorrelation)') < prepare.index('ExtractTemporaryFile(')
+assert 'CheckRuntimeDependencies(' in maintenance.split('function PrepareToInstall', 1)[1].split('procedure InitializeWizard', 1)[0]
+entry_probe = 'if (args.Length == 1 && args[0] == "--check-runtime") return 0;'
+assert program.index(entry_probe) < program.index('ArchiveCliHost.IsMode')
+assert program.index(entry_probe) < program.index('PinCurrentProcessImage')
+assert program.index(entry_probe) < program.index('PlatformLog.CreateDefault')
+assert "Exec(ProbePath, '--check-runtime'" in dependencies and 'RegQuery' not in dependencies
+assert 'SuppressibleMsgBox(DependencyPrompt, mbError, MB_YESNO, IDNO)' in dependencies
+assert dependencies.index('if not WizardSilent then') < dependencies.index("ShellExec('open',")
+assert 'https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0' in dependencies
+assert 'Microsoft .NET 8' in dependencies and 'Windows x64' in dependencies
+print('PASS installer runtime admission precedes mutation; side-effect-free Host entry, consent-only official download; source-only')
 print('PASS installer complete file set, extracted predeclared hashes, durable attempted/reverse compensation, original owners; source-only, not native acceptance')
+
+postinstall = source.split('procedure CurStepChanged', 1)[1].split('procedure DeinitializeSetup', 1)[0]
+assert postinstall.index('PrepareTrustedUpdate();') < postinstall.index('FinalizeUpgradeFiles(True);') < postinstall.index('ApplyInstalledArchiveIntegration();')
+apply = source.split('procedure ApplyInstalledArchiveIntegration', 1)[1].split('procedure CurStepChanged', 1)[0]
+assert 'ExecAsOriginalUser(' in apply and 'ewWaitUntilTerminated' in apply
+assert 'WizardSilent' not in apply.split('ExecAsOriginalUser(', 1)[0], 'silent setup must reach mandatory Apply'
+assert "'--install-archive-integration '" in apply
+assert 'ArchiveIntegrationExit' in source.split('function GetCustomSetupExitCode', 1)[1].split('end;', 1)[0]
+uninstall = (root / 'installer/uninstall-cleanup.ps1').read_text(encoding='utf-8-sig')
+assert '--uninstall-archive-integration' in uninstall
+assert 'Remove-NxToolsArchiveRegistration' not in uninstall and 'archive-shell-integration-applied.json' not in uninstall
+assert uninstall.index('Restore-NxToolsArchiveIntegration $InstallDirectory $CorrelationId') < uninstall.index('if ($RemovePersonalData) { Invoke-NxToolsPersonalDataCleanup')
+print('PASS installer archive Apply is mandatory, original-user and observed; uninstall delegates before data cleanup; source-only')

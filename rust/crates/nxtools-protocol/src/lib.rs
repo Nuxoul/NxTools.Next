@@ -12,6 +12,7 @@ pub mod archive_virtual_drag;
 pub mod desktop_archive_intent;
 pub mod desktop_markdown_intent;
 pub mod floating_assistant;
+pub mod installed_applications;
 pub mod main_window;
 pub mod raw_numbered_join;
 pub mod system_proxy;
@@ -228,6 +229,17 @@ pub struct ClipboardImageData {
     pub height: u32,
 }
 
+/// One cursor-monitor observation; work-area coordinates are absolute device pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CursorMonitorSnapshot {
+    pub display_id: u64,
+    pub work_left: i32,
+    pub work_top: i32,
+    pub work_width: u32,
+    pub work_height: u32,
+    pub dpi: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClipboardPanelRequest {
     pub target: ForegroundContext,
@@ -235,6 +247,8 @@ pub struct ClipboardPanelRequest {
     pub cursor_y: i32,
     pub cursor_display_index: u32,
     pub cursor_monitor_dpi: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor_monitor: Option<CursorMonitorSnapshot>,
     pub requested_at_unix_ms: i64,
     #[serde(default)]
     pub event_sequence: u64,
@@ -249,6 +263,8 @@ pub struct QuickLaunchPanelRequest {
     pub cursor_y: i32,
     pub cursor_display_index: u32,
     pub cursor_monitor_dpi: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor_monitor: Option<CursorMonitorSnapshot>,
     pub requested_at_unix_ms: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub correlation_id: Option<uuid::Uuid>,
@@ -494,6 +510,8 @@ pub enum PlatformCommand {
     PrepareMainWindow(main_window::PrepareMainWindowCommand),
     ConfigureDesktopShell(ConfigureDesktopShellCommand),
     ReadClipboardText,
+    QueryCursorMonitor,
+    QueryInstalledApplications,
     PasteText(PasteTextCommand),
     PasteFiles(PasteFilesCommand),
     PasteImage(PasteImageCommand),
@@ -522,6 +540,7 @@ pub enum PlatformCommand {
     ToggleWindowMaximized(ToggleWindowMaximizedCommand),
     SetWindowVisibility(SetWindowVisibilityCommand),
     SetWindowPosition(SetWindowPositionCommand),
+    QueryWindowGeometry(QueryWindowGeometryCommand),
     ActivateWindow(ActivateWindowCommand),
     BeginWindowResize(BeginWindowResizeCommand),
     BeginWindowMove(BeginWindowMoveCommand),
@@ -652,6 +671,8 @@ pub struct SetClipboardCapturePausedCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigureClipboardCommand {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
     pub hotkey_modifiers: Vec<String>,
     pub hotkey_key: String,
     pub hotkey_display: String,
@@ -968,6 +989,31 @@ pub struct SetWindowBoundsCommand {
     pub y: i32,
     pub width: i32,
     pub height: i32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueryWindowGeometryCommand {
+    pub window_handle: i64,
+}
+
+/// Absolute device-pixel rectangle. The outer rectangle includes native frame insets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowGeometryRect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// Readback from the requested HWND (including when hidden), carried in CommandResult.data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowGeometry {
+    pub outer: WindowGeometryRect,
+    pub client: WindowGeometryRect,
+    /// HMONITOR for the largest intersection; zero when entirely offscreen.
+    pub display_id: u64,
+    pub dpi: u32,
+    pub visible: bool,
 }
 
 /// Resizes the window while keeping its real current visual center. GPUI's
@@ -1852,6 +1898,7 @@ mod tests {
     fn clipboard_platform_configuration_round_trips() {
         let envelope = Envelope::new(Message::PlatformCommand(
             PlatformCommand::ConfigureClipboard(ConfigureClipboardCommand {
+                enabled: false,
                 hotkey_modifiers: vec!["control".into(), "shift".into()],
                 hotkey_key: "V".into(),
                 hotkey_display: "Ctrl+Shift+V".into(),
@@ -1865,6 +1912,30 @@ mod tests {
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("clipboard configuration must decode");
         assert_eq!(decoded, envelope);
+        let Message::PlatformCommand(PlatformCommand::ConfigureClipboard(command)) =
+            decoded.message
+        else {
+            panic!("expected clipboard configuration");
+        };
+        let mut legacy = serde_json::to_value(&command).expect("legacy clipboard configuration");
+        assert_eq!(
+            legacy
+                .as_object_mut()
+                .expect("configuration object")
+                .remove("enabled"),
+            Some(false.into())
+        );
+        let mut expected =
+            serde_json::to_value(&command).expect("expected clipboard configuration");
+        expected["enabled"] = true.into();
+        assert_eq!(
+            serde_json::to_value(
+                serde_json::from_value::<ConfigureClipboardCommand>(legacy)
+                    .expect("legacy enabled default")
+            )
+            .expect("encode legacy enabled default"),
+            expected,
+        );
 
         let recording = Envelope::new(Message::PlatformCommand(
             PlatformCommand::SetClipboardHotKeyRecording(SetClipboardHotKeyRecordingCommand {
@@ -1954,6 +2025,7 @@ mod tests {
                 cursor_y: 200,
                 cursor_display_index: 1,
                 cursor_monitor_dpi: 144,
+                cursor_monitor: None,
                 requested_at_unix_ms: 1_700_000_000_000,
                 correlation_id: Some(request_id),
             }),
@@ -1986,6 +2058,7 @@ mod tests {
                 cursor_y: 200,
                 cursor_display_index: 1,
                 cursor_monitor_dpi: 144,
+                cursor_monitor: None,
                 correlation_id: None,
                 requested_at_unix_ms: 1_700_000_000_100,
             }),
@@ -2231,6 +2304,7 @@ mod tests {
                 cursor_y: 700,
                 cursor_display_index: 1,
                 cursor_monitor_dpi: 144,
+                cursor_monitor: None,
                 requested_at_unix_ms: 1_700_000_000_500,
                 event_sequence: 41,
             }),

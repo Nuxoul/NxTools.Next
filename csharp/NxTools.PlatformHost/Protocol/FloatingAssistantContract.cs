@@ -55,12 +55,13 @@ internal static class FloatingAssistantContract
 
     internal static ProtocolEnvelope Event(FloatingAssistantCommand command, Guid correlationId, ulong sequence,
         string kind, int x = 0, int y = 0, int delta = 0, bool fullscreen = false,
-        FloatingAssistantDropData? drop = null, string? imagePath = null, Guid? dropId = null) =>
+        FloatingAssistantDropData? drop = null, string? imagePath = null, Guid? dropId = null,
+        CursorMonitorSnapshot? cursorMonitor = null) =>
         ProtocolEnvelope.Create("platform_event", new { @event = "floating_assistant", data = new
         {
             version = 1, session_id = command.SessionId, generation = command.Generation,
             window_handle = command.WindowHandle, correlation_id = correlationId, sequence, kind, x, y, delta,
-            fullscreen, text = drop?.Text, url = drop?.Url, html = drop?.Html,
+            cursor_monitor = cursorMonitor, fullscreen, text = drop?.Text, url = drop?.Url, html = drop?.Html,
             image_path = imagePath, image_format = drop?.ImageFormat,
             files = drop?.Files ?? Array.Empty<string>(), drop_id = dropId
         } }, correlationId);

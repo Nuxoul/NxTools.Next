@@ -150,8 +150,21 @@ impl DownloadApplication {
         }
         let pending = self.pending_batch.take().expect("matching pending batch");
         let count = pending.task_ids.len();
+        let mut started_tasks = Vec::new();
         let (succeeded, failed, message) = match outcome {
             DownloadCommandOutcome::Batch { results } => {
+                if self.show_progress_window
+                    && matches!(
+                        pending.action,
+                        DownloadBatchAction::Resume | DownloadBatchAction::Retry
+                    )
+                {
+                    started_tasks.extend(
+                        results
+                            .iter()
+                            .filter_map(|result| result.fault.is_none().then_some(result.task_id)),
+                    );
+                }
                 let failed: Vec<_> = results
                     .iter()
                     .filter(|result| result.fault.is_some())
@@ -177,6 +190,9 @@ impl DownloadApplication {
             action = ?pending.action, target_count = count, failed_count,
             elapsed_ms = pending.started.elapsed().as_millis(), "download batch completed");
         self.refresh(cx);
+        for task_id in started_tasks {
+            self.present_explicit_task_start(task_id, count > 1, cx);
+        }
         let title = if failed_count == 0 {
             format!("{} {succeeded} 项", completed_label(pending.action))
         } else {

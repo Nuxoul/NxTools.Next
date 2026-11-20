@@ -4,7 +4,7 @@
 ; deploy themselves on first run via the in-app installer (IndexerServiceInstaller).
 
 #define MyAppName "NxTools"
-#define MyAppVersion "0.7.2"
+#define MyAppVersion "0.7.3"
 #define MyAppPublisher "NxTools"
 #define MyAppExeName "NxTools.exe"
 #define PackageDir "..\artifacts\win-x64"
@@ -103,6 +103,28 @@ var
   BootstrapMigrationDirectory: String;
   BootstrapRepairMissing, BootstrapTrustRotation: Boolean;
   UninstallRemovePersonalData: Boolean;
+  ArchiveIntegrationFresh: Boolean;
+  ArchiveIntegrationExit: Integer;
+
+#include "runtime-dependencies.iss"
+
+function CoCreateGuid(var Value: TGUID): Longint;
+  external 'CoCreateGuid@ole32.dll stdcall';
+function StringFromGUID2(var Value: TGUID; Buffer: String; Count: Integer): Integer;
+  external 'StringFromGUID2@ole32.dll stdcall';
+function GetTickCount64(): Int64;
+  external 'GetTickCount64@kernel32.dll stdcall';
+
+function NewInstallerCorrelation(): String;
+var
+  Value: TGUID;
+  Buffer: String;
+begin
+  SetLength(Buffer, 39);
+  if (CoCreateGuid(Value) <> 0) or (StringFromGUID2(Value, Buffer, 39) <> 39) then
+    RaiseException('无法生成 NxTools 操作标识。');
+  Result := Copy(Buffer, 2, 36);
+end;
 
 function PreservePreparationDiagnostics(SourcePath, Correlation: String; Started: Boolean; ResultCode: Integer): String;
 var
@@ -190,6 +212,8 @@ begin
   UpgradePreparationReady := False;
   UpgradeCorrelation := GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-' + ExtractFileName(ExpandConstant('{tmp}'));
   StringChangeEx(UpgradeCorrelation, '.', '-', True);
+  Result := CheckRuntimeDependencies(UpgradeCorrelation);
+  if Result <> '' then Exit;
   ExtractTemporaryFile('close-owned-processes.ps1');
   ExtractTemporaryFile('NxTools.release.json');
   ExtractTemporaryFile('NxTools.release.sig');
@@ -255,6 +279,10 @@ begin
     Exit;
   end;
   Log('installer.upgrade_close.completed correlation=' + Correlation);
+  ArchiveIntegrationFresh := not FileExists(ExpandConstant('{app}\{#MyAppExeName}')) and
+    not RegKeyExists(HKCU, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8C1E4E9A-52B7-4A0E-9F5D-2A1C3B7D9E10}_is1') and
+    not RegKeyExists(HKLM32, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8C1E4E9A-52B7-4A0E-9F5D-2A1C3B7D9E10}_is1') and
+    not RegKeyExists(HKLM64, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{8C1E4E9A-52B7-4A0E-9F5D-2A1C3B7D9E10}_is1');
   UpgradePreparationReady := True;
 end;
 
@@ -304,6 +332,45 @@ begin
   Log('installer.trusted_update.completed correlation=' + UpgradeCorrelation);
 end;
 
+procedure ApplyInstalledArchiveIntegration();
+var
+  Correlation, Mode, MessageText: String;
+  StartedAt: Int64;
+  Started: Boolean;
+  ResultCode: Integer;
+begin
+  StartedAt := GetTickCount64();
+  Correlation := '';
+  ArchiveIntegrationExit := 11;
+  if ArchiveIntegrationFresh then Mode := 'fresh' else Mode := 'upgrade';
+  try
+    Correlation := NewInstallerCorrelation();
+    Log('installer.archive_integration.started correlation=' + Correlation +
+      ' setup_correlation=' + UpgradeCorrelation + ' mode=' + Mode);
+    WizardForm.StatusLabel.Caption := '正在应用当前用户的压缩包集成…';
+    Started := ExecAsOriginalUser(ExpandConstant('{app}\{#MyAppExeName}'),
+      '--install-archive-integration ' + Correlation + ' ' + Mode,
+      '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Log('installer.archive_integration.terminal correlation=' + Correlation +
+      ' elapsed_ms=' + IntToStr(GetTickCount64() - StartedAt) +
+      ' started=' + IntToStr(Ord(Started)) + ' code=' + IntToStr(ResultCode));
+    if Started and ((ResultCode = 0) or (ResultCode = 10) or (ResultCode = 12)) then
+      ArchiveIntegrationExit := ResultCode;
+  except
+    Log('installer.archive_integration.failed correlation=' + Correlation +
+      ' elapsed_ms=' + IntToStr(GetTickCount64() - StartedAt));
+  end;
+  if ArchiveIntegrationExit = 0 then Exit;
+  if ArchiveIntegrationExit = 10 then
+    MessageText := 'NxTools 已安装，压缩包集成已应用，但 Windows 未确认部分默认关联。可在 Windows“默认应用”中检查。'
+  else if ArchiveIntegrationExit = 12 then
+    MessageText := 'NxTools 已安装，但无法确认当前进程属于原始安装用户。请在原始用户下打开 NxTools 并在压缩包集成中重试。'
+  else
+    MessageText := 'NxTools 已安装，但未确认压缩包集成成功。请在 NxTools 的压缩包集成中重试，或检查安装日志。';
+  if not WizardSilent then
+    SuppressibleMsgBox(MessageText, mbInformation, MB_OK, IDOK);
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
@@ -311,6 +378,7 @@ begin
     PrepareTrustedUpdate();
     FinalizeUpgradeFiles(True);
     UpgradeFilesCommitted := True;
+    ApplyInstalledArchiveIntegration();
   end;
 end;
 
@@ -326,7 +394,7 @@ end;
 
 function GetCustomSetupExitCode(): Integer;
 begin
-  if UpgradeFinalizationFailed then Result := 9 else Result := 0;
+  if UpgradeFinalizationFailed then Result := 9 else Result := ArchiveIntegrationExit;
 end;
 
 function SameOwnedPath(const Actual, Expected: String): Boolean;
@@ -384,9 +452,7 @@ var
 begin
   Result := True;
   UninstallRemovePersonalData := True;
-  UninstallCorrelation := GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-' +
-    ExtractFileName(ExpandConstant('{tmp}'));
-  StringChangeEx(UninstallCorrelation, '.', '-', True);
+  UninstallCorrelation := NewInstallerCorrelation();
   if UninstallSilent then Exit;
   Choice := MsgBox(
     '卸载将默认删除 NxTools 的设置、历史记录、缓存、日志和扩展运行数据，但保留已下载的最终文件。' +
@@ -450,6 +516,10 @@ begin
   if (not Started) or (ResultCode <> 0) then
   begin
     Log('installer.uninstall_cleanup.failed correlation=' + Correlation + ' code=' + IntToStr(ResultCode));
+    if Started and (ResultCode = 12) then
+      RaiseException('无法确认卸载进程属于原始用户。请在原始用户下卸载；压缩包集成恢复记录已保留。');
+    if Started and (ResultCode = 11) then
+      RaiseException('未能确认压缩包集成恢复完成。已保留原有选择和恢复记录，请在修复后重试卸载。');
     RaiseException('无法完成 NxTools 归属进程或卸载数据清理；未将失败视为成功。错误码：' + IntToStr(ResultCode));
   end;
   Log('installer.uninstall_cleanup.completed correlation=' + Correlation);

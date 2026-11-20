@@ -7,7 +7,7 @@ import unittest
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
-VERSION = "0.7.2"
+VERSION = "0.7.3"
 
 
 class ProductVersionTests(unittest.TestCase):

@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/11-20-windows-app-discovery/prd.md","reason":"Application-class discovery acceptance"}
+{"file":".trellis/spec/shared/verification.md","reason":"Serial Cargo and native fixture evidence policy"}
+{"file":".trellis/spec/nxtools-finder/backend/quality-guidelines.md","reason":"Snapshot, aliases, replacement and native boundary assertions"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Rust and C# wire compatibility"}

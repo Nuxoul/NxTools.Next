@@ -1,0 +1,32 @@
+{
+  "id": "multi-monitor-window-controls",
+  "name": "multi-monitor-window-controls",
+  "title": "Multi-monitor window lifecycle and feature controls",
+  "description": "Fix auxiliary window placement and visibility, download progress/defaults, automatic archive integration and Quick Launch/Clipboard enable controls",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "desktop-window-lifecycle",
+  "package": "nxtools-desktop",
+  "priority": "P1",
+  "creator": "XFiend",
+  "assignee": "XFiend",
+  "createdAt": "2026-11-20",
+  "completedAt": null,
+  "branch": "main",
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md",
+    "research/boundaries.md",
+    "verification.md"
+  ],
+  "notes": "R1-R7 implemented. Core106/Protocol120/IPC73 and50relatedDesktoptests pass. FullDesktop suite and physical/installed acceptance remain open; see verification.md.",
+  "meta": {}
+}

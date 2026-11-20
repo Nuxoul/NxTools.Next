@@ -299,13 +299,23 @@ if (-not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
             (Join-Path $root 'tests\architecture\installer-process-exit-race.ps1')
         if ($LASTEXITCODE -ne 0) { throw "Installer exited-process regression failed: $nativeShellDirectory" }
     }
-    foreach ($scenario in @('success', 'failure', 'owned-process', 'exited-process', 'exited-cim-null', 'trusted-success', 'trusted-failure', 'migration-success', 'migration-cancel', 'migration-failure', 'migration-tampered', 'repair-success', 'repair-cancel', 'repair-failure', 'repair-tampered', 'detection-failure')) {
+    foreach ($scenario in @('dependency-missing', 'dependency-open', 'dependency-decline', 'dependency-silent', 'dependency-launch-failure', 'dependency-browser-failure', 'success', 'failure', 'owned-process', 'exited-process', 'exited-cim-null', 'trusted-success', 'trusted-failure', 'migration-success', 'migration-cancel', 'migration-failure', 'migration-tampered', 'repair-success', 'repair-cancel', 'repair-failure', 'repair-tampered', 'detection-failure')) {
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
             (Join-Path $root 'tests\architecture\installer-runtime.ps1') `
             -Scenario $scenario
         if ($LASTEXITCODE -ne 0) {
             throw "Installer runtime regression failed: $scenario"
         }
+    }
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+        (Join-Path $root 'tests\architecture\installer-runtime.ps1') `
+        -Scenario success -RuntimeProbePath $migrationHostPath
+    if ($LASTEXITCODE -ne 0) { throw 'Packaged PlatformHost runtime probe regression failed' }
+    foreach ($dependencyScenario in @('success', 'dependency-missing', 'dependency-open', 'dependency-silent')) {
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
+            (Join-Path $root 'tests\architecture\installer-runtime.ps1') `
+            -Scenario $dependencyScenario -Maintenance
+        if ($LASTEXITCODE -ne 0) { throw "Maintenance dependency admission regression failed: $dependencyScenario" }
     }
     foreach ($scenario in @('success', 'rollback', 'rollback-after-file', 'commit-failure', 'trusted-failure')) {
         & powershell.exe -NoProfile -ExecutionPolicy Bypass -File `
@@ -331,7 +341,7 @@ if ($restartIndexerServiceOnFailure -and $packageCompleted) {
 if ($CreateDistributionArchive -and -not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
     & python (Join-Path $PSScriptRoot 'package-archive-source.py') `
         --output (Join-Path $root 'artifacts\installer\third_party\archive-worker\archive-worker-source.zip') `
-        --installer (Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.2.exe')
+        --installer (Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.3.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Complete release distribution failed.' }
 }
 }

@@ -1,5 +1,5 @@
 ; Explicit updater bootstrap maintenance. Never entered by the normal installer.
-#define MyAppVersion "0.7.2"
+#define MyAppVersion "0.7.3"
 #define PackageDir "..\artifacts\win-x64"
 [Setup]
 AppName=NxTools 更新服务维护
@@ -28,6 +28,15 @@ Source: "{#PackageDir}\*"; DestDir: "{tmp}\NxTools-maintenance-package"; Flags: 
 [Code]
 var
   MaintenanceSucceeded: Boolean;
+#include "runtime-dependencies.iss"
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  NeedsRestart := False;
+  Result := CheckRuntimeDependencies(GetDateTimeString('yyyymmddhhnnss', '-', ':') + '-' +
+    ExtractFileName(ExpandConstant('{tmp}')));
+end;
+
 procedure InitializeWizard();
 begin
   WizardForm.WelcomeLabel2.Caption := '此工具只维护现有 NxTools 可信更新服务，以支持新增发布文件。' + Chr(13) + Chr(10) +

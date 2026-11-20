@@ -20,6 +20,8 @@ mod download_window_lifecycle;
 mod downloads;
 mod extensions;
 mod icons;
+#[cfg(windows)]
+mod install_archive_integration;
 mod main_window;
 mod markdown_launch;
 mod network_settings;
@@ -670,6 +672,13 @@ fn install_panic_logging() {
 
 fn main() {
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    #[cfg(windows)]
+    if arguments
+        .first()
+        .is_some_and(|arg| arg == install_archive_integration::ARGUMENT)
+    {
+        std::process::exit(install_archive_integration::run(&arguments));
+    }
     let cwd = std::env::current_dir().ok();
     let markdown_intent = match markdown_launch::parse_arguments(
         arguments.iter().cloned(),

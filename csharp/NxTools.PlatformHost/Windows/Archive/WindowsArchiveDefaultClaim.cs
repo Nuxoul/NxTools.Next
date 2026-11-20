@@ -33,12 +33,11 @@ internal sealed class WindowsArchiveDefaultClaim : IArchiveDefaultClaim
     public void Set(string extension, string? progId)
     {
         var path = ChoicePath(extension);
-        // Exact keys only; an unexpected child makes DeleteSubKey throw and the claim is reported.
-        foreach (var choice in new[] { path, FileExtsPrefix + extension + @"\UserChoiceLatest" })
-        {
-            Registry.CurrentUser.DeleteSubKey(choice + @"\ProgId", false);
-            Registry.CurrentUser.DeleteSubKey(choice, false);
-        }
+        // The newer choice scheme is not owned by our legacy writer. Do not remove a later
+        // Windows/user choice to make a legacy claim or restoration appear to succeed.
+        using (var latest = Registry.CurrentUser.OpenSubKey(FileExtsPrefix + extension + @"\UserChoiceLatest", false))
+            if (latest is not null) throw new InvalidOperationException("Explorer owns a newer default choice.");
+        Registry.CurrentUser.DeleteSubKey(path, false);
         if (progId is null) return;
 
         using var key = Registry.CurrentUser.CreateSubKey(path, true)

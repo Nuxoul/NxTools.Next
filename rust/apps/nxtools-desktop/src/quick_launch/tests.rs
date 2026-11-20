@@ -4812,6 +4812,7 @@ fn quick_launch_bounds_use_the_cursor_display_upper_quarter(cx: &mut TestAppCont
         cursor_y: 10,
         cursor_display_index: 0,
         cursor_monitor_dpi: 96,
+        cursor_monitor: None,
         requested_at_unix_ms: 1_700_000_000_000,
         correlation_id: None,
     };
@@ -4840,6 +4841,7 @@ fn quick_launch_bounds_keep_logical_size_at_100_125_and_150_percent_dpi(cx: &mut
             cursor_y: 720,
             cursor_display_index: 0,
             cursor_monitor_dpi: dpi,
+            cursor_monitor: None,
             requested_at_unix_ms: 1_700_000_000_000,
             correlation_id: None,
         };
@@ -4851,6 +4853,54 @@ fn quick_launch_bounds_keep_logical_size_at_100_125_and_150_percent_dpi(cx: &mut
                 "DPI {dpi} must not change the logical popup size"
             );
         });
+    }
+}
+
+#[gpui_kit::test]
+fn multimonitor_launcher_uses_cursor_work_area_upper_quarter(cx: &mut TestAppContext) {
+    for dpi in [96, 120, 144] {
+        let request = QuickLaunchPanelRequest {
+            target: nxtools_protocol::ForegroundContext {
+                window_handle: 1,
+                focus_window_handle: 1,
+                process_id: 1,
+                process_name: "editor".into(),
+                window_title: String::new(),
+            },
+            directory_navigation_context: None,
+            cursor_x: -1200,
+            cursor_y: 300,
+            cursor_display_index: 1,
+            cursor_monitor_dpi: dpi,
+            cursor_monitor: Some(nxtools_protocol::CursorMonitorSnapshot {
+                display_id: 0xBEEF,
+                work_left: -1920,
+                work_top: 40,
+                work_width: 1920,
+                work_height: 1040,
+                dpi,
+            }),
+            requested_at_unix_ms: 1_700_000_000_000,
+            correlation_id: None,
+        };
+        let scale = dpi as f32 / 96.0;
+        for expanded in [false, true] {
+            let (bounds, _) = cx.update(|cx| quick_launch_bounds(&request, expanded, cx));
+            let native = bounds.to_device_pixels(scale);
+            assert_eq!(
+                i32::from(native.origin.x),
+                (-1920.0 + (1920.0 - PANEL_WIDTH * scale) / 2.0).round() as i32
+            );
+            let height = if expanded {
+                PANEL_HEIGHT
+            } else {
+                COLLAPSED_PANEL_HEIGHT
+            };
+            let expected_top = 300.0_f32.min(1080.0 - height * scale).max(40.0);
+            assert_eq!(i32::from(native.origin.y), expected_top.round() as i32);
+            assert!(i32::from(native.origin.y) + i32::from(native.size.height) <= 1080);
+            assert_eq!(bounds.size.width, px(PANEL_WIDTH));
+        }
     }
 }
 
@@ -4879,7 +4929,7 @@ fn panel_hide_is_result_tracked_and_self_healing() {
 }
 
 #[test]
-fn popup_reveal_waits_for_first_frame_and_first_native_bounds_are_staged() {
+fn popup_creation_and_reuse_share_confirmed_monitor_presentation() {
     let source = include_str!("../quick_launch.rs");
     let open = source
         .split("fn open_popup(")
@@ -4887,29 +4937,17 @@ fn popup_reveal_waits_for_first_frame_and_first_native_bounds_are_staged() {
         .and_then(|body| body.split("fn schedule_captured_directory_record").next())
         .expect("quick-launch open lifecycle");
     assert!(open.contains("show: false"));
-    assert!(open.contains("SetWindowBoundsCommand {"));
-    assert!(open.contains("staged_device_bounds"));
-    let native_bounds = open
-        .find("SetWindowBoundsCommand {")
-        .expect("native bounds applied at window creation");
-    let panel_mount = open.find("QuickLaunchPanel::new").expect("panel mount");
-    assert!(native_bounds < panel_mount);
-
-    let reveal = source
-        .split("fn schedule_popup_reveal(")
+    assert!(open.contains("focus: false"));
+    assert!(open.contains("self.begin_popup_presentation(placement, cx)"));
+    assert!(!open.contains("visible: true"));
+    let reuse = source
+        .split("fn show_existing_popup(")
         .nth(1)
         .and_then(|body| body.split("fn open_popup(").next())
-        .expect("first-frame reveal lifecycle");
-    let frame = reveal
-        .find("window.on_next_frame")
-        .expect("first GPUI frame");
-    let position = reveal
-        .find("PlatformCommand::SetWindowPosition")
-        .expect("native position");
-    let visible = reveal.find("visible: true").expect("native reveal");
-    assert!(frame < position && position < visible);
-    assert!(visible < reveal.find("begin_window_activation").expect("activation"));
-    assert!(source.contains("panel.prepare_for_hide(window, cx)"));
+        .expect("reuse lifecycle");
+    assert!(reuse.contains("self.begin_popup_presentation(placement, cx)"));
+    assert!(!reuse.contains("PlatformCommand::SetWindowVisibility"));
+    assert!(source.contains("self.retire_popup_presentation(\"hidden\")"));
 }
 
 #[test]

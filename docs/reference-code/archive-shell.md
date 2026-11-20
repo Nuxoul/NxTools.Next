@@ -397,3 +397,70 @@ action enables cascade, Open With and the default claim for all supported extens
 Limitation: the proof is Explorer's private format. Windows builds that change it (for example
 the newer `UserChoiceLatest` scheme) make `Resolves` fail, which surfaces as `user_choice_locked`
 with the Windows default-apps entry as the manual path.
+
+## Installer runtime dependency admission
+
+Legacy `D:\Code\NxTools\installer\NxTools.iss` installs its published application payload
+directly and defines no prerequisite callback. It supplies no runtime detection behavior to
+preserve. Next's `scripts/publish-release-hosts.ps1` publishes its net8.0-windows x64 Host with
+`--self-contained false`; the project's WinForms/WPF framework references require both the
+core runtime and Windows Desktop Runtime. Single-file publication does not include either.
+
+The reported three Setup logs dated2026-11-20 all complete preparation with no registered
+updater, then exit trusted preparation with-2147450730/0x80008096. Isolated execution of the
+published Host with no compatible framework reproduces that native .NET startup result before
+managed entry; this is not a trusted-release verification rejection.
+
+Normal and maintenance `PrepareToInstall` -> shared `installer/runtime-dependencies.iss` ->
+extract original bundled `NxTools.PlatformHost.exe` -> `--check-runtime` -> framework resolution
+-> immediate return0 in `Program.Main`, before image pinning/logging/native adapters/services.
+Only success admits the existing bootstrap/process/file lifecycle. Missing framework, launch
+failure and package extraction failure stop before installed mutation. The interactive error
+names .NET8 Desktop Runtime x64, retains the native code and official download page, and opens
+that page only with consent; silent/suppressed installation never opens it. Browser failure
+keeps the address available. No auto-download, dependency installation or trust bypass occurs.
+
+`tests/architecture/installer-runtime.ps1` executes original normal/maintenance admission
+callbacks with isolated child exits and a fresh published Host; BrowserHost replacement retains
+the same precheck. These fixture results do not establish physical popup or real installed
+upgrade acceptance.
+
+## Phase F — installed archive integration
+
+Rechecked `D:\Code\NxTools\installer\NxTools.iss:20,47-60` (no archive operation) and
+`D:\Code\Archiver-main\installer\archiver.iss:81-122` (waiting install/uninstall shell commands,
+not the optional app launch), through `gui/src/shell.rs::win::apply/remove` to current-user Registry
+and association refresh. Its recursive-key removal and per-file command delivery do not carry over.
+
+Next's native owner is `ArchiveIntegrationService` through the existing generation-bound
+`ArchiveShellIntegration` command; only its validated terminal result can acknowledge install.
+The Inno `ssPostInstall` boundary follows trusted preparation and file finalization and is independent
+of the interactive launch checkbox. Use original-user process execution and retain the same correlation
+and waiting lifetime when the approved protected Desktop or a running Desktop owns the native bridge.
+A normal startup, config write or IPC admission is not apply. This is still P206/P207, not P208.
+
+`installer/uninstall-cleanup.ps1` previously duplicated Classes value restoration and retired the
+ledger without `PriorUserChoices`; the exact cleanup owner is the native Revert transaction.
+`ArchiveIntegrationService.RestoreChoices` must preserve unrelated later choices, finish recorded
+choice restoration before retiring associated Classes facts, and leave durable evidence on incomplete
+restoration. Uninstall must observe that native result before removing data or installed files.
+
+Installed entry: `nxtools-next.iss::ApplyInstalledArchiveIntegration` waits for
+`NxTools.exe --install-archive-integration <GUID> fresh|upgrade` through `ExecAsOriginalUser`.
+The original protected-tuple check may redirect that mode; the launching Desktop waits and returns
+the protected child's terminal exit. The native `--check-archive-install-user` probe precedes Rust
+profile discovery. `AppConfig::archive_integration_for_install` changes only a fresh untouched
+archive intent; `archive::shell_integration::integration_command` supplies the same typed Apply as
+Settings. `runtime::apply_installed_archive_integration` uses the original lock: cold startup runs
+only the original platform pipe and Host; an existing instance uses its pipe. The authenticated
+one-request handoff waits for the original generation-bound command result with the same GUID.
+Result disposition requires matching desired revision and, for Applied, observed revision and values;
+the warning `user_choice_locked` and unconfirmed/failed results have distinct Setup dispositions.
+
+Uninstall restores through `uninstall-cleanup.ps1::Restore-NxToolsArchiveIntegration` -> installed
+PlatformHost `--uninstall-archive-integration` -> the original bounded STA `ArchiveIntegrationService`
+Revert. The ledger records an attempted choice restoration before a delete/write, so a partial native
+write does not erase retry ownership. A different later choice is never overwritten during retry; a
+native failure or unverified readback stops retirement. The legacy default-claim writer leaves
+`UserChoiceLatest` alone. No development check ran a Setup executable, real association operation,
+Explorer invocation or protected service operation.

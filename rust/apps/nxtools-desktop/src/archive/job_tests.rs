@@ -5532,3 +5532,333 @@ fn ref17_create_remember_keeps_concurrent_untouched_create_leaves(
 
 #[path = "jobs_ref20_tests.rs"]
 mod ref20;
+
+const R3_HWND: i64 = 0xC001;
+
+fn r3_activations(endpoint: &nxtools_ipc::PlatformServerEndpoint) -> Vec<Uuid> {
+    let mut requests = Vec::new();
+    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+        if let Message::PlatformCommand(PlatformCommand::ActivateWindow(command)) = envelope.message
+        {
+            assert_eq!(command.window_handle, R3_HWND);
+            assert!(endpoint.command_pending_for_contract_test(envelope.id));
+            requests.push(envelope.id);
+        }
+    }
+    requests
+}
+
+fn r3_result(
+    id: Uuid,
+    error: Option<&str>,
+    native_error_code: Option<i32>,
+) -> PlatformNotification {
+    PlatformNotification::CommandResult {
+        correlation_id: id,
+        result: nxtools_protocol::PlatformCommandResult {
+            success: error.is_none(),
+            error: error.map(str::to_owned),
+            native_error_code,
+            data: None,
+        },
+    }
+}
+
+fn r3_receipt(
+    owner: &Entity<ArchiveApplication>,
+    endpoint: &nxtools_ipc::PlatformServerEndpoint,
+    reply: PlatformNotification,
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    endpoint
+        .send_notification_for_contract_test(reply.clone())
+        .expect("original IPC result");
+    owner.update(cx, |app, cx| app.notification(reply, cx));
+}
+
+#[gpui_kit::test]
+fn r3_archive_create_show_reuse_and_visible_terminal_request_native_foreground(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let id = owner.update(cx, |app, cx| {
+        app.jobs.activation_test_hwnd = Some(R3_HWND);
+        let mut input = request(1);
+        input.kind = ArchiveJobKind::Create;
+        input.destination = Some(r"C:\owned\out".into());
+        input.create = Some(ArchiveJobCreate {
+            format: ArchiveJobFormat::Zip,
+            level: Some(ArchiveJobLevel::Normal),
+            method: Some(ArchiveJobMethod::Deflate),
+            password: None,
+            solid: None,
+            encrypt_header: None,
+            strip_single_root: false,
+            exclude_patterns: vec![],
+            test_after_create: false,
+            name: "created.zip".into(),
+            volume_bytes: None,
+            self_extracting: false,
+        });
+        let id = app.submit_job(input, completion(), cx).expect("create");
+        assert!(r3_activations(&endpoint).is_empty(), "must defer dispatch");
+        id
+    });
+    cx.run_until_parked();
+    let [first] = r3_activations(&endpoint)[..] else {
+        panic!("new progress must request one native activation");
+    };
+    let window = owner.read_with(cx, |app, _| {
+        app.jobs.records[&id].window.clone().expect("shown").0
+    });
+    assert!(owner.read_with(cx, |app, _| app.jobs.activations.contains_key(&id)));
+    r3_receipt(&owner, &endpoint, r3_result(first, None, None), cx);
+    assert!(owner.read_with(cx, |app, _| app.jobs.activations.is_empty()));
+
+    owner.update(cx, |app, cx| app.show_job(id, cx));
+    cx.run_until_parked();
+    let [reuse] = r3_activations(&endpoint)[..] else {
+        panic!("reuse must request one native activation");
+    };
+    assert_ne!(first, reuse);
+    r3_receipt(
+        &owner,
+        &endpoint,
+        r3_result(reuse, Some("native refusal"), Some(5)),
+        cx,
+    );
+    assert!(owner.read_with(cx, |app, _| app.jobs.activations.is_empty()));
+
+    let mut tick = terminal(id, true);
+    tick.kind = ArchiveJobEventKind::Progress;
+    tick.terminal = None;
+    tick.progress = Some(ArchiveJobProgress {
+        phase: "running".into(),
+        bytes_done: 1,
+        bytes_total: Some(3),
+        files_done: 0,
+        files_total: None,
+        current_member: None,
+        current_bytes_done: None,
+        current_bytes_total: None,
+        sequence: Some(1),
+    });
+    deliver(&owner, &endpoint, tick, cx);
+    cx.run_until_parked();
+    assert!(r3_activations(&endpoint).is_empty());
+
+    let done = terminal(id, true);
+    deliver(&owner, &endpoint, done.clone(), cx);
+    deliver(&owner, &endpoint, done, cx);
+    cx.run_until_parked();
+    let [finished] = r3_activations(&endpoint)[..] else {
+        panic!("retained completion must request native foreground exactly once");
+    };
+    assert_ne!(finished, reuse);
+    r3_receipt(&owner, &endpoint, r3_result(finished, None, None), cx);
+    owner.read_with(cx, |app, _| {
+        assert!(app.jobs.activations.is_empty());
+        let record = &app.jobs.records[&id];
+        assert_eq!(record.window.as_ref().expect("same window").0, window);
+        assert_eq!(
+            record
+                .terminal
+                .as_ref()
+                .expect("real result")
+                .files_committed,
+            1
+        );
+    });
+}
+
+#[gpui_kit::test]
+fn r3_archive_batch_foregrounds_only_its_retained_completion_and_ignores_retired_receipt(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let ids = owner.update(cx, |app, cx| {
+        app.jobs.activation_test_hwnd = Some(R3_HWND);
+        app.submit_batch(vec![request(1), request(2)], cx)
+            .expect("batch")
+    });
+    cx.run_until_parked();
+    assert_eq!(r3_activations(&endpoint).len(), 1, "one batch show");
+    let window = owner.read_with(cx, |app, _| {
+        assert!(app.jobs.records[&ids[1]].window.is_none());
+        app.jobs.records[&ids[0]]
+            .window
+            .as_ref()
+            .expect("batch window")
+            .0
+    });
+    deliver(&owner, &endpoint, terminal(ids[0], true), cx);
+    cx.run_until_parked();
+    assert!(
+        r3_activations(&endpoint).is_empty(),
+        "not the batch terminal yet"
+    );
+    deliver(&owner, &endpoint, terminal(ids[1], true), cx);
+    cx.run_until_parked();
+    let [finished] = r3_activations(&endpoint)[..] else {
+        panic!("final sibling must foreground the same batch surface");
+    };
+    owner.update(cx, |app, cx| {
+        assert_eq!(
+            app.jobs.records[&ids[0]]
+                .window
+                .as_ref()
+                .expect("batch window")
+                .0,
+            window
+        );
+        app.background_job(ids[1], cx);
+        assert!(app.jobs.activations.is_empty());
+    });
+    cx.run_until_parked();
+    assert!(r3_activations(&endpoint).is_empty());
+    assert!(window.update(cx, |_, _, _| ()).is_err());
+
+    owner.update(cx, |app, cx| app.show_job(ids[1], cx));
+    cx.run_until_parked();
+    let [reopened] = r3_activations(&endpoint)[..] else {
+        panic!("only explicit reopening requests foreground again");
+    };
+    r3_receipt(&owner, &endpoint, r3_result(finished, None, None), cx);
+    assert!(owner.read_with(cx, |app, _| app.jobs.activations.contains_key(&ids[0])));
+    r3_receipt(&owner, &endpoint, r3_result(reopened, None, None), cx);
+    assert!(owner.read_with(cx, |app, _| app.jobs.activations.is_empty()));
+}
+
+#[gpui_kit::test]
+fn r3_archive_timeout_disconnect_background_and_auto_close_do_not_reactivate(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, endpoint) = super::super::tests::setup(cx);
+    let (id, generation) = owner.update(cx, |app, cx| {
+        app.jobs.activation_test_hwnd = Some(R3_HWND);
+        let id = app.submit_job(request(1), completion(), cx).expect("job");
+        (
+            id,
+            app.platform.connection_generation().expect("connection"),
+        )
+    });
+    cx.run_until_parked();
+    let [first] = r3_activations(&endpoint)[..] else {
+        panic!("first activation");
+    };
+    r3_receipt(
+        &owner,
+        &endpoint,
+        r3_result(first, Some("platform command timed out"), None),
+        cx,
+    );
+    assert!(owner.read_with(cx, |app, _| app.jobs.activations.is_empty()));
+    owner.update(cx, |app, cx| app.show_job(id, cx));
+    cx.run_until_parked();
+    let [second] = r3_activations(&endpoint)[..] else {
+        panic!("explicit reuse after timeout");
+    };
+    endpoint.set_connected_for_contract_test(false);
+    owner.update(cx, |app, cx| {
+        app.notification(
+            PlatformNotification::Disconnected {
+                generation,
+                pending_command_ids: vec![second],
+            },
+            cx,
+        );
+        assert!(app.jobs.activations.is_empty());
+        app.background_job(id, cx);
+    });
+    endpoint.set_connected_for_contract_test(true);
+    owner.update(cx, |app, cx| {
+        app.notification(r3_result(second, None, None), cx)
+    });
+    deliver(&owner, &endpoint, terminal(id, true), cx);
+    cx.run_until_parked();
+    assert!(r3_activations(&endpoint).is_empty());
+    assert!(owner.read_with(cx, |app, _| app.jobs.records[&id].window.is_none()));
+
+    let background = owner.update(cx, |app, cx| {
+        let id = app.submit_job(request(3), completion(), cx).expect("job");
+        assert!(
+            app.jobs.activations.contains_key(&id),
+            "pending before dispatch"
+        );
+        app.background_job(id, cx);
+        id
+    });
+    cx.run_until_parked();
+    assert!(
+        r3_activations(&endpoint).is_empty(),
+        "retired before dispatch"
+    );
+    deliver(&owner, &endpoint, terminal(background, true), cx);
+    cx.run_until_parked();
+    assert!(
+        r3_activations(&endpoint).is_empty(),
+        "connected background completion"
+    );
+    assert!(owner.read_with(cx, |app, _| {
+        let record = &app.jobs.records[&background];
+        record.terminal.is_some() && record.window.is_none()
+    }));
+
+    let auto = owner.update(cx, |app, cx| {
+        let mut policy = completion();
+        policy.keep_open = false;
+        app.submit_job(request(2), policy, cx)
+            .expect("auto-closing job")
+    });
+    cx.run_until_parked();
+    assert_eq!(r3_activations(&endpoint).len(), 1);
+    let mut done = terminal(auto, true);
+    let result = done.terminal.as_mut().expect("terminal");
+    result.outcome = ArchiveJobOutcome::Succeeded;
+    result.code = None;
+    deliver(&owner, &endpoint, done, cx);
+    cx.run_until_parked();
+    assert!(r3_activations(&endpoint).is_empty());
+    assert!(owner.read_with(cx, |app, _| {
+        app.jobs.activations.is_empty() && app.jobs.records[&auto].window.is_none()
+    }));
+}
+
+#[gpui_kit::test]
+fn multimonitor_archive_job_reopen_uses_its_retained_owner_work_area(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    let (owner, _endpoint) = super::super::tests::setup(cx);
+    let id = owner.update(cx, |app, cx| {
+        app.submit_job(request(0), completion(), cx).expect("task")
+    });
+    owner.update(cx, |app, cx| {
+        app.background_job(id, cx);
+        let placement = crate::ui::monitor_placement::MonitorPlacement::from_snapshot(
+            nxtools_protocol::CursorMonitorSnapshot {
+                display_id: 0xCAFE,
+                work_left: -1920,
+                work_top: -1080,
+                work_width: 1920,
+                work_height: 1040,
+                dpi: 120,
+            },
+            cx,
+        );
+        app.jobs
+            .records
+            .get_mut(&id)
+            .expect("task record")
+            .placement = placement;
+        app.show_job(id, cx);
+        let window = app.jobs.records[&id]
+            .window
+            .as_ref()
+            .expect("progress surface")
+            .0;
+        let actual = window
+            .update(cx, |_, window, _| window.bounds())
+            .expect("progress bounds");
+        assert_eq!(actual, placement.centered(size(px(560.0), px(260.0))));
+    });
+}

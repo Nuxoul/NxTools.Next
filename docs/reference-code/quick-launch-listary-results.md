@@ -195,3 +195,20 @@ The installed launcher exposes an editable `ValuePattern` at `PART_SearchBox` an
 An external benchmark may set those real input values and read the visible accessibility results without executing an item, changing history/settings, replacing providers or restarting services. Clearing must retire the preceding rows before another sample; focus loss or operator input invalidates the sample. Measure input-to-accessible-result separately from physical keyboard/IME and paint timing. Normalizing both products to top five does not establish complete recall. Corpus membership must first be verified by literal lookup in both installed products. Existing history, index scope, working-tree/package correspondence and provider readiness remain separate evidence; Listary native engine source is unavailable.
 
 Next's installed UIA value update is asynchronous: `ValuePattern.SetValue` may return before the input publishes its new value. Await the requested value after both query assignment and clearing without replaying the action. The benchmark clock starts before the initial call, so acknowledgement remains part of response time. The external runner and its evidence levels are documented in [the installed comparison method](../quick-launch-listary-benchmark.md).
+
+## Windows application discovery (2026-11-20)
+
+The two-target Notepad/Settings slice above does not cover Windows application discovery. Rechecked canonical `D:\Code\Listary.Decompiled\6.3.5.94\managed\Listary\Core\Launcher\Class291.cs:23-103,146-173`: FOLDERID_AppsFolder binds an item enumerator/property store, requires package family plus AUMID, reads the localized display name and releases COM objects. The refresh executes in an STA. This is managed application-boundary evidence, not the unavailable native search engine. Legacy NxTools has no Quick Launch implementation.
+
+Next's supported boundary is a native installed-application snapshot merged by the original Rust Finder catalog. Actual installed membership is not a hardcoded app list. Known bilingual aliases are metadata only; absent packages must not become invented entries. Classic Calculator/Paint use their stable Windows dispatchers when no installed package supersedes them. Native failure retains last-good data; ordinary filesystem refresh preserves the installed snapshot. Query replacement refreshes only the current query; disable/disconnect/timeout retire pending ownership without reveal, focus or history mutation. Namespace activation remains ordinary Shell execution, not filesystem reveal/elevation/preview. Regression task: `.trellis/tasks/11-20-windows-app-discovery/`.
+
+Current discovery path: `PlatformCommand::QueryInstalledApplications` → detached
+`PlatformPipeClient.ExecutePlatformCommandAsync` → `WindowsPlatformAdapter.QueryInstalledApplications`
+→ `InstalledApplicationQuery.ExecuteBounded` → `AppsFolderApplicationSource.Enumerate/ReadFacts`.
+Native facts return in original correlated command-result data; `quick_launch/installed_applications.rs`
+validates current connection/request ownership and calls Finder's atomic
+`replace_installed_applications`, followed by the existing current-query refresh. Root refresh
+preserves installed rows; native failure preserves last-good membership. No result activates,
+shows or focuses a surface. AppsFolder Open uses original `ShellTarget.TryCreate/LaunchCore`;
+file-only capabilities remain unavailable. `windows_apps_`, Finder `windows_applications` and the
+C# `installed applications fixture` are synthetic boundary evidence, not installed-native acceptance.

@@ -7,9 +7,18 @@ internal sealed class ClipboardCapturePause
 {
     private uint? _resumeSequence;
     private long _publicationEpoch;
+    private int _enabled = 1;
+    public bool IsEnabled => Volatile.Read(ref _enabled) != 0;
     internal long PublicationEpoch => Volatile.Read(ref _publicationEpoch);
     public bool IsPaused { get; private set; }
-    public bool MayRead => !IsPaused;
+    public bool MayRead => IsEnabled && !IsPaused;
+
+    public void SetEnabled(bool enabled, uint? resumeSequence)
+    {
+        if (enabled && !IsEnabled) _resumeSequence = resumeSequence;
+        Volatile.Write(ref _enabled, enabled ? 1 : 0);
+        Interlocked.Increment(ref _publicationEpoch);
+    }
 
     // Close before clearing retries/sampling a resume baseline: an application failure stays closed.
     public void Close()

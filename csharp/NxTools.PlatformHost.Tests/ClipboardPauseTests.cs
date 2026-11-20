@@ -79,8 +79,37 @@ internal static class ClipboardPauseTests
         }
     }
 
+    private static void FeatureDisablePreservesPauseAndReadBoundary()
+    {
+        using var f = new Fixture();
+        f.Update();
+        Assert(f.ContentReads == 1, "initial capture");
+        Assert(f.Window.ApplyClipboardCaptureEnabled(false).Success, "disable capture");
+        var sequenceReads = f.SequenceReads;
+        f.Sequence = 2;
+        f.Update();
+        f.Retry();
+        Assert(f.ContentReads == 1 && f.SequenceReads == sequenceReads, "disabled capture never reads metadata or content");
+        Assert(f.Window.ApplyClipboardCaptureEnabled(true).Success, "enable capture");
+        f.Update();
+        Assert(f.ContentReads == 1, "enable does not backfill disabled sequence");
+        f.Sequence = 3;
+        f.Update();
+        Assert(f.ContentReads == 2, "later clipboard change captured");
+        var pause = f.Enqueue(true);
+        f.Apply();
+        Assert(pause.GetAwaiter().GetResult().Success, "temporary pause applied");
+        Assert(f.Window.ApplyClipboardCaptureEnabled(false).Success, "disable while paused");
+        Assert(f.Window.ApplyClipboardCaptureEnabled(true).Success, "enable while paused");
+        f.Sequence = 4;
+        f.Update();
+        Assert(f.Window.ClipboardCaptureState.Paused && f.ContentReads == 2, "temporary pause survives feature switch");
+    }
+
     public static async Task PauseCommandAndReadGate()
     {
+        FeatureDisablePreservesPauseAndReadBoundary();
+        WindowFeatureBoundaryTests.CursorWireAndHotkeyEnablement();
         foreach (var paused in new[] { true, false })
         {
             var envelope = ProtocolEnvelope.Create("platform_command",

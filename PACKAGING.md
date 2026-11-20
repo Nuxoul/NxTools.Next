@@ -12,6 +12,11 @@
 无更新服务应直接跳过；固定同公钥服务登记存在但整个 Updater 目录缺失时，安装器可在明确确认/UAC后
 调用限定恢复入口。不得把访问拒绝或仍有恢复记录的目录当成缺失，不手动删服务/目录来强行安装。
 源码/隔离验证与真实安装修复接受分开，见 [缺失更新组件修复](.trellis/tasks/10-16-archive-manager/installer-missing-bootstrap-repair.md)。
+安装器在任何升级准备或文件替换前试运行包内 PlatformHost 的 `--check-runtime` 无副作用入口。
+目标电脑必须具备 Microsoft .NET 8 桌面运行时（Windows x64，包含 Core Runtime）；单文件发布不自带运行时。
+缺失或无法加载时阻止安装，提示具体依赖与微软下载页，并仅在用户同意后打开浏览器；静默安装不打开网页。
+官网：`https://dotnet.microsoft.com/zh-cn/download/dotnet/8.0`，选择 **.NET Desktop Runtime / Windows x64**。
+`0x80008096` 是兼容框架缺失，不是发布签名失败。普通与维护安装器共用此检查；WebView2 仅影响 PDF 导出，不作为全局安装门槛。
 
 ## 1. 直接使用
 
@@ -113,11 +118,11 @@ $env:RUSTFLAGS='-C codegen-units=256'
 
 ## 5. 输出、日志、核验
 
-- 安装包：`artifacts/installer/NxTools.Next-setup-0.7.2.exe`
+- 安装包：`artifacts/installer/NxTools.Next-setup-0.7.3.exe`
 - 散装包：`artifacts/win-x64/`
 - 签名清单：`NxTools.release.json` / `NxTools.release.sig`
 - 对应源码材料：`artifacts/installer/third_party/archive-worker/` 下的 LGPL 许可证、对应源码及离线重构建说明，仍由原入口生成；不改变受信任安装清单或生产身份校验。Python 要求 3.11+；材料生成失败不得交付缺材料的包。
-- 外层完整分发 ZIP 默认不生成。仅显式传入 `-CreateDistributionArchive` 时生成 `artifacts/installer/NxTools.Next-release-0.7.2.zip`，包含正常安装器与上述材料；对外再分发时同时提供对应源码和许可证。普通重新打包只交付安装器，不把历史 ZIP 当成本次产物。
+- 外层完整分发 ZIP 默认不生成。仅显式传入 `-CreateDistributionArchive` 时生成 `artifacts/installer/NxTools.Next-release-0.7.3.zip`，包含正常安装器与上述材料；对外再分发时同时提供对应源码和许可证。普通重新打包只交付安装器，不把历史 ZIP 当成本次产物。
 - SHA256：安装包旁 `.sha256`
 - 统一入口的本地 `status.json`：序号、实际成功／失败、安装包哈希、大小、文件核验计数及 Authenticode。
 - 同目录 `package.log`（stdout）、`package.stderr.log`（原生 stderr）和 `previous-package` / `previous-installer` 保留原始过程和旧包。
@@ -126,7 +131,7 @@ $env:RUSTFLAGS='-C codegen-units=256'
 原签名器在打包时使用生产验证器验证签名；统一入口额外逐项核对清单文件大小／SHA256，
 并写安装包 SHA256。不能把 Authenticode `NotSigned` 与内部发布签名混为一谈。
 
-产品发布版本0.7.2统一记录在Rust工作区、C#程序集、正常/维护安装器与浏览器扩展清单；
+产品发布版本0.7.3统一记录在Rust工作区、C#程序集、正常/维护安装器与浏览器扩展清单；
 桌面EXE文件版本由Cargo版本派生。`python tests/architecture/product-version.tests.py` 检查这些当前定义、
 第一方锁文件版本和发布文件名的一致性；构建后仍需读回实际EXE与包内扩展版本。扩展ID/公钥和协议版本不随此更新改变。
 包装器失败后可能留下不完整输出：不要安装，读本次日志；备份只用于恢复与证据，不能绕过防降级。

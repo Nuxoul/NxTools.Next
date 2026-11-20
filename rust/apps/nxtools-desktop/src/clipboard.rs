@@ -61,6 +61,7 @@ mod capture_pause;
 mod currency_tool;
 pub(crate) mod extension_adapter;
 mod link_detection;
+mod link_placement;
 mod popup_activation;
 pub(crate) use capture_pause::CapturePauseSnapshot;
 pub(crate) use currency_tool::CurrencyStatus;
@@ -132,6 +133,9 @@ pub struct ClipboardApplication {
     downloads: Option<WeakEntity<crate::downloads::DownloadApplication>>,
     last_cleanup_at_unix_ms: i64,
     pending_configuration: HashSet<uuid::Uuid>,
+    latest_configuration: Option<(uuid::Uuid, Instant)>,
+    feature_save_error: Option<String>,
+    feature_events_after: i64,
     pending_blacklist_configuration: HashMap<uuid::Uuid, (uuid::Uuid, std::time::Instant)>,
     deferred_blacklist_correlation: Option<uuid::Uuid>,
     pending_hotkey_configuration: Option<(uuid::Uuid, ClipboardHotKey)>,
@@ -151,6 +155,8 @@ pub struct ClipboardApplication {
     currency: currency_tool::CurrencyState,
     link_detection: link_detection::LinkDetectionState,
     link_panel: crate::tools::link_panel::LinkPanelSession,
+    pending_link_placement: Option<link_placement::PendingLinkPlacement>,
+    popup_monitor: Option<nxtools_protocol::CursorMonitorSnapshot>,
     pending_link_panel_actions: HashMap<uuid::Uuid, PendingLinkPanelAction>,
     pending_extension_copies: HashMap<uuid::Uuid, extension_adapter::PendingExtensionCopy>,
 }
@@ -424,6 +430,10 @@ fn link_panel_bounds(
     panel_size: Size<Pixels>,
     screen: Bounds<Pixels>,
 ) -> Bounds<Pixels> {
+    let panel_size = size(
+        panel_size.width.min(screen.size.width),
+        panel_size.height.min(screen.size.height),
+    );
     let inset = px(SPACING_24);
     let x = match position {
         LinkPanelPosition::TopLeft => screen.left() + inset,
@@ -481,6 +491,9 @@ impl ClipboardApplication {
             downloads: None,
             last_cleanup_at_unix_ms: 0,
             pending_configuration: HashSet::new(),
+            latest_configuration: None,
+            feature_save_error: None,
+            feature_events_after: i64::MIN,
             pending_blacklist_configuration: HashMap::new(),
             deferred_blacklist_correlation: None,
             pending_hotkey_configuration: None,
@@ -500,6 +513,8 @@ impl ClipboardApplication {
             currency: currency_tool::CurrencyState::default(),
             link_detection: link_detection::LinkDetectionState::default(),
             link_panel: crate::tools::link_panel::LinkPanelSession::default(),
+            pending_link_placement: None,
+            popup_monitor: None,
             pending_link_panel_actions: HashMap::new(),
             pending_extension_copies: HashMap::new(),
         };
@@ -591,6 +606,115 @@ impl ClipboardApplication {
 
     pub(crate) fn clipboard_configuration_status(&self) -> &str {
         &self.clipboard_configuration_status
+    }
+
+    pub(crate) fn feature_configuration_status(&self) -> &str {
+        self.feature_save_error.as_deref().unwrap_or_else(|| {
+            if self.latest_configuration.is_some() {
+                "正在应用"
+            } else {
+                &self.clipboard_configuration_status
+            }
+        })
+    }
+
+    pub(crate) fn set_feature_enabled(&mut self, enabled: bool, cx: &mut Context<Self>) {
+        if self.config.clipboard.enabled == enabled {
+            return;
+        }
+        let correlation_id = uuid::Uuid::new_v4();
+        let started = Instant::now();
+        info!(event = "clipboard.enablement.accepted", %correlation_id, enabled);
+        let mut settings = self.clipboard_settings();
+        settings.enabled = enabled;
+        if let Err(error) = self.save_clipboard_settings(settings) {
+            self.feature_save_error = Some(format!("保存失败：{error}"));
+            warn!(event = "clipboard.enablement.failed", %correlation_id, enabled,
+                stage = "save", elapsed_ms = started.elapsed().as_millis());
+            cx.notify();
+            return;
+        }
+        self.feature_save_error = None;
+        self.feature_events_after = nxtools_ipc::unix_time_ms();
+        self.pending_hotkey_configuration = None;
+        if !enabled {
+            self.set_clipboard_hotkey_recording(false);
+            self.retire_feature_surfaces(cx);
+        }
+        info!(event = "clipboard.enablement.saved", %correlation_id, enabled,
+            elapsed_ms = started.elapsed().as_millis());
+        let settings = self.clipboard_settings();
+        if let Some(id) = self.queue_clipboard_configuration(&settings, correlation_id, None) {
+            self.schedule_feature_configuration_timeout(id, cx);
+        }
+        cx.notify();
+    }
+
+    fn retire_feature_surfaces(&mut self, cx: &mut Context<Self>) {
+        self.retire_link_placement("disabled", cx);
+        self.popup.load_generation = self.popup.load_generation.wrapping_add(1).max(1);
+        self.popup.pending_load_generation = None;
+        self.popup.size_tracking_session = None;
+        self.abandon_pending_popup_visibility("disabled");
+        let previous = self.popup.lifecycle.reset_pending();
+        let current = self.popup.lifecycle.take_current();
+        self.dismiss_preview(cx);
+        let preview = self.preview.window.take().map(|preview| preview.window);
+        self.preview.native_window_handle = 0;
+        self.preview.displayed_item_id = None;
+        self.preview.scroll_generation = self.preview.scroll_generation.wrapping_add(1);
+        self.preview.scroll_suppressed = false;
+        let link = self.link_panel.window.take();
+        self.forget_link_panel();
+        self.link_panel.native_window_handle = 0;
+        self.link_panel.last_fingerprint = None;
+        self.link_panel.last_panel_copied = None;
+        self.abandon_pending_link_panel_actions("disabled");
+        self.invalidate_link_detection();
+        self.invalidate_currency_capture();
+        for capture in self.deferred_captures.drain(..) {
+            remove_clipboard_capture_staging(&capture);
+        }
+        self.capture_suppression = None;
+        for window in current
+            .into_iter()
+            .chain(previous)
+            .map(|popup| popup.window)
+            .chain(preview)
+            .chain(link)
+        {
+            let _ = window.update(cx, |_, window, cx| {
+                crate::ui::components::native_context_menu::dismiss_window(window, cx);
+                window.remove_window();
+            });
+        }
+    }
+
+    fn schedule_feature_configuration_timeout(&self, id: uuid::Uuid, cx: &mut Context<Self>) {
+        cx.spawn(async move |owner, cx| {
+            cx.background_executor().timer(Duration::from_secs(5)).await;
+            let _ = owner.update(cx, |owner, cx| {
+                if owner
+                    .latest_configuration
+                    .is_some_and(|(current, _)| current == id)
+                {
+                    let (_, started) = owner
+                        .latest_configuration
+                        .take()
+                        .expect("matching configuration");
+                    owner.pending_configuration.remove(&id);
+                    owner.clipboard_configuration_status = "应用失败：Windows 未确认".into();
+                    warn!(event = "clipboard.configuration.failed", correlation_id = %id,
+                        stage = "timeout", elapsed_ms = started.elapsed().as_millis());
+                    cx.notify();
+                }
+            });
+        })
+        .detach();
+    }
+
+    fn admits_feature_event(&self, event_unix_ms: i64) -> bool {
+        self.config.clipboard.enabled && event_unix_ms > self.feature_events_after
     }
 
     pub(crate) fn clipboard_management_busy(&self) -> bool {
@@ -1053,7 +1177,7 @@ impl ClipboardApplication {
     /// Queue detection away from GPUI; only the current capture may present
     /// results through the original reusable panel and auto-hide lifecycle.
     pub(crate) fn handle_link_detector_capture(&mut self, text: &str, cx: &mut Context<Self>) {
-        if !self.config.clipboard.link_detector_enabled {
+        if !self.config.clipboard.enabled || !self.config.clipboard.link_detector_enabled {
             return;
         }
         // One capture is delivered on TWO platform connections ~40ms apart;
@@ -1120,6 +1244,9 @@ impl ClipboardApplication {
         links: Vec<crate::tools::link_panel::DetectedLinkRow>,
         cx: &mut Context<Self>,
     ) {
+        if !self.config.clipboard.enabled {
+            return;
+        }
         let application = cx.entity().downgrade();
         let platform = Rc::clone(&self.platform);
         let link_panel_auto_hide_ms = self.config.clipboard.link_panel_auto_hide_ms;
@@ -1131,16 +1258,13 @@ impl ClipboardApplication {
                 false,
             )),
         );
-        let screen = cx
-            .primary_display()
-            .map(|display| display.bounds())
-            .unwrap_or_else(|| Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0))));
-        let bounds = link_panel_bounds(link_panel_position, panel_size, screen);
-        // One persistent panel window per app: a new capture RESTAGES the
-        // existing window (move offscreen → swap content → move into place
-        // → show), mirroring the clipboard preview lifecycle. Opening a new
-        // window per capture leaked a ghost per copy — stale stacked popups
-        // ate every click and none ever closed.
+        let placement = crate::ui::monitor_placement::cursor_monitor_placement(
+            self.link_panel.monitor,
+            0,
+            96,
+            cx,
+        );
+        let bounds = link_panel_bounds(link_panel_position, panel_size, placement.work_area);
         if let Some(existing) = self.link_panel.window {
             if existing
                 .update(cx, |root, window, cx| {
@@ -1167,26 +1291,7 @@ impl ClipboardApplication {
             {
                 let generation = self.link_panel.generation.wrapping_add(1);
                 self.link_panel.generation = generation;
-                let platform = Rc::clone(&self.platform);
-                let _ = platform.send_command(PlatformCommand::SetWindowPosition(
-                    SetWindowPositionCommand {
-                        window_handle: self.link_panel.native_window_handle,
-                        x: bounds.origin.x.to_f64() as i32,
-                        y: bounds.origin.y.to_f64() as i32,
-                    },
-                ));
-                // The reused window keeps its OLD size from the previous
-                // capture; resize it to match the new capture's collapsed
-                // height, otherwise dead empty space sits below the footer.
-                let _ = platform.send_command(PlatformCommand::SetWindowBounds(
-                    SetWindowBoundsCommand {
-                        window_handle: self.link_panel.native_window_handle,
-                        x: bounds.origin.x.to_f64() as i32,
-                        y: bounds.origin.y.to_f64() as i32,
-                        width: panel_size.width.to_f64() as i32,
-                        height: panel_size.height.to_f64() as i32,
-                    },
-                ));
+                let _ = existing.update(cx, |_, window, _| window.resize(bounds.size));
                 return;
             }
             let _ = existing.update(cx, |_, window, _| window.remove_window());
@@ -1200,13 +1305,13 @@ impl ClipboardApplication {
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 titlebar: None,
-                focus: true,
-                show: true,
+                focus: false,
+                show: false,
                 kind: WindowKind::PopUp,
                 is_movable: false,
                 is_resizable: false,
                 is_minimizable: false,
-                display_id: None,
+                display_id: placement.display_id,
                 window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.LinkPanel".into()),
                 window_min_size: None,
@@ -1220,15 +1325,7 @@ impl ClipboardApplication {
                 let handle = native_window_handle(window).unwrap_or_default();
                 *opened_native_slot.borrow_mut() = handle;
                 *opened_any_handle_slot.borrow_mut() = Some(window.window_handle());
-                // PopUp windows are not topmost by default; the panel must
-                // float above every app window while it's visible.
                 if handle != 0 {
-                    let _ = platform.send_command(PlatformCommand::SetWindowTopmost(
-                        SetWindowTopmostCommand {
-                            window_handle: handle,
-                            enabled: true,
-                        },
-                    ));
                     // The system drop shadow reads as a dirty smudge behind a
                     // small floating hint card; render it flat.
                     let _ = platform.send_command(PlatformCommand::SetWindowShadow(
@@ -1262,6 +1359,10 @@ impl ClipboardApplication {
             }
         };
         self.link_panel.native_window_handle = *native_slot.borrow();
+        #[cfg(test)]
+        if let Some(native) = self.link_panel.test_native_window_handle {
+            self.link_panel.native_window_handle = native;
+        }
         self.link_panel.window = Some(window.into());
         let generation = self.link_panel.generation.wrapping_add(1);
         self.link_panel.generation = generation;
@@ -1296,6 +1397,9 @@ impl ClipboardApplication {
         value_length: usize,
         cx: &mut gpui_kit::App,
     ) {
+        if !self.config.clipboard.enabled {
+            return;
+        }
         if route == LinkPanelRoute::Copy {
             let correlation_id = uuid::Uuid::new_v4();
             let started_at = Instant::now();
@@ -1548,7 +1652,10 @@ impl ClipboardApplication {
     /// Persist ordinary settings only; resize persistence independently owns panel size.
     /// Preserve the latest disk storage root owned by the migration worker.
     fn save_clipboard_section(&mut self) -> anyhow::Result<()> {
-        let mut clipboard = self.config.clipboard.clone();
+        self.save_clipboard_settings(self.config.clipboard.clone())
+    }
+
+    fn save_clipboard_settings(&mut self, mut clipboard: ClipboardSettings) -> anyhow::Result<()> {
         let merged = AppConfig::update_section(&self.config_path, |config| {
             // Only the worker migration transaction owns the storage root.
             clipboard.storage_directory = config.clipboard.storage_directory.clone();
@@ -1577,7 +1684,17 @@ impl ClipboardApplication {
         settings: &ClipboardSettings,
         correlation_id: Option<uuid::Uuid>,
     ) -> Option<uuid::Uuid> {
+        self.queue_clipboard_configuration(settings, uuid::Uuid::new_v4(), correlation_id)
+    }
+
+    fn queue_clipboard_configuration(
+        &mut self,
+        settings: &ClipboardSettings,
+        command_id: uuid::Uuid,
+        correlation_id: Option<uuid::Uuid>,
+    ) -> Option<uuid::Uuid> {
         let command = PlatformCommand::ConfigureClipboard(ConfigureClipboardCommand {
+            enabled: settings.enabled,
             hotkey_modifiers: settings
                 .hotkey
                 .modifiers
@@ -1598,14 +1715,23 @@ impl ClipboardApplication {
             max_image_bytes: settings.max_image_bytes,
             max_image_pixels: settings.max_image_pixels,
         });
+        let started = Instant::now();
+        if let Some((old_id, old_started)) = self.latest_configuration.take() {
+            info!(event = "clipboard.configuration.superseded", correlation_id = %old_id,
+                elapsed_ms = old_started.elapsed().as_millis());
+        }
+        info!(event = "clipboard.configuration.started", correlation_id = %correlation_id.unwrap_or(command_id),
+            %command_id, enabled = settings.enabled);
         let queued = match correlation_id {
-            Some(correlation_id) => self
-                .platform
-                .send_command_correlated(command, correlation_id),
-            None => self.platform.send_command(command),
+            Some(correlation_id) => {
+                self.platform
+                    .send_command_with_id_correlated(command, command_id, correlation_id)
+            }
+            None => self.platform.send_command_with_id(command, command_id),
         };
         match queued {
-            Ok(command_id) => {
+            Ok(_) => {
+                self.latest_configuration = Some((command_id, started));
                 self.pending_configuration.insert(command_id);
                 if let Some(correlation_id) = correlation_id {
                     self.pending_blacklist_configuration
@@ -1617,6 +1743,8 @@ impl ClipboardApplication {
                 Some(command_id)
             }
             Err(PlatformBridgeError::Disconnected) => {
+                warn!(event = "clipboard.configuration.failed", correlation_id = %correlation_id.unwrap_or(command_id),
+                    %command_id, stage = "disconnected", elapsed_ms = started.elapsed().as_millis());
                 if let Some(correlation_id) = correlation_id {
                     warn!(event = "global.blacklist.clipboard_native_failed", %correlation_id,
                         failure_kind = "disconnected", elapsed_ms = 0, "clipboard rules await platform connection");
@@ -1625,6 +1753,8 @@ impl ClipboardApplication {
                 None
             }
             Err(error) => {
+                warn!(event = "clipboard.configuration.failed", correlation_id = %correlation_id.unwrap_or(command_id),
+                    %command_id, stage = "enqueue", elapsed_ms = started.elapsed().as_millis());
                 if let Some(correlation_id) = correlation_id {
                     warn!(event = "global.blacklist.clipboard_native_failed", %correlation_id,
                         failure_kind = "enqueue", elapsed_ms = 0, "clipboard rules could not be queued");
@@ -1697,6 +1827,10 @@ impl ClipboardApplication {
         native_formats: Vec<StoredClipboardNativeFormat>,
         command_id: uuid::Uuid,
     ) -> anyhow::Result<uuid::Uuid> {
+        anyhow::ensure!(
+            self.config.clipboard.enabled,
+            "clipboard feature is disabled"
+        );
         let command = command_for_action(entry, target, action, native_formats)?;
         self.arm_capture_suppression(action);
         match self.platform.send_command_with_id(command, command_id) {
@@ -1946,6 +2080,9 @@ impl ClipboardApplication {
         panel_scale_factor: f32,
         cx: &mut Context<Self>,
     ) {
+        if !self.config.clipboard.enabled {
+            return;
+        }
         if crate::ui::components::native_context_menu::any_active(cx) {
             self.dismiss_preview(cx);
             return;
@@ -1985,6 +2122,9 @@ impl ClipboardApplication {
     }
 
     fn schedule_preview_candidate(&mut self, candidate: PreviewCandidate, cx: &mut Context<Self>) {
+        if !self.config.clipboard.enabled {
+            return;
+        }
         let generation = self.preview.generation;
         self.preview.timing = Some(PreviewTiming {
             correlation_id: uuid::Uuid::new_v4(),
@@ -2366,15 +2506,12 @@ impl ClipboardApplication {
             pointer_position,
             panel_scale_factor,
         } = candidate;
-        let display = cx
-            .displays()
-            .into_iter()
-            .find(|display| display.bounds().contains(&panel_bounds.origin))
-            .or_else(|| cx.primary_display());
-        let screen = display
-            .as_ref()
-            .map(|display| display.visible_bounds())
-            .unwrap_or_else(|| Bounds::new(point(px(0.0), px(0.0)), size(px(1920.0), px(1080.0))));
+        let placement = crate::ui::monitor_placement::owner_monitor_placement(
+            self.popup_monitor,
+            self.popup.lifecycle.current().map(|popup| popup.window),
+            cx,
+        );
+        let screen = placement.work_area;
         let adjacent_width = ((screen.right() - panel_bounds.right()).as_f32() - 10.0)
             .max((panel_bounds.left() - screen.left()).as_f32() - 10.0)
             .clamp(64.0, screen.size.width.as_f32().max(64.0));
@@ -2440,7 +2577,7 @@ impl ClipboardApplication {
                 is_movable: false,
                 is_resizable: false,
                 is_minimizable: false,
-                display_id: display.as_ref().map(|display| display.id()),
+                display_id: placement.display_id,
                 window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.ClipboardPreview".into()),
                 window_min_size: None,
@@ -2659,9 +2796,11 @@ impl ClipboardApplication {
                 self.abandon_extension_copies(cx);
                 // A reconnect invalidates every command that was pending on the previous pipe.
                 self.pending_configuration.clear();
+                self.latest_configuration = None;
                 self.abandon_blacklist_configuration();
                 self.deferred_blacklist_correlation = None;
                 self.abandon_pending_link_panel_actions("connection_reset");
+                self.retire_link_placement("connection_reset", cx);
                 self.popup.load_generation = self.popup.load_generation.wrapping_add(1).max(1);
                 self.popup.pending_load_generation = None;
                 self.abandon_pending_popup_visibility("connection_reset");
@@ -2713,6 +2852,9 @@ impl ClipboardApplication {
                 self.hotkey_recording_desired = false;
                 self.clipboard_configuration_dirty = false;
                 self.send_clipboard_configuration();
+                if let Some((id, _)) = self.latest_configuration {
+                    self.schedule_feature_configuration_timeout(id, cx);
+                }
                 cx.notify();
             }
             PlatformNotification::Disconnected {
@@ -2728,8 +2870,13 @@ impl ClipboardApplication {
                     "clipboard invalidated commands from the disconnected PlatformHost session"
                 );
                 self.pending_configuration.clear();
+                if let Some((id, started)) = self.latest_configuration.take() {
+                    warn!(event = "clipboard.configuration.failed", correlation_id = %id,
+                        stage = "disconnected", elapsed_ms = started.elapsed().as_millis());
+                }
                 self.abandon_blacklist_configuration();
                 self.abandon_pending_link_panel_actions("disconnected");
+                self.retire_link_placement("disconnected", cx);
                 self.popup.load_generation = self.popup.load_generation.wrapping_add(1).max(1);
                 self.popup.pending_load_generation = None;
                 self.abandon_pending_popup_visibility("disconnected");
@@ -2776,6 +2923,9 @@ impl ClipboardApplication {
                 correlation_id,
                 result,
             } => {
+                if self.finish_link_placement(correlation_id, &result, cx) {
+                    return;
+                }
                 if self.finish_popup_activation(
                     correlation_id,
                     result.success,
@@ -2884,6 +3034,18 @@ impl ClipboardApplication {
                     return;
                 }
                 if self.pending_configuration.remove(&correlation_id) {
+                    let latest = self
+                        .latest_configuration
+                        .is_some_and(|(id, _)| id == correlation_id);
+                    if latest {
+                        let (_, started) = self
+                            .latest_configuration
+                            .take()
+                            .expect("matching configuration");
+                        info!(event = "clipboard.configuration.completed", %correlation_id,
+                            enabled = self.config.clipboard.enabled, success = result.success,
+                            native_error_code = result.native_error_code, elapsed_ms = started.elapsed().as_millis());
+                    }
                     if let Some((operation_id, started_at)) =
                         self.pending_blacklist_configuration.remove(&correlation_id)
                     {
@@ -2905,12 +3067,24 @@ impl ClipboardApplication {
                         if let Some(Ok(hotkey)) = hotkey_result {
                             self.config.clipboard.hotkey = hotkey;
                             if self.persist_clipboard_configuration() {
-                                self.clipboard_configuration_status = "已应用".into();
+                                self.clipboard_configuration_status =
+                                    if self.config.clipboard.enabled {
+                                        "已启用"
+                                    } else {
+                                        "已停用"
+                                    }
+                                    .into();
                             }
-                        } else if self.pending_hotkey_configuration.is_none() {
-                            self.clipboard_configuration_status = "已应用".into();
+                        } else if latest && self.pending_hotkey_configuration.is_none() {
+                            self.clipboard_configuration_status =
+                                if self.config.clipboard.enabled {
+                                    "已启用"
+                                } else {
+                                    "已停用"
+                                }
+                                .into();
                         }
-                    } else if self.pending_hotkey_configuration.is_none() {
+                    } else if latest && self.pending_hotkey_configuration.is_none() {
                         self.clipboard_configuration_status = format!(
                             "应用失败：{}",
                             result.error.as_deref().unwrap_or("未知 Windows 错误")
@@ -3116,6 +3290,10 @@ impl ClipboardApplication {
     fn handle_platform_event(&mut self, event: PlatformEvent, cx: &mut Context<Self>) {
         match event {
             PlatformEvent::ClipboardCaptured(capture) => {
+                if !self.admits_feature_event(capture.captured_at_unix_ms) {
+                    remove_clipboard_capture_staging(&capture);
+                    return;
+                }
                 self.invalidate_currency_capture();
                 if self.capture_is_paused(&capture) {
                     self.invalidate_link_detection();
@@ -3204,6 +3382,9 @@ impl ClipboardApplication {
                 }
             }
             PlatformEvent::ClipboardPanelRequested(request) => {
+                if !self.admits_feature_event(request.requested_at_unix_ms) {
+                    return;
+                }
                 if self.management_operation_active {
                     info!("ignored clipboard panel request during storage operation");
                     return;
@@ -3282,6 +3463,9 @@ impl ClipboardApplication {
     }
 
     fn show_panel(&mut self, request: ClipboardPanelRequest, cx: &mut Context<Self>) {
+        if !self.config.clipboard.enabled {
+            return;
+        }
         if self.popup.lifecycle.replacement_pending() {
             info!(
                 "ignored clipboard panel request while a replacement is awaiting topmost confirmation"
@@ -3315,7 +3499,8 @@ impl ClipboardApplication {
         result: Result<ClipboardPopupSnapshot, ClipboardHistoryError>,
         cx: &mut Context<Self>,
     ) {
-        if self.popup.pending_load_generation != Some(generation) {
+        if !self.config.clipboard.enabled || self.popup.pending_load_generation != Some(generation)
+        {
             return;
         }
         self.popup.pending_load_generation = None;
@@ -3428,7 +3613,11 @@ impl ClipboardApplication {
                 };
                 let focus_window = popup.window;
                 let topmost_result = if should_request_popup_topmost(true, native_window_handle) {
-                    let scale = request.cursor_monitor_dpi.max(96) as f32 / 96.0;
+                    let scale = request
+                        .cursor_monitor
+                        .map_or(request.cursor_monitor_dpi, |monitor| monitor.dpi)
+                        .max(96) as f32
+                        / 96.0;
                     let bounds_result = self
                         .platform
                         .send_command(PlatformCommand::SetWindowBounds(SetWindowBoundsCommand {
@@ -3483,6 +3672,7 @@ impl ClipboardApplication {
                     return;
                 };
                 self.popup.lifecycle.stage(popup, topmost_command);
+                self.popup_monitor = request.cursor_monitor;
                 self.retire_popup_activation("popup_replaced");
                 self.popup.size_tracking_session = None;
                 info!(
@@ -3814,6 +4004,164 @@ mod asset_tests {
             process_name: "editor".into(),
             window_title: "draft".into(),
         }
+    }
+
+    #[gpui_kit::test]
+    fn feature_disable_retires_clipboard_loads_and_preserves_timed_capture_pause(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use nxtools_protocol::Message;
+        cx.update(gpui_kit::init);
+        cx.executor().allow_parking();
+        let temp = tempfile::tempdir().expect("feature enablement fixture");
+        let config_path = temp.path().join("config.json");
+        let config = AppConfig::default();
+        config.save_to(&config_path).expect("seed enabled config");
+        let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
+            temp.path().join("history.db"),
+            temp.path().join("assets"),
+            ClipboardRetentionPolicy {
+                max_items: 100,
+                retention_days: 30,
+            },
+            1_000,
+        )
+        .expect("start fixture capture worker");
+        let (platform, endpoint) = nxtools_ipc::platform_bridge(16);
+        endpoint.set_connected_for_contract_test(true);
+        let application = cx.update(|cx| {
+            let notifications = cx.new(|_| NotificationCenter::default());
+            cx.new(|cx| {
+                ClipboardApplication::new(
+                    worker.clone(),
+                    Rc::new(platform),
+                    config,
+                    config_path.clone(),
+                    notifications,
+                    cx,
+                )
+            })
+        });
+        let request = ClipboardPanelRequest {
+            target: fixture_target(),
+            cursor_x: 0,
+            cursor_y: 0,
+            cursor_display_index: 0,
+            cursor_monitor_dpi: 96,
+            cursor_monitor: None,
+            requested_at_unix_ms: nxtools_ipc::unix_time_ms(),
+            event_sequence: 0,
+        };
+        let staging = temp.path().join("staged-icon");
+        std::fs::write(&staging, b"synthetic capture staging").expect("seed staged capture");
+        application.update(cx, |app, cx| {
+            app.handle_platform_event(
+                PlatformEvent::ClipboardCaptured(ClipboardCapture {
+                    text: Some("retained history".into()),
+                    image: None,
+                    paths: Vec::new(),
+                    native_formats: Vec::new(),
+                    source_icon_staging_path: None,
+                    source: fixture_target(),
+                    captured_at_unix_ms: request.requested_at_unix_ms,
+                }),
+                cx,
+            );
+            app.handle_platform_event(PlatformEvent::ClipboardPanelRequested(request.clone()), cx);
+            assert!(app.popup.pending_load_generation.is_some());
+            app.management_operation_active = true;
+            app.handle_platform_event(
+                PlatformEvent::ClipboardCaptured(ClipboardCapture {
+                    text: Some("deferred capture".into()),
+                    image: None,
+                    paths: Vec::new(),
+                    native_formats: Vec::new(),
+                    source_icon_staging_path: Some(staging.to_string_lossy().into_owned()),
+                    source: fixture_target(),
+                    captured_at_unix_ms: request.requested_at_unix_ms,
+                }),
+                cx,
+            );
+            assert_eq!(app.deferred_captures.len(), 1);
+            app.set_capture_pause(true, true, cx);
+            let pause = app.capture_pause_snapshot();
+            let generation = app.capture_pause.generation;
+
+            app.set_feature_enabled(false, cx);
+            assert!(app.popup.pending_load_generation.is_none());
+            assert!(app.deferred_captures.is_empty());
+            assert!(!staging.exists());
+            app.finish_clipboard_management_operation(cx);
+            app.handle_platform_event(PlatformEvent::ClipboardPanelRequested(request.clone()), cx);
+            assert!(app.popup.pending_load_generation.is_none());
+            let failed_attempt = app.latest_configuration.expect("disable configuration").0;
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: failed_attempt,
+                    result: nxtools_protocol::PlatformCommandResult {
+                        success: false,
+                        error: Some("fixture native rejection".into()),
+                        native_error_code: Some(5),
+                        data: None,
+                    },
+                },
+                cx,
+            );
+            assert!(!app.clipboard_settings().enabled);
+            assert!(
+                app.feature_configuration_status()
+                    .contains("fixture native rejection")
+            );
+            app.handle_platform_notification(
+                PlatformNotification::Disconnected {
+                    generation: 1,
+                    pending_command_ids: Vec::new(),
+                },
+                cx,
+            );
+            assert!(app.feature_configuration_status().starts_with("等待"));
+            app.handle_platform_notification(PlatformNotification::Connected, cx);
+            assert_eq!(app.feature_configuration_status(), "正在应用");
+            let superseded = app.latest_configuration.expect("reconnect configuration").0;
+            app.set_feature_enabled(true, cx);
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: superseded,
+                    result: nxtools_protocol::PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                },
+                cx,
+            );
+            assert_eq!(app.feature_configuration_status(), "正在应用");
+            app.handle_platform_event(PlatformEvent::ClipboardPanelRequested(request), cx);
+            assert!(app.popup.pending_load_generation.is_none());
+            assert_eq!(app.capture_pause_snapshot(), pause);
+            assert_eq!(app.capture_pause.generation, generation);
+        });
+        cx.run_until_parked();
+        assert!(cx.windows().is_empty());
+        let commands = std::iter::from_fn(|| endpoint.try_receive_command_for_contract_test().ok())
+            .map(|envelope| envelope.message)
+            .collect::<Vec<_>>();
+        assert!(matches!(commands.as_slice(), [
+            Message::PlatformCommand(PlatformCommand::SetClipboardCapturePaused(pause)),
+            Message::PlatformCommand(PlatformCommand::ConfigureClipboard(off)),
+            Message::PlatformCommand(PlatformCommand::SetClipboardCapturePaused(reconnect_pause)),
+            Message::PlatformCommand(PlatformCommand::ConfigureClipboard(reconnect_off)),
+            Message::PlatformCommand(PlatformCommand::ConfigureClipboard(on)),
+        ] if pause.paused && reconnect_pause.paused && !off.enabled && !reconnect_off.enabled && on.enabled));
+        worker.shutdown().expect("drain admitted history");
+        let history = nxtools_clipboard::ClipboardHistory::open(temp.path().join("history.db"))
+            .expect("reopen retained history");
+        assert_eq!(
+            history.counts().expect("retained history counts").text,
+            1,
+            "only the admitted history survives"
+        );
     }
 
     fn fixture_text() -> ClipboardItem {

@@ -273,7 +273,12 @@ impl MarkdownReaderSettings {
 
 impl Default for MarkdownReaderSettings {
     fn default() -> Self {
-        Self { enabled: true, show_outline: false, font_size: 20, wide_body: false }
+        Self {
+            enabled: true,
+            show_outline: false,
+            font_size: 20,
+            wide_body: false,
+        }
     }
 }
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -358,11 +363,11 @@ impl Default for BackgroundDownloadLimitSettings {
 #[serde(rename_all = "snake_case")]
 pub enum NotificationPosition {
     TopLeft,
+    #[default]
     TopCenter,
     TopRight,
     BottomLeft,
     BottomCenter,
-    #[default]
     BottomRight,
 }
 impl NotificationPosition {
@@ -725,7 +730,7 @@ impl Default for DownloadSettings {
 }
 
 const fn default_download_connection_limit() -> u16 {
-    8
+    16
 }
 
 const fn default_download_adaptive_max_segments() -> u16 {
@@ -1045,8 +1050,8 @@ const fn default_true() -> bool {
 #[serde(rename_all = "snake_case")]
 pub enum LinkPanelPosition {
     TopLeft,
-    #[default]
     Center,
+    #[default]
     TopRight,
 }
 
@@ -1371,9 +1376,7 @@ impl ClipboardSettings {
         if !CurrencyConversionSettings::valid_code(&self.currency_conversion.target) {
             self.currency_conversion.target = "CNY".into();
         }
-        // Capture is a single product capability now. Keep these legacy fields on the wire so
-        // older configs remain readable, but do not leave users stuck with hidden disabled flags.
-        self.enabled = true;
+        // Image and file capture share the persistent Clipboard capability.
         self.capture_images = true;
         self.capture_files = true;
         self.max_items = self.max_items.clamp(100, 100_000);
@@ -1980,7 +1983,7 @@ mod tests {
 
         assert!(settings.default_directory.is_empty());
         assert!(settings.ffmpeg_executable_path.is_empty());
-        assert_eq!(settings.default_connection_limit, 8);
+        assert_eq!(settings.default_connection_limit, 16);
         assert!(settings.adaptive_segment_scaling_enabled);
         assert_eq!(settings.adaptive_segment_max_segments, 32);
         assert_eq!(settings.adaptive_segment_min_mib, 3);
@@ -2064,12 +2067,47 @@ mod tests {
         )
         .expect("legacy download settings must remain readable");
 
-        assert_eq!(config.download.default_connection_limit, 8);
+        assert_eq!(config.download.default_connection_limit, 16);
         assert!(config.download.ffmpeg_executable_path.is_empty());
         assert!(config.download.show_progress_window);
         assert!(!config.download.show_completion_window);
         assert!(config.download.completion_sound_enabled);
         assert!(!config.download.open_directory_on_completion);
+    }
+
+    #[test]
+    fn window_and_download_defaults_preserve_explicit_values_during_section_save() {
+        let directory = unique_config_dir("window-download-defaults");
+        let path = directory.join("config.json");
+        for limit in [8, 24] {
+            let mut config =
+                serde_json::to_value(AppConfig::default()).expect("encode complete settings");
+            config["clipboard"]["link_panel_position"] = serde_json::json!("center");
+            config["system"]["notification_position"] = serde_json::json!("bottom_right");
+            config["download"]["default_connection_limit"] = serde_json::json!(limit);
+            fs::write(
+                &path,
+                serde_json::to_vec(&config).expect("encode explicit settings"),
+            )
+            .expect("seed explicit settings");
+            let initial = AppConfig::load_from(&path).expect("load explicit settings");
+            let mut download = initial.download.clone();
+            download.show_progress_window = false;
+            AppConfig::merge_download_settings(&path, &initial.download, download)
+                .expect("save a different download leaf");
+            let merged = AppConfig::load_from(&path).expect("reload merged settings");
+            assert!(!merged.download.show_progress_window);
+            assert_eq!(merged.download.default_connection_limit, limit);
+            assert_eq!(
+                merged.clipboard.link_panel_position,
+                LinkPanelPosition::Center
+            );
+            assert_eq!(
+                merged.system.notification_position,
+                NotificationPosition::BottomRight
+            );
+        }
+        let _ = fs::remove_dir_all(directory);
     }
 
     #[test]
@@ -2423,6 +2461,23 @@ mod tests {
     }
 
     #[test]
+    fn total_feature_disable_survives_normalization_section_save_and_reload() {
+        let directory = unique_config_dir("feature-enable");
+        let path = directory.join("config.json");
+        let mut config = AppConfig::default();
+        config.clipboard.enabled = false;
+        config.quick_launch.enabled = false;
+        config.save_to(&path).expect("disabled feature settings");
+        let merged =
+            AppConfig::update_section(&path, |current| current.system.close_to_tray = false)
+                .expect("independent section update");
+        assert!(!merged.clipboard.enabled && !merged.quick_launch.enabled);
+        let loaded = AppConfig::load_from(&path).expect("reload disabled settings");
+        assert!(!loaded.clipboard.enabled && !loaded.quick_launch.enabled);
+        let _ = fs::remove_dir_all(directory);
+    }
+
+    #[test]
     fn clipboard_capture_settings_are_serializable() {
         let config = AppConfig {
             clipboard: ClipboardSettings {
@@ -2446,21 +2501,25 @@ mod tests {
         assert_eq!(restored.clipboard, config.clipboard);
     }
     #[test]
-    fn link_panel_position_round_trips_and_legacy_configs_default_to_center() {
+    fn link_panel_position_round_trips_and_missing_defaults_to_top_right() {
+        assert_eq!(
+            ClipboardSettings::default().link_panel_position,
+            LinkPanelPosition::TopRight
+        );
         let settings = ClipboardSettings {
-            link_panel_position: LinkPanelPosition::TopRight,
+            link_panel_position: LinkPanelPosition::Center,
             ..ClipboardSettings::default()
         };
         let json = serde_json::to_string(&settings).expect("serialize link panel position");
         let restored: ClipboardSettings =
             serde_json::from_str(&json).expect("deserialize link panel position");
-        assert_eq!(restored.link_panel_position, LinkPanelPosition::TopRight);
+        assert_eq!(restored.link_panel_position, LinkPanelPosition::Center);
 
         let legacy: ClipboardSettings = serde_json::from_str(
             r#"{"enabled":true,"capture_images":true,"capture_files":true,"max_items":1000,"retention_days":30,"excluded_processes":[]}"#,
         )
         .expect("legacy clipboard settings must remain readable");
-        assert_eq!(legacy.link_panel_position, LinkPanelPosition::Center);
+        assert_eq!(legacy.link_panel_position, LinkPanelPosition::TopRight);
     }
 
     #[test]
@@ -2956,7 +3015,7 @@ mod tests {
     }
 
     #[test]
-    fn obsolete_capture_switches_are_migrated_to_always_on() {
+    fn obsolete_capture_kind_switches_normalize_without_enabling_the_feature() {
         let mut settings = ClipboardSettings {
             enabled: false,
             capture_images: false,
@@ -2966,7 +3025,7 @@ mod tests {
 
         settings.normalize();
 
-        assert!(settings.enabled);
+        assert!(!settings.enabled);
         assert!(settings.capture_images);
         assert!(settings.capture_files);
     }
@@ -3118,11 +3177,15 @@ mod installed_feedback_config_tests {
 mod notification_position_tests {
     use super::*;
     #[test]
-    fn six_notification_positions_round_trip_and_legacy_defaults_to_bottom_right() {
+    fn six_notification_positions_round_trip_and_missing_defaults_to_top_center() {
+        assert_eq!(
+            SystemSettings::default().notification_position,
+            NotificationPosition::TopCenter
+        );
         let legacy: SystemSettings = serde_json::from_str("{}").expect("legacy system settings");
         assert_eq!(
             legacy.notification_position,
-            NotificationPosition::BottomRight
+            NotificationPosition::TopCenter
         );
         for position in NotificationPosition::ALL {
             let settings = SystemSettings {

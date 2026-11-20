@@ -48,7 +48,13 @@ claim = read(host / "WindowsArchiveDefaultClaim.cs")
 proof = read(host / "UserChoiceHash.cs")
 assert "command.SetDefault && _defaultClaim is not null" in service
 assert service.index("PriorUserChoices = priors") < service.index("_ledger.Save(facts)") < service.index("_defaultClaim.Set(extension, ArchiveIntegrationPlan.ProgId)")
-assert "RestoreChoices(facts, [], correlationId)" in service, "Revert writes the original choice back"
+assert service.index('if (!RestoreChoices(facts, correlationId))') < service.index('ArchiveIntegrationTransaction.Uninstall(_store, facts)')
+assert service.index('if (!RestoreChoices(existing, correlationId))') < service.index('ArchiveIntegrationTransaction.Uninstall(_store, existing)')
+assert service.index('PendingChoiceRestorations = pending.ToArray()') < service.index('_defaultClaim.Set(extension, prior[extension])')
+install_host = read(host / "ArchiveInstallCommands.cs")
+assert 'if (!IsInteractiveUser()) return WrongUser;' in install_host
+assert 'service.ExecuteBounded(new(ArchiveIntegrationService.WireVersion, "revert"' in install_host
+assert 'ArchiveShellIntegrationStates.Reverted or ArchiveShellIntegrationStates.NotApplied' in install_host
 assert "AssocQueryString" in claim and "RegQueryInfoKey" in claim and "DeleteSubKeyTree" not in claim
 assert "Microsoft.Win32" not in proof and "File.Read" not in proof, "proof computation stays pure"
 assert "Software\\Microsoft" not in plan, "pure value plan stays under Software\\Classes; the Explorer choice has its own owner"

@@ -37,6 +37,9 @@ internal sealed record ClipboardCapturedEvent(
     long CapturedAtUnixMs,
     IReadOnlyList<ClipboardNativeFormatData>? NativeFormats = null) : WindowsPlatformEvent;
 
+internal sealed record CursorMonitorSnapshot(
+    ulong DisplayId, int WorkLeft, int WorkTop, uint WorkWidth, uint WorkHeight, uint Dpi);
+
 internal sealed record ClipboardPanelRequestedEvent(
     ForegroundContext Target,
     int CursorX,
@@ -45,7 +48,8 @@ internal sealed record ClipboardPanelRequestedEvent(
     uint CursorMonitorDpi,
     long RequestedAtUnixMs,
     ulong EventSequence = 0,
-    Guid? CorrelationId = null) : WindowsPlatformEvent;
+    Guid? CorrelationId = null,
+    CursorMonitorSnapshot? CursorMonitor = null) : WindowsPlatformEvent;
 
 internal sealed record ExplorerContext(
     long WindowHandle,
@@ -78,7 +82,8 @@ internal sealed record QuickLaunchPanelRequestedEvent(
     uint CursorMonitorDpi,
     long RequestedAtUnixMs,
     DirectoryNavigationContext? DirectoryNavigationContext = null,
-    Guid? CorrelationId = null) : WindowsPlatformEvent;
+    Guid? CorrelationId = null,
+    CursorMonitorSnapshot? CursorMonitor = null) : WindowsPlatformEvent;
 internal sealed record QuickLaunchDirectoryContextResolvedEvent(
     long TargetWindowHandle,
     long RequestedAtUnixMs,
