@@ -48,6 +48,10 @@ mod system_proxy;
 mod theme_chooser;
 #[cfg(debug_assertions)]
 pub(crate) mod visual_preview;
+mod window_picker;
+mod window_picker_overlay;
+#[cfg(test)]
+mod window_picker_tests;
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 enum GlobalSettingsTab {
@@ -78,6 +82,7 @@ pub(crate) struct NetworkSettingsApplication {
     pending_proxy_snapshot: Option<system_proxy::PendingProxySnapshot>,
     data_paths: Option<nxtools_core::AppPaths>,
     pending_data_directory: Option<data_directory::PendingDataPicker>,
+    pending_process_window_pick: Option<window_picker::PendingWindowPick>,
 }
 
 struct PendingGlobalSettingsApply {
@@ -166,6 +171,7 @@ impl NetworkSettingsApplication {
             hidden_startup,
             data_paths,
             pending_data_directory: None,
+            pending_process_window_pick: None,
         }
     }
 
@@ -270,10 +276,17 @@ impl NetworkSettingsApplication {
             move |window, cx| {
                 let close_application = application.clone();
                 window.on_window_should_close(cx, move |_, cx| {
-                    close_application.update(cx, |application, _| {
+                    close_application.update(cx, |application, cx| {
                         if application.pending_apply.is_some() || application.draft_busy.get() {
                             false
                         } else {
+                            if let Some(id) = application
+                                .pending_process_window_pick
+                                .as_ref()
+                                .map(|pending| pending.id)
+                            {
+                                application.cancel_process_window_pick(id, "closed", cx);
+                            }
                             application.window = None;
                             #[cfg(test)]
                             {
@@ -321,6 +334,13 @@ impl NetworkSettingsApplication {
     fn close_window(&mut self, cx: &mut Context<Self>) {
         if self.pending_apply.is_some() || self.draft_busy.get() {
             return;
+        }
+        if let Some(id) = self
+            .pending_process_window_pick
+            .as_ref()
+            .map(|pending| pending.id)
+        {
+            self.cancel_process_window_pick(id, "closed", cx);
         }
         let Some(window) = self.window.take() else {
             return;
@@ -536,6 +556,9 @@ impl NetworkSettingsApplication {
         notification: PlatformNotification,
         cx: &mut Context<Self>,
     ) {
+        if self.handle_process_window_pick(&notification, cx) {
+            return;
+        }
         if self.handle_data_directory_notification(&notification, cx) {
             return;
         }
@@ -840,6 +863,7 @@ struct NetworkSettingsView {
     suppress_in_fullscreen: bool,
     process_input: Entity<InputState>,
     editing_rule: Option<usize>,
+    process_window_pick: Option<uuid::Uuid>,
     new_disable_clipboard: bool,
     new_disable_quick_launch: bool,
     saving: bool,
@@ -935,6 +959,7 @@ impl NetworkSettingsView {
             suppress_in_fullscreen: blacklist.suppress_in_fullscreen.unwrap_or(true),
             process_input,
             editing_rule: None,
+            process_window_pick: None,
             new_disable_clipboard: true,
             new_disable_quick_launch: false,
             saving: false,
@@ -947,6 +972,7 @@ impl NetworkSettingsView {
         if self.saving {
             return;
         }
+        self.observe_picker_page(0, cx);
         let Ok(notification_duration_seconds) =
             self.notification_duration.read(cx).value().parse::<u32>()
         else {
@@ -1232,9 +1258,10 @@ impl Render for NetworkSettingsView {
         let owner = cx.entity().downgrade();
         let ordinary = |slot: usize, title: &'static str, help: &'static str| {
             let owner = owner.clone();
-            SettingItem::render(move |_, window, app| {
+            SettingItem::render(move |options, window, app| {
                 let control = owner
                     .update(app, |view, cx| {
+                        view.observe_picker_page(options.page_ix(), cx);
                         view.render_setting_control(slot, window, cx)
                     })
                     .unwrap_or_else(|_| div().into_any_element());
@@ -1251,9 +1278,10 @@ impl Render for NetworkSettingsView {
         };
         let complex = |slot: usize, keywords: &'static str| {
             let owner = owner.clone();
-            SettingItem::render(move |_, window, app| {
+            SettingItem::render(move |options, window, app| {
                 let control = owner
                     .update(app, |view, cx| {
+                        view.observe_picker_page(options.page_ix(), cx);
                         view.render_setting_control(slot, window, cx)
                     })
                     .unwrap_or_else(|_| div().into_any_element());

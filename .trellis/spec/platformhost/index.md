@@ -71,3 +71,8 @@ Configured preview follows [the frozen preview budget contract](../nxtools-deskt
 strict optional options, original-purpose min-output quota and preview-only runner timeout; clear
 options before private materialize serialization. Source/working/metadata/spool/slots and actual
 lease/output cleanup remain original.
+
+Blacklist window selection follows [the cross-layer picker contract](../nxtools-desktop/backend/quality-guidelines.md#scenario-blacklist-process-window-selection):
+one bounded native input owner, source/overlay process ownership, hidden passive GPUI presentation,
+fresh clicked HWND and paired release suppression. Native facts never publish blacklist rules;
+only the original settings draft and explicit Apply own policy changes.

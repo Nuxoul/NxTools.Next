@@ -3,68 +3,79 @@ use super::*;
 use std::io::{Cursor, SeekFrom};
 
 pub(crate) fn blocks(archive: &sevenz_rust2::Archive, limits: &ResourceLimits) -> Result<()> {
-    use sevenz_rust2::EncoderMethod as Method;
     for block in &archive.blocks {
-        let mut work = 0u64;
-        for coder in &block.coders {
-            let properties = coder.properties();
-            let cost = match coder.encoder_method_id() {
-                Method::ID_LZMA => {
-                    if properties.len() != 5 || properties[0] >= 225 {
-                        return Err(ArchiveError::CorruptArchive);
-                    }
-                    let dict = u32::from_le_bytes(
-                        properties[1..5].try_into().expect("checked properties"),
-                    );
-                    let lc = u32::from(properties[0] % 9);
-                    let lp = u32::from(properties[0] / 9 % 5);
-                    // Locked lzma-rust2 literal probability table: 0x300 u16 per lc+lp.
-                    u64::from(dict.max(4096)) + (1536u64 << (lc + lp)) + (64 << 10)
-                }
-                Method::ID_LZMA2 => {
-                    let prop = *properties.first().ok_or(ArchiveError::CorruptArchive)?;
-                    if properties.len() != 1 || prop > 40 {
-                        return Err(ArchiveError::CorruptArchive);
-                    }
-                    let dict = if prop == 40 {
-                        u64::from(u32::MAX)
-                    } else {
-                        (2u64 | u64::from(prop & 1)) << (u32::from(prop) / 2 + 11)
-                    };
-                    dict + (4 << 20) // single-thread LZMA2 range/literal state and input buffers
-                }
-                Method::ID_PPMD => {
-                    if properties.len() != 5 {
-                        return Err(ArchiveError::CorruptArchive);
-                    }
-                    let memory = u32::from_le_bytes(
-                        properties[1..5]
-                            .try_into()
-                            .expect("checked PPMd properties"),
-                    );
-                    u64::from(memory) + (1 << 20)
-                }
-                Method::ID_BZIP2 => 8 << 20,
-                Method::ID_DEFLATE | Method::ID_BCJ2 => 1 << 20,
-                Method::ID_COPY
-                | Method::ID_AES256_SHA256
-                | Method::ID_DELTA
-                | Method::ID_BCJ_X86
-                | Method::ID_BCJ_ARM
-                | Method::ID_BCJ_ARM64
-                | Method::ID_BCJ_ARM_THUMB
-                | Method::ID_BCJ_PPC
-                | Method::ID_BCJ_SPARC
-                | Method::ID_BCJ_IA64 => 1 << 20,
-                _ => return Err(ArchiveError::UnsupportedMethod),
-            };
-            work = work.checked_add(cost).ok_or(ArchiveError::ResourceLimit)?;
-        }
-        if work > limits.max_working_bytes {
+        if block_work(block)? > limits.max_working_bytes {
             return Err(ArchiveError::ResourceLimit);
         }
     }
     Ok(())
+}
+
+/// Catalog admission checks coder declarations without reserving payload decoder workspace.
+pub(crate) fn validate_blocks(archive: &sevenz_rust2::Archive) -> Result<()> {
+    for block in &archive.blocks {
+        block_work(block)?;
+    }
+    Ok(())
+}
+
+fn block_work(block: &sevenz_rust2::Block) -> Result<u64> {
+    use sevenz_rust2::EncoderMethod as Method;
+    let mut work = 0u64;
+    for coder in &block.coders {
+        let properties = coder.properties();
+        let cost = match coder.encoder_method_id() {
+            Method::ID_LZMA => {
+                if properties.len() != 5 || properties[0] >= 225 {
+                    return Err(ArchiveError::CorruptArchive);
+                }
+                let dict =
+                    u32::from_le_bytes(properties[1..5].try_into().expect("checked properties"));
+                let lc = u32::from(properties[0] % 9);
+                let lp = u32::from(properties[0] / 9 % 5);
+                // Locked lzma-rust2 literal probability table: 0x300 u16 per lc+lp.
+                u64::from(dict.max(4096)) + (1536u64 << (lc + lp)) + (64 << 10)
+            }
+            Method::ID_LZMA2 => {
+                let prop = *properties.first().ok_or(ArchiveError::CorruptArchive)?;
+                if properties.len() != 1 || prop > 40 {
+                    return Err(ArchiveError::CorruptArchive);
+                }
+                let dict = if prop == 40 {
+                    u64::from(u32::MAX)
+                } else {
+                    (2u64 | u64::from(prop & 1)) << (u32::from(prop) / 2 + 11)
+                };
+                dict + (4 << 20) // single-thread LZMA2 range/literal state and input buffers
+            }
+            Method::ID_PPMD => {
+                if properties.len() != 5 {
+                    return Err(ArchiveError::CorruptArchive);
+                }
+                let memory = u32::from_le_bytes(
+                    properties[1..5]
+                        .try_into()
+                        .expect("checked PPMd properties"),
+                );
+                u64::from(memory) + (1 << 20)
+            }
+            Method::ID_BZIP2 => 8 << 20,
+            Method::ID_DEFLATE | Method::ID_BCJ2 => 1 << 20,
+            Method::ID_COPY
+            | Method::ID_AES256_SHA256
+            | Method::ID_DELTA
+            | Method::ID_BCJ_X86
+            | Method::ID_BCJ_ARM
+            | Method::ID_BCJ_ARM64
+            | Method::ID_BCJ_ARM_THUMB
+            | Method::ID_BCJ_PPC
+            | Method::ID_BCJ_SPARC
+            | Method::ID_BCJ_IA64 => 1 << 20,
+            _ => return Err(ArchiveError::UnsupportedMethod),
+        };
+        work = work.checked_add(cost).ok_or(ArchiveError::ResourceLimit)?;
+    }
+    Ok(work)
 }
 
 pub(crate) fn encoded_header(
@@ -131,4 +142,85 @@ pub(crate) fn encoded_header(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const FIXTURE: &[u8] = include_bytes!("../../tests/fixtures/sevenz-workspace.7z");
+
+    struct HeaderOnly(Cursor<&'static [u8]>);
+    impl Read for HeaderOnly {
+        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+            // This independent fixture's packed payload occupies [32, 47).
+            let start = self.0.position();
+            let end = start + bytes.len() as u64;
+            assert!(
+                bytes.is_empty() || end <= 32 || start >= 47,
+                "payload read during metadata admission"
+            );
+            self.0.read(bytes)
+        }
+    }
+    impl Seek for HeaderOnly {
+        fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+            self.0.seek(position)
+        }
+    }
+
+    #[test]
+    fn metadata_admission_reads_only_headers_and_preserves_payload_workspace_threshold() {
+        let limits = ResourceLimits {
+            max_working_bytes: 64 << 20,
+            ..Default::default()
+        };
+        let mut source = HeaderOnly(Cursor::new(FIXTURE));
+        let mut header = [0; 32];
+        source.read_exact(&mut header).expect("signature");
+        encoded_header(&mut source, &header, &limits).expect("small encoded-header workspace");
+        source.rewind().expect("catalog rewind");
+        let reader = sevenz_rust2::ArchiveReader::new(source, sevenz_rust2::Password::default())
+            .expect("metadata-only reader");
+        let archive = reader.archive();
+        assert_eq!(archive.files.len(), 2);
+        validate_blocks(archive).expect("valid payload properties without payload allocation");
+        for (mib, expected) in [
+            (64, Err(ArchiveError::ResourceLimit)),
+            (195, Err(ArchiveError::ResourceLimit)),
+            (196, Ok(())),
+        ] {
+            assert_eq!(
+                blocks(
+                    archive,
+                    &ResourceLimits {
+                        max_working_bytes: mib << 20,
+                        ..limits
+                    }
+                ),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn metadata_validation_rejects_invalid_and_unsupported_payload_coders() {
+        for (bytes, expected) in [
+            (
+                include_bytes!("../../tests/fixtures/sevenz-invalid-properties.7z").as_slice(),
+                ArchiveError::CorruptArchive,
+            ),
+            (
+                include_bytes!("../../tests/fixtures/sevenz-unsupported-coder.7z").as_slice(),
+                ArchiveError::UnsupportedMethod,
+            ),
+        ] {
+            let reader = sevenz_rust2::ArchiveReader::new(
+                Cursor::new(bytes),
+                sevenz_rust2::Password::default(),
+            )
+            .expect("catalog before payload validation");
+            assert_eq!(validate_blocks(reader.archive()), Err(expected));
+        }
+    }
 }

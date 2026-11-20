@@ -275,6 +275,8 @@ fn run(
             cx.set_global(crate::completion_actions::CompletionExitCorrelation(
                 exit_correlation_for_application,
             ));
+            crate::assets::register_fonts(cx)
+                .unwrap_or_else(|_| panic!("无法加载内置界面字体"));
             gpui_kit::init(cx);
             crate::ui::markdown_document::init(cx);
             //Unknown native animation preference is conservative until PlatformHost's snapshot.

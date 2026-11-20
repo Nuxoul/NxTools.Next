@@ -2,7 +2,7 @@
 
 ## Reference and lifecycle
 
-User item 5 authorizes an installed English/Chinese UI-family choice. The existing defaults remain Microsoft YaHei UI and diagnostic/code Consolas; font sizes and the selected theme graph do not change.
+User authorizes an available English/Chinese UI-family choice. The approved app-private default is Sarasa UI SC Regular; explicit saved choices, diagnostic/code Consolas, font sizes and the selected theme graph remain unchanged.
 
 Verified legacy sources in `D:\Code\NxTools`:
 - `ViewModels/MainWindowViewModel.cs:627-639`: OpenSettings -> OpenGlobalSettings -> RequestSettingsWindow.
@@ -23,7 +23,7 @@ Next preserves one registered settings window, existing placement/activation/nat
 
 ## Preference, availability and transaction
 
-`SystemSettings.ui_font_family` is a serde-default exact single family. Core bounds it to 256 UTF-8 bytes, nonblank, no control characters; Desktop validates actual membership against available names. Persist the requested family, not a display label. A missing saved font remains visible as unavailable and is retained on unrelated Apply; rendering falls back to Microsoft YaHei UI until it is available again or explicitly changed. Unknown new selections are rejected. The original atomic global-settings section transaction owns persistence and unrelated section preservation.
+`SystemSettings.ui_font_family` is a serde-default exact single family. Core bounds it to 256 UTF-8 bytes, nonblank, no control characters; Desktop validates actual membership against available names, including the private collection. Persist the requested family, not a display label. A missing saved font remains visible as unavailable and is retained on unrelated Apply; rendering falls back to bundled Sarasa UI SC until it is available again or explicitly changed. Unknown new selections are rejected. The original atomic global-settings section transaction owns persistence and unrelated section preservation.
 
 Diagnostics belong to the existing correlated settings save boundary: record font_changed and font_available booleans with accepted/start, persisted, next-turn presentation applied and terminal success/failure/elapsed events. Never log family text, the installed catalog, config paths or raw errors. Font fallback is a bounded presentation status, not a Windows shell failure; no native operation or IPC is needed.
 
@@ -36,3 +36,20 @@ After durable success, the application defers `theme::set_ui_font_family` alongs
 ## Verification
 
 Core tests cover old JSON defaults, English/Chinese roundtrip, bounded invalid preferences and original atomic global-settings persistence preserving other sections and bytes on failure. Typography tests cover available/missing/default/CSS-list selection. Theme tests exercise the production application boundary and theme switching, assert Component/Base typography and actual rendered inherited text, and preserve Consolas and sizes. Run Core and Desktop tests with the mandated memory environment in one coordinated Cargo session. Source/rustfmt checks do not establish physical keyboard/pointer, mixed-DPI or user visual acceptance.
+
+## Approved Sarasa Regular bundle
+
+The user approves only unmodified SarasaUiSC-Regular.ttf 1.0.43 (24,049,996 bytes,
+family `Sarasa UI SC`, weight400) as the bundled/default UI face. This supersedes the
+earlier YaHei default, not explicit saved font choices, sizes, Consolas or Apply/Cancel.
+The exact released `TextSystem::add_fonts(Vec<Cow<'static,[u8]>>) -> Result<()>` delegates
+to the Windows private DirectWrite collection before invalidating font/layout caches.
+`vendor/gpui-pre-windows-039/src/direct_write.rs::add_fonts` creates an in-memory font
+file reference from borrowed static bytes, adds it to the existing builder and creates
+the custom font collection; `all_font_names` includes the custom collection. Kit/Base
+init does not register product fonts, so product startup must register before theme,
+saved-family application and window creation. There is no Windows font installation.
+The existing About license scroll includes the complete upstream copyright/OFL1.1 text.
+The original legacy settings constructor/show/close/Apply chain above was rechecked;
+no native window, transaction, focus, cancellation or placement owner changes.
+[Implementation scope](../../.trellis/tasks/11-20-sarasa-ui-font/prd.md).

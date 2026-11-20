@@ -212,3 +212,19 @@ preserves installed rows; native failure preserves last-good membership. No resu
 shows or focuses a surface. AppsFolder Open uses original `ShellTarget.TryCreate/LaunchCore`;
 file-only capabilities remain unavailable. `windows_apps_`, Finder `windows_applications` and the
 C# `installed applications fixture` are synthetic boundary evidence, not installed-native acceptance.
+
+## Packaged application icons (2026-11-20)
+
+Rechecked the same managed 6.3.5.94 root before changing Next's icon path:
+
+| Boundary | Verified source and invariant |
+| --- | --- |
+| Namespace identity | `Core/Launcher/Class291.cs:27–71,146–173` reads AppsFolder package-family/AUMID/display-name facts on an STA and retains `SHGetIDListFromObject` in `Class299.Class127_0`. `Core/Class126.cs:38–42` frees the owned PIDL with `FreeCoTaskMem`. |
+| Result to view | `Core/Search/Class262.cs:20–54` creates `Class261`; `Core/ViewModels/Class179.cs:65–68` creates `Class176`. `DynamicIconSizeSearchItemViewModelBase.cs:30–49` reloads on positive physical-size changes. |
+| Size and rendering | `Main/Views/LauncherSearchWindow.xaml:42–51` uses a 32-DIP IconViewer with physical width bound back to IconSize. `Views/CalculatePhysicalSizeBehavior.cs` owns the device-pixel conversion. |
+| Native pixels | `Core/ViewModels/Class176.cs:47–57` passes PIDL plus requested size and ICONONLY=4 to `Core/Class141.cs:40–100`. `Class141:170` uses `Class124(2)`; `System/Threading/Tasks/Schedulers/Class124.cs:69–74` creates STA workers. `SHCreateItemFromIDList` requests IShellItemImageFactory (`bcc18b79-ba16-442f-80c4-8a59c30c463b`), then GetImage SIZE/flags. E_PENDING retries are bounded to five 200-ms waits; HBITMAP conversion always deletes the bitmap, and the async result is frozen (`Class141:425–438`). |
+| Activation is separate | `Core/Launcher/Class299.cs:63–78` uses ApplicationActivationManager only for explicit execution, not icon loading. |
+
+Next keeps its original `ExtractShellIcon { target, size }`, visible-range prefetch, resource coalescing, result-ID PNG binding, deferred cache-hit delivery, 96-entry Rust LRU, bounded native STA and shared IconCache. A valid exact `shell:AppsFolder\family!application` is an icon-capable namespace identity independently of file preview, Shell menus, path copy, reveal and elevation. C# resolves that parsing name directly to IShellItemImageFactory; it never treats the AUMID suffix as an extension or canonicalizes it with GetFullPath. Unknown installed applications use their own complete namespace identity, without an artwork/name allowlist. Failure keeps a static semantic application glyph, not a loading-shaped glyph.
+
+The primary popup constructor/show/hide/activation and passive preview lifecycle remain the existing owners documented above; icon admission neither creates a window nor changes placement, focus, selection, cancellation or activation. Existing correlated platform dispatch/result diagnostics retain native HRESULTs and fixed failure categories without logging targets. This is managed Shell-boundary evidence, not Listary native search-engine source. Controlled factory/PNG fixtures and source tests do not establish installed AppsFolder, mixed-DPI or user visual acceptance.

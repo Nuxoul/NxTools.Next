@@ -1,0 +1,6 @@
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Original editor and deferred request/source/connection lifecycle"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Official Button Small Outline beside original Form Input"}
+{"file":".trellis/spec/nxtools-protocol/backend/quality-guidelines.md","reason":"Typed action-specific command and event contract"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Native HWND, input, ownership and diagnostics boundary"}
+{"file":"docs/reference-code/system-shell.md","reason":"Verified existing settings and window-selection references"}
+{"file":".trellis/tasks/11-20-blacklist-window-picker/design.md","reason":"Picker layout, native input pairs and bounded cleanup"}

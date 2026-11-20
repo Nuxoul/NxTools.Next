@@ -89,3 +89,13 @@ The presentation reference does not change Other Tools configuration, Windows fi
 One activatable, resizable reader window; reopening the tool focuses it. Tab deduplication, per-tab scroll, real user-driven mode switching, captured document revision and one scroll owner per pane. Chooser cancellation is a no-op; retirement cannot install late data into a replacement window. Keep native caption targets and editing controls distinct. A clean tab follows an external save, a dirty tab retains the draft and indicates conflict, and failure never drops the last-good view. Export does not save the source; restore retains the before-state before replacement. Verify actual button click/focus, chooser/native behavior, logical document state and successful output separately.
 
 Owning scope and acceptance: [Markdown Reader task](../../.trellis/tasks/11-18-markdown-reader/prd.md). Native mdview reading/focus/placement internals and NxTools implementation behavior are not verified by this reference.
+
+### Heading click and tree expansion
+
+Winc `app/preview/markdown/scroll.rs::press_toc152-173` handles Pin separately and maps Heading to
+scroll/active/flash only. Released Base0.8.0 `tree.rs::on_entry_click441-444` selects and unconditionally
+calls toggle_expand; its rendered entry's full-click callback wraps the caller's content. Next's
+`outline.rs::outline_tree` supplies a ListItem with its own deferred Reader::jump_outline, while
+`mod.rs::outline_items` represents subheadings as expanded TreeItem children. A heading navigation
+click must not also invoke the parent Tree's folder toggle. Preserve the original Root release,
+Tree keyboard navigation and Reader source-anchor selection; no framework patch or replacement tree.

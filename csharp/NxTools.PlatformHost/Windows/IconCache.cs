@@ -18,6 +18,10 @@ internal sealed record IconCacheKey(
         long lastWriteTicks,
         string targetType)
     {
+        if (targetType == "namespace")
+        {
+            return new IconCacheKey(targetPath, "namespace/icon-only", size, 0, "NAMESPACE");
+        }
         var normalizedPath = NormalizePath(targetPath);
         var selector = iconIndex?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "shell";
         return new IconCacheKey(

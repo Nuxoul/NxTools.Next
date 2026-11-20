@@ -7,6 +7,11 @@ internal static class PlatformEventEnvelopeFactory
     public static ProtocolEnvelope Create(WindowsPlatformEvent platformEvent) =>
         platformEvent switch
         {
+            ProcessWindowPickChangedEvent pick => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "process_window_pick_changed",
+                Data = pick
+            }, pick.SessionId),
             SystemMotionPreferenceChangedEvent motion => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "system_motion_preference_changed",

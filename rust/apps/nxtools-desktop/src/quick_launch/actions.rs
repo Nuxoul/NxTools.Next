@@ -792,6 +792,7 @@ pub(crate) fn quick_launch_result_capabilities(
             && !result.entry.id.starts_with("extension:")
             && !result.entry.id.starts_with("extension-script:"),
         shell_icon: uses_native_file_integration
+            || (result.opens_target() && is_packaged_application(result))
             || result.entry.source == ApplicationSource::CustomCommand,
     }
 }

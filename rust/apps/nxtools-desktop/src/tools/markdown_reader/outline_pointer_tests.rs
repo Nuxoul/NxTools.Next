@@ -67,6 +67,30 @@ fn markdown_reader_outline_click_does_not_leave_text_drag_active(cx: &mut TestAp
             .debug_bounds("markdown-outline-trigger")
             .expect("outline marks");
         hover_outline(surface, trigger.center());
+        for _ in 0..2 {
+            let parent = surface
+                .debug_bounds("markdown-outline-title-0")
+                .expect("parent heading");
+            surface.simulate_mouse_down(parent.center(), MouseButton::Left, Modifiers::default());
+            surface.simulate_mouse_up(parent.center(), MouseButton::Left, Modifiers::default());
+            settle(surface);
+            assert!(
+                surface.read(|cx| reader
+                    .read(cx)
+                    .active_tab()
+                    .expect("tab")
+                    .outline
+                    .read(cx)
+                    .entry(1)
+                    .is_some()),
+                "clicking a parent heading must not collapse its descendant headings"
+            );
+            assert!(
+                surface.debug_bounds("markdown-outline-title-1").is_some(),
+                "child heading remains visible after navigation"
+            );
+            assert!(!surface.read(|cx| view.read(cx).is_selecting()));
+        }
         let row = surface
             .debug_bounds("markdown-outline-title-1")
             .expect("second heading");

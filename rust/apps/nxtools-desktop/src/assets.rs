@@ -7,9 +7,26 @@ gpui_kit::assets::icon_assets!(DownloadIconAssets, [Link]);
 
 pub struct NxToolsAssets;
 
+const SARASA_UI_REGULAR: &[u8] = include_bytes!("../assets/fonts/SarasaUiSC-Regular.ttf");
+pub(crate) const SARASA_FONT_LICENSE: &str = include_str!("../assets/fonts/OFL-Sarasa-Gothic.txt");
+
+pub(crate) fn register_fonts(cx: &gpui_kit::App) -> Result<()> {
+    let correlation = uuid::Uuid::new_v4();
+    let started = std::time::Instant::now();
+    tracing::info!(event = "desktop.fonts.register.started", correlation_id = %correlation, font_count = 1);
+    let result = cx
+        .text_system()
+        .add_fonts(vec![Cow::Borrowed(SARASA_UI_REGULAR)]);
+    tracing::info!(event = "desktop.fonts.register.finished", correlation_id = %correlation,
+        success = result.is_ok(), elapsed_ms = started.elapsed().as_millis() as u64);
+    result
+}
+
 impl AssetSource for NxToolsAssets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
         let bytes: Option<&'static [u8]> = match path {
+            "fonts/SarasaUiSC-Regular.ttf" => Some(SARASA_UI_REGULAR),
+            "fonts/OFL-Sarasa-Gothic.txt" => Some(SARASA_FONT_LICENSE.as_bytes()),
             "material-symbols/calculate.svg" => {
                 Some(include_bytes!("../assets/material-symbols/calculate.svg"))
             }
@@ -165,6 +182,8 @@ impl AssetSource for NxToolsAssets {
                     "icons/check.svg",
                     "icons/chevron-right.svg",
                     "icons/circle-x.svg",
+                    "fonts/SarasaUiSC-Regular.ttf",
+                    "fonts/OFL-Sarasa-Gothic.txt",
                 ]
                 .into_iter()
                 .map(SharedString::from),
@@ -184,6 +203,37 @@ mod tests {
     use gpui_kit::component::IconNamed;
 
     use crate::icons::{CaptionIcon, MaterialIcon};
+
+    #[test]
+    fn bundled_sarasa_regular_and_full_license_use_embedded_assets() {
+        let font = NxToolsAssets
+            .load("fonts/SarasaUiSC-Regular.ttf")
+            .expect("font asset")
+            .expect("bundled Regular");
+        assert!(
+            matches!(font, Cow::Borrowed(_)),
+            "font bytes must live for the application lifetime"
+        );
+        assert_eq!(font.len(), 24_049_996);
+        assert_eq!(&font[..4], &[0, 1, 0, 0]);
+        let fonts = NxToolsAssets.list("fonts/").expect("font catalog");
+        let faces: Vec<&str> = fonts
+            .iter()
+            .filter(|path| path.ends_with(".ttf"))
+            .map(|path| path.as_ref())
+            .collect();
+        assert_eq!(faces, ["fonts/SarasaUiSC-Regular.ttf"]);
+        assert!(SARASA_FONT_LICENSE.contains("Copyright (c) 2015-2025, Renzhi Li"));
+        assert!(SARASA_FONT_LICENSE.contains("SIL Open Font License v1.1"));
+        assert!(SARASA_FONT_LICENSE.contains("OTHER DEALINGS IN THE FONT SOFTWARE."));
+    }
+
+    #[gpui_kit::test]
+    fn bundled_sarasa_registration_uses_the_existing_text_system(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        cx.update(|cx| register_fonts(cx).expect("register static bundled Regular"));
+    }
 
     #[test]
     fn kit_assets_are_available_without_replacing_product_aliases() {

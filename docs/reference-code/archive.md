@@ -1386,3 +1386,32 @@ through native reply, worker terminal, EntrySession result and `ArchiveReadError
 that code to `TooLarge`. Ordinary materialize/extract/drag and non-output ResourceLimit semantics stay
 unchanged. Regression owner: `ArchivePreviewTests.ActualOutputBudgets` uses a GUID-owned generated
 standalone Gzip through actual Read/Entry/worker/native output, then proves cleanup and readmission.
+
+## 7z metadata Open versus payload workspace (2026-11-20)
+
+The [installed feedback contract](../../.trellis/tasks/11-20-installed-feedback-fixes/archive-design.md)
+records the supplied SarasaUi archive's read-only diagnosis. Bandizip7.32.0.1 and7-Zip26.00 list all
+60files (1,476,080,380declared bytes), solid LZMA2:192m/10blocks; its encoded-header dictionary is
+only6,144bytes. The original Next worker rejects Open at64/195MiB and lists at196/256MiB with zero
+payload decodes/output. This is the unconditional payload dictionary+4MiB admission in
+`worker_codecs.rs::run_sevenz`, not native exhaustion or a reason to raise the product budget.
+
+Rechecked [retained-handler trace](../../.trellis/tasks/10-31-archive-research/bandizip-solid-output.md#7z)
+and local `evidence/raw/ark-7z-code-0x18004c7a0.json` (Evidence
+`ev_c0506115b5d4668a581a31aaa831fccacf80a8d55a3aa6784ac68193c6bd6cb6`): constructor
+`0x18004c2f0 → 0x1800ef080` retains the handler; Open `0x18004c7a0 → 0x1800ebdd0 →
+0x180134660 → 0x180138050` builds the catalog. Later selected extraction
+`0x18004f0b0 → 0x18004e170 → 0x180139760` groups block prefixes through the last selected file.
+These are binary/Ghidra reconstructed artifacts, not proprietary original source.
+
+Locked sevenz-rust2 0.23.0 `ArchiveReader::new` parses headers/indexes, while `for_each_entries`
+constructs payload BlockDecoders. Metadata-only Open must still admit encoded-header allocations
+and validate payload coder support/properties, but need not reserve unallocated payload workspace.
+Next's normalized/retained drag reader handoff is inside the same `run_sevenz`; it must retain full
+payload admission before handoff. Fresh Test/extract/selected reads re-enter that boundary.
+Create/Edit verification retains its separate full `sevenz_budget::blocks` calls. Original
+ArchiveReadSession/ArchiveWorkerRunner Job, pipes, source leases, native ceilings and actual cleanup
+remain unchanged; no native window lifecycle or resource option is added.
+`worker_drag.rs::run_codec` clones that admitted request once and changes only per-demand ordinal/
+entry/output allowances (lines186–200); its working-memory allowance and retained reader do not
+change between demands. No metadata-only reader is transferred into this payload owner.

@@ -436,6 +436,7 @@ fn outline_tree(
 ) -> impl IntoElement {
     let confirm_tree = tree.clone();
     let confirm_owner = owner.clone();
+    let pointer_tree = tree.clone();
     let rows = Tree::new(tree, move |index, entry, _, _, cx| {
         let anchor = entry.item().id.clone();
         let title = entry.item().label.clone();
@@ -443,6 +444,7 @@ fn outline_tree(
         let current = active.as_deref() == Some(anchor.as_ref());
         let owner = owner.clone();
         let indent = px(entry.depth().min(4) as f32 * 6.);
+        let pointer_tree = pointer_tree.clone();
         ListItem::new(anchor.clone())
             .h(px(ROW))
             .py_0()
@@ -479,7 +481,11 @@ fn outline_tree(
                     ),
             )
             .when(interactive, |row| {
-                row.on_click(move |_, window, cx| {
+                row.on_mouse_down(gpui_kit::MouseButton::Left, |_, _, cx| {
+                    cx.stop_propagation()
+                })
+                .on_click(move |_, window, cx| {
+                    pointer_tree.update(cx, |tree, cx| tree.set_selected_index(Some(index), cx));
                     let owner = owner.clone();
                     let anchor = anchor.clone();
                     window.defer(cx, move |window, cx| {

@@ -1228,6 +1228,49 @@ impl DownloadApplication {
         self.latest_progress.get(&task_id)
     }
 
+    pub(crate) fn submit_installer_download(
+        &mut self,
+        source_url: String,
+        file_name: String,
+        expected_total_bytes: Option<u64>,
+        idempotency_key: uuid::Uuid,
+        cx: &mut Context<Self>,
+    ) -> Result<DownloadTaskId, String> {
+        if let Some(existing) = self.tasks.iter().find(|entry| {
+            let request = entry.task.request();
+            request.source_url == source_url
+                && request.file_name.as_deref() == Some(file_name.as_str())
+        }) {
+            return Ok(existing.task.id());
+        }
+        let request = DownloadRequest {
+            source_url,
+            save_directory: self.default_directory.clone(),
+            save_directory_explicit: false,
+            file_name: Some(file_name),
+            headers: Vec::new(),
+            cookie: None,
+            referrer: None,
+            source_page: None,
+            certificate_policy: Default::default(),
+            connection_limit: Some(self.default_connection_limit()),
+            speed_limit_bytes_per_second: None,
+            expected_total_bytes,
+            scheduled_at_unix_ms: None,
+            adaptive_segment_policy: Some(self.default_adaptive_segment_policy()),
+            media: None,
+            category_id: None,
+            category_name: None,
+            duplicate_strategy: nxtools_download::DownloadDuplicateStrategy::UseDefault,
+        };
+        self.submit_with_idempotency(
+            request,
+            DownloadSubmitMode::StartNow,
+            Some(idempotency_key),
+            cx,
+        )
+    }
+
     pub(crate) fn submit_with_idempotency(
         &mut self,
         request: DownloadRequest,
@@ -3904,3 +3947,6 @@ mod tests;
 #[cfg(test)]
 #[path = "downloads/new_download_link_tests.rs"]
 mod new_download_link_tests;
+
+#[cfg(test)]
+mod installer_download_tests;

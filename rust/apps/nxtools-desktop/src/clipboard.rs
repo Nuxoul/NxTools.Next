@@ -3449,6 +3449,7 @@ impl ClipboardApplication {
             | PlatformEvent::ArchiveVirtualDragProgress(_)
             | PlatformEvent::ArchivePicker(_)
             | PlatformEvent::FloatingAssistant(_)
+            | PlatformEvent::ProcessWindowPickChanged(_)
             | PlatformEvent::TrayActionRequested(_)
             | PlatformEvent::SystemMotionPreferenceChanged(_)
             | PlatformEvent::SystemThemePreferenceChanged(_)

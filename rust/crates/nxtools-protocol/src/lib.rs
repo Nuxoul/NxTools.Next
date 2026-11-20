@@ -14,6 +14,7 @@ pub mod desktop_markdown_intent;
 pub mod floating_assistant;
 pub mod installed_applications;
 pub mod main_window;
+pub mod process_window_pick;
 pub mod raw_numbered_join;
 pub mod system_proxy;
 use serde::{Deserialize, Serialize};
@@ -132,6 +133,7 @@ pub enum PlatformEvent {
     ArchiveVirtualDragProgress(Box<archive_virtual_drag::ArchiveVirtualDragProgress>),
     ArchivePicker(archive_picker::ArchivePickerResult),
     FloatingAssistant(floating_assistant::FloatingAssistantEvent),
+    ProcessWindowPickChanged(process_window_pick::ProcessWindowPickChanged),
     TrayActionRequested(TrayActionRequest),
     SystemMotionPreferenceChanged(SystemMotionPreferenceChanged),
     SystemThemePreferenceChanged(SystemThemePreferenceChanged),
@@ -512,6 +514,7 @@ pub enum PlatformCommand {
     ReadClipboardText,
     QueryCursorMonitor,
     QueryInstalledApplications,
+    ProcessWindowPick(process_window_pick::ProcessWindowPickCommand),
     PasteText(PasteTextCommand),
     PasteFiles(PasteFilesCommand),
     PasteImage(PasteImageCommand),

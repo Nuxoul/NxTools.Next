@@ -80,6 +80,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     private readonly IDisposable _directoryLifetime;
     private readonly NativeFileDragCoordinator _fileDragCoordinator;
     private readonly NativeContextMenuCoordinator _contextMenus;
+    private readonly ProcessWindowPickCoordinator _processWindowPick;
     private readonly TaskbarProgressLogGate _taskbarProgressLogGate = new();
     private readonly ClipboardCaptureDropDiagnosticGate _clipboardCaptureDropDiagnosticGate = new();
     private readonly ICompletionSystemActions _completionSystemActions;
@@ -100,6 +101,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         _contextMenus = new NativeContextMenuCoordinator(_log,
             flushPointerObservation: () => _window?.FlushContextMenuPointerPress());
         _extensionRuntimeInspector = new ExtensionRuntimeInspector(_log);
+        _processWindowPick = new ProcessWindowPickCoordinator(e => _events.Writer.TryWrite(e), _log);
         _directoryLifetime = ThirdPartyFileManagerAdapter.BeginLifetime(_log, "ordinary");
         _elevatedDirectoryNavigation = new ElevatedDirectoryNavigationClient(
             platformEvent => _events.Writer.TryWrite(platformEvent),
@@ -970,6 +972,10 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         CancellationToken cancellationToken) =>
         _fileDragCoordinator.BeginAsync(command, correlationId, cancellationToken);
 
+    internal Task<WindowsCommandResult> ProcessWindowPickAsync(ProcessWindowPickCommand command,
+        uint desktopProcessId, CancellationToken cancellationToken) =>
+        _processWindowPick.ExecuteAsync(command, desktopProcessId, cancellationToken);
+
     public Task<WindowsCommandResult> ShowContextMenuAsync(ShowContextMenuCommand command, Guid sessionId,
         CancellationToken cancellationToken) => _contextMenus.ShowAsync(command, sessionId, cancellationToken);
 
@@ -1645,6 +1651,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
         _window?.CancelClipboardPauseRequests();
         _shellActions.Dispose();
         _contextMenus.Dispose();
+        _processWindowPick.Dispose();
         _extensionRuntimeInspector.Dispose();
         _window?.RequestStop();
         _directoryLifetime.Dispose();

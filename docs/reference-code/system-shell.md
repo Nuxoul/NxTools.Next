@@ -383,3 +383,40 @@ Source owners: `repo:rust/apps/nxtools-indexer/src/windows_service_host.rs`, `re
 Quick Launch's built-in Run Elevated maps to `OpenShellTarget(RunElevated) -> WindowsPlatformAdapter::OpenShellTargetAsync -> ClipboardShellTarget::LaunchCore -> Process.Start(Verb=runas)`. User-configured administrator commands map to `LaunchProcess(run_as_admin=true) -> WindowsPlatformAdapter::LaunchProcess -> Process.Start`. Keep their original command IDs until the native authorization/launch result or connection retirement; a machine timeout must not precede the person's authorization decision. Ordinary Open/Reveal and non-elevated launch keep their existing machine policy. No new launcher, focus policy or native activation path is introduced.
 
 Service preparation follows `QuickLaunchApplication::ensure_indexer_service -> EnsureIndexerService -> IndexerServiceInstaller::EnsureAsync -> InstallAsync/ConfigureLifetimeWithAuthorizationAsync`. Rechecked `D:\Code\SwiftList-main\App\Services\ServiceManagement\ServiceInstallManager.cs::RunElevatedInstaller`: `Process.Start(runas)` precedes the finite installer-process wait. Next likewise starts its existing30-second helper-execution budget after Process.Start returns from authorization; keep that native execution budget while exempting the human-capable request from the shared IPC machine deadline. Source/deployment identity, protected tuple validation, SCM ownership and authorization-cancel failures remain unchanged. No legacy NxTools Quick Launch implementation or Listary native engine source is asserted. Existing correlated lifecycle/native error diagnostics remain payload-free.
+
+## Blacklist window selection (2026-11-20)
+User requests hover window outline/executable/dimensions with left-click selection as an addition to
+the existing manual process editor. Rechecked legacy `Views/SettingsWindow.axaml.cs` constructor,
+OnOpened, SaveButton_Click and Close/OnClosing: original scoped Apply/Cancel and Window base
+show/close remain authoritative. Legacy `MainWindowClipboardViewModel` textual exclusions are the
+blacklist reference; window-picker/WindowFromPoint/mouse-hook searches found no legacy selection
+implementation to migrate. This is an explicit new capability, not claimed old UI parity.
+Current owner is `network_settings.rs::NetworkSettingsApplication/NetworkSettingsView`, with
+`network_settings/blacklist.rs` editor -> local add/edit -> one global Apply transaction. Selection
+must fill that editor without adding/saving or replacing scopes. Rust owns session/layout, GPUI the
+passive outline/label, C# native hit-test/input/style lifetime. Preserve source-window identity,
+deferred callbacks, device-pixel virtual origin, nonactivation, cancellation and terminal cleanup.
+Contract: `.trellis/tasks/11-20-blacklist-window-picker/design.md`.
+
+Production path: `blacklist.rs::render_blacklist_editor` official Small Outline Button -> deferred
+`window_picker.rs::request_process_window_pick/begin_process_window_pick` -> original PlatformBridge
+`process_window_pick` -> `PlatformPipeClient` -> `ProcessWindowPickCoordinator` dedicated owner ->
+`ProcessWindowPickController` -> `ProcessWindowPickNative` Win32 facts/hooks/styles. The hidden
+GPUI `window_picker_overlay.rs` surface receives coalesced viewport/candidate facts; first-frame
+Show is session-qualified. Native preparation initializes layered alpha255 while hidden and
+checks outer/client bounds. `finish_process_window_pick/release_process_picker` defer source-view
+refill; original local Add/Update and durable Apply remain the only rule publication path.
+
+## About installer download
+
+The requested newer-release behavior uses `main_window/about.rs::check_updates/latest_release`
+and the existing `MainWindow.downloads` weak owner. The original bounded request reads the latest
+GitHub release; release assets expose the supported installer produced by `scripts/package.ps1`
+as `NxTools.Next-setup-<version>.exe`. Existing `downloads.rs::submit_with_idempotency` submits
+`DownloadCommand::Submit` with `StartNow`, accepts durable Accepted/IdempotentAccepted and refreshes
+the original projection. `new_download_view.rs::request_for_source` establishes directory,
+connection/adaptive defaults and UseDefault duplication; engine HTTP/network and organization
+policies remain authoritative. About uses that same submission owner, not a browser or independent
+HTTP downloader. Close retires the pending request before deferred cross-owner admission; accepted
+tasks remain downloader-owned. There is no legacy equivalent, automatic installer execution or
+change to protected-update authorization. [Slice contract](../../.trellis/tasks/11-20-installed-feedback-fixes/about-design.md).

@@ -645,3 +645,40 @@ variables or missing whole paths must not produce a match or an existing-prefix 
 Regression tests exercise the production detector with the LOCALAPPDATA logs example,
 actual TEMP files/directories, spaces/quotes/Markdown, case-insensitive variable names,
 undefined variables and URL preservation. See [reference](../../../../docs/reference-code/link-detector.md).
+
+## Scenario: Blacklist process window selection
+
+### 1. Scope / Trigger
+Original global Application Blacklist editor gains a window picker beside manual input. Rust owns its draft and session; GPUI draws one passive highlight; C# owns HWND facts, native styles and input. Evidence: `repo:rust/apps/nxtools-desktop/src/network_settings/window_picker.rs`, `repo:csharp/NxTools.PlatformHost/Windows/ProcessWindowPickController.cs`.
+
+### 2. Signatures
+`PlatformCommand::ProcessWindowPick(ProcessWindowPickCommand)` uses `process_window_pick`; `PlatformEvent::ProcessWindowPickChanged` uses `process_window_pick_changed`. Actions are `start {session_id,source_window_handle,overlay_window_handle}`, `show_overlay {session_id}`, `cancel {session_id}`. UUID session is operation correlation; command IDs remain individual receipts.
+
+### 3. Contracts
+Events carry `session_id`, `state: hover|selected|cancelled|failed`, optional `viewport {left:i32,top:i32,width:u32,height:u32}`, `candidate {window_handle:i64,process_id:u32,process_name,left,top,width,height}` and `native_error_code:i32`. Hover requires viewport; absent candidate clears highlight. Selected requires candidate. Coordinates are native device pixels including negative origins; GPUI subtracts viewport origin and divides by actual overlay scale. Outer protocol1 and original result envelopes remain.
+
+Register pending session before Start; bind original weak view, source window and bridge connection. Source/overlay HWNDs must be distinct and belong to the connected Desktop. Overlay starts hidden, becomes transparent/topmost/click-through/noactivate with exact virtual-desktop bounds, and is shown only by session-qualified Show after a GPUI frame. Update source editor on a later application turn; selection fills process input only, retains scopes/rules and never writes config. Original Add/Update and Apply/Cancel remain authoritative. Source clicks pass through; target confirming down/up and Escape down/up are consumed as pairs. Hook callbacks do not resolve processes, log or publish IPC. Coalesce hover facts. Native120s and Rust125s deadlines retire work; cancel/page leave/close/disconnect/owner loss prevent late writes or show.
+
+### 4. Validation & Error Matrix
+- Missing native handles/disconnected bridge/overlay creation or Start failure -> release local session, retain manual value and show retryable error.
+- Wrong session/connection/source/view -> ignore or retire; no editor mutation or activation.
+- No eligible hover target -> empty highlight; source/overlay/desktop/invisible/cloaked windows are excluded.
+- Process lookup/Show failure -> terminal error; no fabricated process name.
+- Cancel/close/page leave -> retain manual value; release native hooks after intercepted releases drain.
+- Diagnostic events carry session/state/fixed reason/elapsed/native code only, never names, paths, titles or hover streams.
+
+### 5. Good/Base/Bad Cases
+Good: hover a window on a negative-origin monitor, left-click, then explicitly Add and Apply. Base: manual process entry remains available without PlatformHost. Bad: an old selection adds a rule automatically, changes scopes, writes config or resurrects a closed highlight.
+
+### 6. Tests Required
+`network_settings::window_picker_tests` asserts actual official Button pointer/keyboard flow, manual/editor bounds, deferred local refill, unchanged rules/scopes/config, old-session and connection rejection, cancellation/page/close cleanup and scaled negative origins. Protocol roundtrip uses real command/event envelopes and rejects wrong action shape. Injected C# fixtures assert actual parser/controller/native API seams, hidden placement/ownership, fresh clicked HWND, matching-release suppression, cancel-before-Show, startup failure and disposal. Real HWND/input/mixed-DPI/user acceptance remains separate.
+
+### 7. Wrong vs Correct
+Wrong: picker callback synchronously updates the leased settings view and persists a new blacklist rule. Correct: retire the qualified session, defer the original source-window/view update, fill InputState and leave Add/Apply to the user.
+
+Picker rendering intersects native target bounds with the virtual desktop before scale conversion;
+maximized/off-edge native borders must not put the outline or caption outside that surface.
+The caption retains original native dimensions and no target HWND geometry is mutated.
+Layered overlay preparation calls checked SetLayeredWindowAttributes(alpha255,LWA_ALPHA) while
+hidden, after style assignment and before exact outer/client placement; failure releases admission
+without installing hooks or revealing the window.

@@ -56,6 +56,7 @@ impl NetworkSettingsView {
         if self.saving {
             return;
         }
+        self.observe_picker_page(0, cx);
         let correlation_id = uuid::Uuid::new_v4();
         let started_at = Instant::now();
         info!(event = "global.blacklist.draft_started", %correlation_id, rule_count = self.rules.len(), editing = self.editing_rule.is_some(), "application rule edit accepted");
@@ -167,6 +168,7 @@ impl NetworkSettingsView {
                         if this.saving {
                             return;
                         }
+                        this.observe_picker_page(0, cx);
                         this.editing_rule = Some(index);
                         this.new_disable_clipboard = clipboard;
                         this.new_disable_quick_launch = quick;
@@ -203,6 +205,7 @@ impl NetworkSettingsView {
                         .ghost().small().label("移除").disabled(pending)
                         .on_click(cx.listener(move |this, _, _, cx| {
                             if this.saving { return; }
+                            this.observe_picker_page(0, cx);
                             this.rules.remove(index); this.editing_rule = None;
                             info!(event = "global.blacklist.draft_removed", correlation_id = %uuid::Uuid::new_v4(), rule_count = this.rules.len(), elapsed_ms = 0, "application rule removed from draft");
                             cx.notify();
@@ -288,7 +291,26 @@ impl NetworkSettingsView {
                     .child(
                         Input::new(&self.process_input)
                             .aria_label("应用进程名")
-                            .disabled(pending),
+                            .disabled(pending || self.process_window_pick.is_some()),
+                    ),
+            )
+            .child(
+                div()
+                    .debug_selector(|| "global-blacklist-window-pick".into())
+                    .flex_none()
+                    .child(
+                        Button::new("global-blacklist-window-pick-button")
+                            .small()
+                            .outline()
+                            .label(if self.process_window_pick.is_some() {
+                                "取消选取"
+                            } else {
+                                "选取窗口"
+                            })
+                            .disabled(pending)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                this.toggle_process_window_pick(window, cx)
+                            })),
                     ),
             )
             .child(div().w_16().flex_none().child(scope_checkbox(
@@ -326,13 +348,13 @@ impl NetworkSettingsView {
                             } else {
                                 "添加"
                             })
-                            .disabled(pending)
+                            .disabled(pending || self.process_window_pick.is_some())
                             .on_click(cx.listener(|this, _, window, cx| this.add_rule(window, cx))),
                     ),
             );
         Form::vertical().small().child(Field::new()
             .label(if self.editing_rule.is_some() { "编辑应用" } else { "添加应用" })
-            .description("填写进程名，例如 notepad.exe；点击已有应用可编辑。左侧勾选禁用剪贴板，右侧勾选禁用速启。")
+            .description("填写进程名或选取窗口；点击已有应用可编辑。左侧勾选禁用剪贴板，右侧勾选禁用速启。")
             .child(editor)).into_any_element()
     }
 }

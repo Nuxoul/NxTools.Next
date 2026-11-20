@@ -19,6 +19,18 @@ internal static class Program
     {
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("process window pick fixture strict wire", ProcessWindowPickTests.StrictWire),
+            ("process window pick fixture ownership startup failure", ProcessWindowPickTests.OwnershipAndStartupFailure),
+            ("process window pick fixture viewport hover names", ProcessWindowPickTests.ViewportHoverAndNames),
+            ("process window pick fixture click release suppression", ProcessWindowPickTests.ClickAndReleaseSuppression),
+            ("process window pick fixture escape cancellation", ProcessWindowPickTests.EscapeAndCancellation),
+            ("process window pick fixture stale cancel bounded admission", ProcessWindowPickTests.StaleCancelAndBoundedAdmission),
+            ("process window pick fixture owner disconnect dispose deadline", ProcessWindowPickTests.OwnerDisconnectDisposeAndDeadline),
+            ("process window pick fixture diagnostics event envelope", ProcessWindowPickTests.DiagnosticsAndEventEnvelope),
+            ("process window pick fixture actual pipe reader route", ProcessWindowPickTests.ActualPipeRouteAndReader),
+            ("process window pick fixture native policy hook boundary", ProcessWindowPickTests.NativePolicyAndHookBoundary),
+            ("process window pick fixture partial hooks lost release", ProcessWindowPickTests.NativePartialInstallAndLostRelease),
+            ("process window pick fixture deferred cancel failure facts", ProcessWindowPickTests.CancelBeforeProcessingAndFailureFacts),
             ("installed applications fixture localized complete JSON", InstalledApplicationTests.LocalizedApplicationsAndJson),
             ("installed applications fixture invalid facts and empty", InstalledApplicationTests.InvalidFactsAndEmptyResult),
             ("installed applications fixture failure discards partial", InstalledApplicationTests.FailureNeverPublishesPartial),
@@ -611,6 +623,9 @@ internal static class Program
             ("shell icon extraction command preserves target and size", ShellIconCommandPreservesPayload),
             ("shell icon extraction runs on a dedicated STA worker", ShellIconExtractionRunsOnDedicatedStaWorker),
             ("shell icon extraction allows bounded parallel STA workers", ShellIconExtractionAllowsBoundedParallelWorkers),
+            ("packaged application icon fixture namespace and cache identity", PackagedApplicationIconTests.NamespaceResolutionAndCacheIdentity),
+            ("packaged application icon fixture real extraction PNG and STA cache", PackagedApplicationIconTests.RealExtractUsesFactoryPngAndOriginalStaCache),
+            ("packaged application icon fixture HRESULT retry cancellation cleanup", PackagedApplicationIconTests.HResultRetryCancellationAndCleanup),
             ("archive folder type icon fixture resolves safe directory attributes", ArchiveTypeIconTests.FixedFolderTargetHasDirectoryAttributes),
             ("archive folder type icon fixture caches PNG on the original STA", ArchiveTypeIconTests.FolderPngUsesOwnedCacheAndOriginalSta),
             ("archive polish quick-create title selection", ArchiveShellSelectionTests.QuickCreateTitlesAndCompleteSelectionUseExplorerCommand),

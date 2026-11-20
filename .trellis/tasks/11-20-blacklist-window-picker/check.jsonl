@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/11-20-blacklist-window-picker/prd.md","reason":"User action and original Add/Apply semantics"}
+{"file":".trellis/tasks/11-20-blacklist-window-picker/design.md","reason":"Cross-layer lifecycle, passive visual and input invariants"}
+{"file":".trellis/spec/shared/verification.md","reason":"Audited fixture effects, serial workstation-limited Cargo and separate native acceptance"}
+{"file":"rust/apps/nxtools-desktop/src/network_settings/window_picker_tests.rs","reason":"Production page bounds, action, refill, cancellation, connection and timeout gates"}
+{"file":"csharp/NxTools.PlatformHost.Tests/ProcessWindowPickTests.cs","reason":"Injected real native/controller/pipe boundary tests"}

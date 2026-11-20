@@ -141,7 +141,9 @@ Native packages supersede their classic fallback; known exact StartMenu/Desktop 
 supersede static fallbacks. Calculator/Paint retain calc.exe/mspaint.exe when not superseded.
 QuickLaunchApplication registers one correlation/connection before dispatch; requests coalesce.
 Current receipt refreshes only the live ordinary query; closed/action-mode panels remain unchanged.
-AppsFolder targets use ordinary Shell Open, not file preview/icons/reveal/path-copy/elevation.
+AppsFolder targets use ordinary Shell Open and the existing Shell icon pipeline, not file preview,
+reveal/path-copy/elevation. Icon capability is independent of file-only actions; the native owner
+uses IShellItemImageFactory ICONONLY with full namespace+size cache identity and no filesystem probe.
 Diagnostics carry accepted/start/terminal elapsed/native-code facts, not names/AUMIDs.
 ### 4. Validation & Error Matrix
 Missing/invalid name or target rejects the entire Finder replacement. Exact AppsFolder prefix and

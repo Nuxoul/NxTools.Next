@@ -87,7 +87,8 @@ internal static class ShellIconExtractor
     internal static WindowsCommandResult Extract(
         ExtractShellIconCommand command,
         CancellationToken cancellationToken,
-        IconCache? cache = null)
+        IconCache? cache = null,
+        ShellItemImageFactory? imageFactory = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (command.Size is < 16 or > 256)
@@ -101,11 +102,11 @@ internal static class ShellIconExtractor
             return new WindowsCommandResult(false, "shell_icon_target_unavailable", NativeErrorCode: 2);
         }
 
-        var targetType = target.UseFileAttributes
+        var targetType = target.IsNamespace ? "namespace" : target.UseFileAttributes
             ? (target.FileAttributes == FileAttributeDirectory ? "directory-type" : "file-type")
             : Directory.Exists(target.Path) ? "directory" : "file";
-        // Attribute-only targets must never probe a member/directory or a same-named local file.
-        var lastWriteTicks = !target.UseFileAttributes && (File.Exists(target.Path) || Directory.Exists(target.Path))
+        // Namespace/attribute-only identities never probe filesystem paths or timestamps.
+        var lastWriteTicks = !target.IsNamespace && !target.UseFileAttributes && (File.Exists(target.Path) || Directory.Exists(target.Path))
             ? File.GetLastWriteTimeUtc(target.Path).Ticks
             : 0;
         var key = IconCacheKey.Create(
@@ -113,12 +114,33 @@ internal static class ShellIconExtractor
             target.IconIndex,
             command.Size,
             lastWriteTicks,
-            target.IconIndex is null && command.Size > 32 ? targetType + "/image-list-v2" : targetType);
+            !target.IsNamespace && target.IconIndex is null && command.Size > 32 ? targetType + "/image-list-v2" : targetType);
         string? extractionError = null;
         int? nativeErrorCode = null;
         var cacheHitOrCreated = (cache ?? IconCache.Shared).TryGetOrCreate(key, destination =>
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (target.IsNamespace)
+            {
+                var bitmap = (imageFactory ?? new ShellItemImageFactory()).Load(
+                    target.Path, command.Size, cancellationToken, out var status);
+                if (bitmap is null)
+                {
+                    nativeErrorCode = status;
+                    extractionError = "shell_icon_query_failed";
+                    return false;
+                }
+                try
+                {
+                    return WritePng(bitmap, destination, cancellationToken);
+                }
+                catch (ExternalException error)
+                {
+                    nativeErrorCode = error.ErrorCode;
+                    extractionError = "shell_icon_png_encode_failed";
+                    return false;
+                }
+            }
             var iconHandle = target.IconIndex is { } iconIndex
                 ? ExtractIndexedIcon(target.Path, iconIndex, command.Size)
                 : ExtractShellIcon(target, command.Size);
@@ -146,12 +168,7 @@ internal static class ShellIconExtractor
                     System.Windows.Int32Rect.Empty,
                     System.Windows.Media.Imaging.BitmapSizeOptions.FromEmptyOptions());
                 bitmap.Freeze();
-                var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
-                encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-                using var output = File.Create(destination);
-                encoder.Save(output);
-                cancellationToken.ThrowIfCancellationRequested();
-                return true;
+                return WritePng(bitmap, destination, cancellationToken);
             }
             catch (ExternalException error)
             {
@@ -172,6 +189,18 @@ internal static class ShellIconExtractor
         }
         return new WindowsCommandResult(false, extractionError ??
             "shell_icon_cache_failed", NativeErrorCode: nativeErrorCode);
+    }
+
+    private static bool WritePng(System.Windows.Media.Imaging.BitmapSource bitmap,
+        string destination, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder();
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
+        using var output = File.Create(destination);
+        encoder.Save(output);
+        cancellationToken.ThrowIfCancellationRequested();
+        return true;
     }
 
     private static bool IsCachedPngValid(string path)
@@ -325,6 +354,13 @@ internal static class ShellIconExtractor
 
     internal static ShellIconTarget? ResolveIconTarget(string target)
     {
+        // AppsFolder uses its full parsing name; invalid namespace targets never become file types.
+        if (target.Trim().StartsWith("shell:", StringComparison.OrdinalIgnoreCase))
+        {
+            return PackagedApplicationTarget.IsValid(target)
+                ? new ShellIconTarget(target, null, IsNamespace: true)
+                : null;
+        }
         // Reserved type targets are parsed before environment expansion, filesystem probes,
         // system-tool lookup or shortcut COM. Only fixed attributes reach SHGetFileInfo.
         var synthetic = target.Trim();
@@ -601,4 +637,5 @@ internal sealed record ShellIconTarget(
     string Path,
     int? IconIndex,
     bool UseFileAttributes = false,
-    uint FileAttributes = 0);
+    uint FileAttributes = 0,
+    bool IsNamespace = false);

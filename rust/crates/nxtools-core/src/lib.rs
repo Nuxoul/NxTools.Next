@@ -426,7 +426,7 @@ impl Default for SystemSettings {
     }
 }
 
-pub const DEFAULT_UI_FONT_FAMILY: &str = "Microsoft YaHei UI";
+pub const DEFAULT_UI_FONT_FAMILY: &str = "Sarasa UI SC";
 
 pub fn default_ui_font_family() -> String {
     DEFAULT_UI_FONT_FAMILY.into()
@@ -3392,8 +3392,14 @@ mod ui_font_settings_tests {
     #[test]
     fn ui_font_legacy_default_and_english_chinese_roundtrip() {
         let legacy: SystemSettings = serde_json::from_str("{}").expect("legacy settings");
-        assert_eq!(legacy.ui_font_family, "Microsoft YaHei UI");
-        for family in ["Segoe UI", "思源黑体 CN", "Noto Sans CJK SC"] {
+        assert_eq!(legacy.ui_font_family, "Sarasa UI SC");
+        assert_eq!(SystemSettings::default().ui_font_family, "Sarasa UI SC");
+        for family in [
+            "Microsoft YaHei UI",
+            "Segoe UI",
+            "思源黑体 CN",
+            "Noto Sans CJK SC",
+        ] {
             let settings = SystemSettings {
                 ui_font_family: family.into(),
                 ..Default::default()

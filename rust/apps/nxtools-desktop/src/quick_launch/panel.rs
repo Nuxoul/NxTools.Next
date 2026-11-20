@@ -2232,7 +2232,7 @@ pub(crate) fn source_icon(source: ApplicationSource) -> MaterialIcon {
         ApplicationSource::CustomCommand => MaterialIcon::Terminal,
         ApplicationSource::StartMenu => MaterialIcon::Dashboard,
         ApplicationSource::Desktop => MaterialIcon::OpenInNew,
-        ApplicationSource::System => MaterialIcon::ProgressActivity,
+        ApplicationSource::System => MaterialIcon::Dashboard,
         ApplicationSource::IndexedFile => MaterialIcon::TextFields,
         ApplicationSource::IndexedDirectory => MaterialIcon::Folder,
     }

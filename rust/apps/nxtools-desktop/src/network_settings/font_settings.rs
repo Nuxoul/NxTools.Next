@@ -85,7 +85,7 @@ impl FontSettingsDraft {
         Select::new(&self.selector)
             .id("global-ui-font")
             .accessibility_label("界面字体")
-            .search_placeholder("搜索已安装的中英文字体")
+            .search_placeholder("搜索可用的中英文字体")
             .with_size(Size::Medium)
             .w_full()
             .menu_max_h(px(240.0))

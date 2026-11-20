@@ -428,7 +428,12 @@ fn run_sevenz<W: Write + Send>(
     source_checkpoint(request, control, output, replies.clone(), "codec_opened")?;
     reader.set_thread_count(1);
     let archive = reader.archive();
-    sevenz_budget::blocks(archive, &limits)?;
+    if request.operation == "open" && drag.is_none() {
+        sevenz_budget::validate_blocks(archive)?;
+    } else {
+        // Admit payload workspace before normalization or retained-reader handoff.
+        sevenz_budget::blocks(archive, &limits)?;
+    }
     if archive.files.len() as u64 > limits.max_entries {
         return Err(ArchiveError::ResourceLimit);
     }

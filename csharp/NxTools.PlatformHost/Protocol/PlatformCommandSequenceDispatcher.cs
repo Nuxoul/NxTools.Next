@@ -16,6 +16,7 @@ internal sealed class PlatformCommandSequenceDispatcher
         "read_clipboard_file_drop",
         "read_clipboard_text",
         "show_context_menu",
+        "process_window_pick",
         "set_clipboard_capture_paused",
         "present_fixed_window_over_anchor",
         "prepare_notification_window",
@@ -93,7 +94,7 @@ internal sealed class PlatformCommandSequenceDispatcher
         // Menu admission is synchronous and bounded; its own STA performs all modal work.
         // Admit before reading exact cancel so a following cancel cannot overtake session creation.
         // Other detached delegates may enter blocking native APIs before returning a Task.
-        var command = commandName is "show_context_menu" or "set_clipboard_capture_paused"
+        var command = commandName is "show_context_menu" or "set_clipboard_capture_paused" or "process_window_pick"
             ? executeAsync(cancellationToken)
             : Task.Run(() => executeAsync(cancellationToken), cancellationToken);
         lock (_gate)

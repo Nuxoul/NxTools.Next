@@ -5,6 +5,19 @@ internal static class TestEffects
 {
     private static readonly HashSet<string> Fixtures = new(StringComparer.Ordinal)
     {
+        // Injected hit/process/hook/style/clock facts, original router and GUID-owned pipe; no live windows/input.
+        "ProcessWindowPickTests.StrictWire",
+        "ProcessWindowPickTests.OwnershipAndStartupFailure",
+        "ProcessWindowPickTests.ViewportHoverAndNames",
+        "ProcessWindowPickTests.ClickAndReleaseSuppression",
+        "ProcessWindowPickTests.EscapeAndCancellation",
+        "ProcessWindowPickTests.StaleCancelAndBoundedAdmission",
+        "ProcessWindowPickTests.OwnerDisconnectDisposeAndDeadline",
+        "ProcessWindowPickTests.DiagnosticsAndEventEnvelope",
+        "ProcessWindowPickTests.ActualPipeRouteAndReader",
+        "ProcessWindowPickTests.NativePolicyAndHookBoundary",
+        "ProcessWindowPickTests.NativePartialInstallAndLostRelease",
+        "ProcessWindowPickTests.CancelBeforeProcessingAndFailureFacts",
         // Injected enumeration/Process.Start, fake logs and bounded STA only; no live Shell reads or launches.
         "InstalledApplicationTests.LocalizedApplicationsAndJson",
         "InstalledApplicationTests.InvalidFactsAndEmptyResult",
@@ -81,6 +94,10 @@ internal static class TestEffects
         "ArchiveVirtualDragTests.PathAndDescriptorBoundaries",
         "ArchiveJobTerminalTests.NativeFailureBeforeWorkerCancelled",
         "ArchiveJobTerminalTests.TerminalAuthorityControls",
+        // Injected raw image-factory leaf, owned HBITMAPs and GUID cache; no AppsFolder COM or Shell calls.
+        "PackagedApplicationIconTests.NamespaceResolutionAndCacheIdentity",
+        "PackagedApplicationIconTests.RealExtractUsesFactoryPngAndOriginalStaCache",
+        "PackagedApplicationIconTests.HResultRetryCancellationAndCleanup",
         "ArchiveTypeIconTests.FixedFolderTargetHasDirectoryAttributes",
         "ArchiveTypeIconTests.FolderPngUsesOwnedCacheAndOriginalSta",
         "ArchiveShellSelectionTests.QuickCreateTitlesAndCompleteSelectionUseExplorerCommand",

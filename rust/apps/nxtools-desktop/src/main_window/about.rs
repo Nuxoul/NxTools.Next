@@ -21,6 +21,8 @@ use super::MainWindow;
 use crate::ui::{motion::motion_allowed, typography::UI_MONO_FONT_FAMILY};
 
 mod emblem;
+mod update_download;
+use update_download::{Release, ReleaseCheck, checked_release};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const TARGET: &str = env!("NXTOOLS_BUILD_TARGET");
@@ -47,6 +49,7 @@ impl MainWindow {
             return;
         }
 
+        let downloads = self.downloads.clone();
         let dimensions = size(px(420.), px(480.));
         let bounds = WindowBounds::centered(dimensions, cx);
         let mut titlebar = TitleBar::title_bar_options();
@@ -61,8 +64,13 @@ impl MainWindow {
                 is_minimizable: false,
                 ..TitleBar::window_options()
             },
-            |window, cx| {
-                let view = cx.new(|cx| About::new(id, cx));
+            move |window, cx| {
+                let view = cx.new(|cx| {
+                    let mut view = About::new(id, cx);
+                    view.downloads = Some(downloads);
+                    view
+                });
+                About::observe_close(&view, window, cx);
                 cx.new(|cx| Root::new(view, window, cx))
             },
         );
@@ -91,6 +99,9 @@ struct About {
     animate_page: bool,
     update: UpdateStatus,
     update_task: Option<Task<()>>,
+    update_request: Option<Uuid>,
+    downloads: Option<gpui_kit::WeakEntity<crate::downloads::DownloadApplication>>,
+    closed: bool,
     emblem: Entity<emblem::Emblem>,
 }
 
@@ -105,6 +116,9 @@ impl About {
             animate_page: false,
             update: UpdateStatus::Idle,
             update_task: None,
+            update_request: None,
+            downloads: None,
+            closed: false,
             emblem: cx.new(|_| emblem::Emblem::default()),
         }
     }
@@ -131,11 +145,13 @@ impl About {
     }
 
     fn check_updates(&mut self, cx: &mut Context<Self>) {
-        if matches!(self.update, UpdateStatus::Checking) {
+        if self.closed || self.update_request.is_some() {
             return;
         }
         let id = Uuid::new_v4();
         let started = Instant::now();
+        self.update_request = Some(id);
+        self.update = UpdateStatus::Checking;
         info!(event = "desktop.about.update.start", correlation_id = %id);
         let (mut tx, rx) = tokio::sync::oneshot::channel();
         let spawn = std::thread::Builder::new().name("nxtools-update-check".into()).spawn(move || {
@@ -146,11 +162,11 @@ impl About {
                         status = latest_release() => Some(status),
                     }
                 }),
-                Err(error) => Some(UpdateStatus::Failed(UpdateFailure::Worker(error.raw_os_error()))),
+                Err(error) => Some(ReleaseCheck::status(UpdateStatus::Failed(UpdateFailure::Worker(error.raw_os_error())))),
             };
             if let Some(result) = result {
+                info!(event = "desktop.about.update.finished", correlation_id = %id, elapsed_ms = started.elapsed().as_millis() as u64, outcome = result.status.outcome(), code = ?result.status.code());
                 let _ = tx.send(result);
-                info!(event = "desktop.about.update.finished", correlation_id = %id, elapsed_ms = started.elapsed().as_millis() as u64, outcome = result.outcome(), code = ?result.code());
             } else {
                 info!(event = "desktop.about.update.cancelled", correlation_id = %id, elapsed_ms = started.elapsed().as_millis() as u64);
             }
@@ -159,6 +175,7 @@ impl About {
             let native_code = error.raw_os_error();
             warn!(event = "desktop.about.update.spawn_failed", correlation_id = %id, elapsed_ms = started.elapsed().as_millis() as u64, ?native_code);
             self.update = UpdateStatus::Failed(UpdateFailure::Worker(native_code));
+            self.update_request = None;
             cx.notify();
             return;
         }
@@ -166,13 +183,10 @@ impl About {
         let minimum = cx.background_executor().timer(Duration::from_millis(1200));
         self.update_task = Some(cx.spawn(async move |view, cx| {
             minimum.await;
-            let result = rx
-                .await
-                .unwrap_or(UpdateStatus::Failed(UpdateFailure::Worker(None)));
-            let _ = view.update(cx, |view, cx| {
-                view.update = result;
-                cx.notify();
+            let result = rx.await.unwrap_or_else(|_| {
+                ReleaseCheck::status(UpdateStatus::Failed(UpdateFailure::Worker(None)))
             });
+            let _ = view.update(cx, |view, cx| view.receive_update(id, started, result, cx));
         }));
         cx.notify();
     }
@@ -314,7 +328,7 @@ impl About {
 
         let actions = div().debug_selector(|| "about-actions".into()).w_full().flex().gap(px(10.))
             .child(action("about-updates", self.update.button_label(), palette, true, cx)
-                .loading(matches!(self.update, UpdateStatus::Checking))
+                .loading(matches!(self.update, UpdateStatus::Checking | UpdateStatus::Submitting))
                 .on_click(cx.listener(|view, _, _, cx| view.check_updates(cx))))
             .child(action("about-licenses", "开源许可", palette, false, cx)
                 .on_click(cx.listener(|view, _, _, cx| view.show_licenses(true, cx))))
@@ -440,6 +454,7 @@ impl About {
                             ("NxTools", "MIT 或 Apache-2.0"),
                             ("GPUI / GPUI Kit", "Apache-2.0"),
                             ("Google Material Symbols", "Apache-2.0"),
+                            ("Sarasa UI SC", "SIL OFL-1.1"),
                             ("Tokio / Serde", "MIT / MIT 或 Apache-2.0"),
                             ("reqwest / image", "MIT 或 Apache-2.0"),
                         ]
@@ -468,6 +483,7 @@ impl About {
                         [
                             include_str!("../../../../../LICENSE-MIT"),
                             include_str!("../../../../../LICENSE-APACHE"),
+                            crate::assets::SARASA_FONT_LICENSE,
                         ]
                         .map(|license| {
                             div()
@@ -643,12 +659,14 @@ impl Palette {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum UpdateFailure {
     Worker(Option<i32>),
     Network,
     Http(u16),
     InvalidRelease,
+    InstallerUnavailable,
+    Download,
 }
 
 #[derive(Clone, Copy)]
@@ -657,13 +675,15 @@ enum UpdateStatus {
     Checking,
     Current,
     Newer,
+    Submitting,
+    Queued,
     Unavailable,
     Failed(UpdateFailure),
 }
 
 impl UpdateStatus {
     fn button_label(self) -> &'static str {
-        if matches!(self, Self::Checking) {
+        if matches!(self, Self::Checking | Self::Submitting) {
             "检查中"
         } else {
             "检查更新"
@@ -672,9 +692,12 @@ impl UpdateStatus {
 
     fn message(self) -> Option<&'static str> {
         match self {
-            Self::Idle | Self::Checking => None,
+            Self::Idle | Self::Checking | Self::Submitting => None,
             Self::Current => Some("已是最新版本"),
-            Self::Newer => Some("有新版本，请前往 GitHub 查看"),
+            Self::Newer => Some("发现新版本"),
+            Self::Queued => Some("安装包已加入下载器"),
+            Self::Failed(UpdateFailure::InstallerUnavailable) => Some("新版本暂无适用的安装包"),
+            Self::Failed(UpdateFailure::Download) => Some("无法加入下载器，请稍后重试"),
             Self::Unavailable => Some("暂无可查询的公开版本"),
             Self::Failed(_) => Some("无法确认最新版本，请稍后重试"),
         }
@@ -686,11 +709,15 @@ impl UpdateStatus {
             Self::Checking => "checking",
             Self::Current => "current",
             Self::Newer => "newer",
+            Self::Submitting => "submitting",
+            Self::Queued => "queued",
             Self::Unavailable => "unavailable",
             Self::Failed(UpdateFailure::Worker(_)) => "worker",
             Self::Failed(UpdateFailure::Network) => "network",
             Self::Failed(UpdateFailure::Http(_)) => "http",
             Self::Failed(UpdateFailure::InvalidRelease) => "invalid_release",
+            Self::Failed(UpdateFailure::InstallerUnavailable) => "installer_unavailable",
+            Self::Failed(UpdateFailure::Download) => "download_rejected",
         }
     }
 
@@ -703,8 +730,8 @@ impl UpdateStatus {
     }
 }
 
-async fn latest_release() -> UpdateStatus {
-    async fn request() -> Result<UpdateStatus, UpdateFailure> {
+async fn latest_release() -> ReleaseCheck {
+    async fn request() -> Result<ReleaseCheck, UpdateFailure> {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(6))
             .user_agent("NxTools")
@@ -716,7 +743,9 @@ async fn latest_release() -> UpdateStatus {
             .await
             .map_err(|_| UpdateFailure::Network)?;
         match response.status() {
-            reqwest::StatusCode::NOT_FOUND => return Ok(UpdateStatus::Unavailable),
+            reqwest::StatusCode::NOT_FOUND => {
+                return Ok(ReleaseCheck::status(UpdateStatus::Unavailable));
+            }
             status if !status.is_success() => return Err(UpdateFailure::Http(status.as_u16())),
             _ => {}
         }
@@ -729,14 +758,11 @@ async fn latest_release() -> UpdateStatus {
         }
         let release: Release =
             serde_json::from_slice(&body).map_err(|_| UpdateFailure::InvalidRelease)?;
-        compare_release(VERSION, &release.tag_name).ok_or(UpdateFailure::InvalidRelease)
+        checked_release(VERSION, TARGET, release)
     }
-    request().await.unwrap_or_else(UpdateStatus::Failed)
-}
-
-#[derive(serde::Deserialize)]
-struct Release {
-    tag_name: String,
+    request()
+        .await
+        .unwrap_or_else(|failure| ReleaseCheck::status(UpdateStatus::Failed(failure)))
 }
 
 fn compare_release(current: &str, latest: &str) -> Option<UpdateStatus> {

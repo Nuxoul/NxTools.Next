@@ -61,3 +61,8 @@ typed `installed_applications::InstalledApplications` snapshot inside original c
 data JSON string. Outer protocol1, envelope/request correlation and existing frame limits remain.
 See [installed application contract](../../nxtools-finder/backend/quality-guidelines.md#scenario-installed-windows-applications)
 for native ownership, snapshot replacement, target validation and required Rust/C# boundary tests.
+
+Blacklist `process_window_pick` and `process_window_pick_changed` retain outer protocol1 and opt-in
+session events. Action-specific fields, request/source/connection identity, device-pixel coordinates
+and original editor publication follow [the window selection contract](../../nxtools-desktop/backend/quality-guidelines.md#scenario-blacklist-process-window-selection).
+Roundtrip actual typed envelopes and check the C# parser/controller path, not DTO equality alone.

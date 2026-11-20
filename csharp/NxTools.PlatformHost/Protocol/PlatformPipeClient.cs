@@ -76,10 +76,7 @@ internal sealed class PlatformPipeClient(
 
     private static bool IsPickerCommand(string name) => name.StartsWith("pick_", StringComparison.Ordinal);
     internal static bool ShouldLogCommandLifecycle(string commandName) =>
-        !string.Equals(
-            commandName,
-            "set_taskbar_progress",
-            StringComparison.Ordinal);
+        commandName is not ("set_taskbar_progress" or "process_window_pick");
 
     internal static ProtocolEnvelope CreateCommandResultEnvelope(
         ProtocolEnvelope request,
@@ -615,10 +612,10 @@ internal sealed class PlatformPipeClient(
         catch (Exception error)
         {
             var safeNativeCommand = IsPickerCommand(commandName) || commandName is "show_context_menu" or "cancel_context_menu" or
-                "prepare_notification_window" or "print_markdown_pdf";
+                "process_window_pick" or "prepare_notification_window" or "print_markdown_pdf";
             result = safeNativeCommand
                 ? new WindowsCommandResult(false, IsPickerCommand(commandName) ? "picker_failed" :
-                    commandName == "print_markdown_pdf" ? "render_failed" :
+                    commandName == "process_window_pick" ? "window_pick_failed" : commandName == "print_markdown_pdf" ? "render_failed" :
                     commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
                     error is Win32Exception nativeError ? nativeError.NativeErrorCode : error.HResult)
                 : CreateCommandFailureResult(error);
@@ -705,10 +702,10 @@ internal sealed class PlatformPipeClient(
                     ["command"] = commandName
                 });
         }
-        var safeNativeCommand = IsPickerCommand(commandName) || commandName is "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
+        var safeNativeCommand = IsPickerCommand(commandName) || commandName is "process_window_pick" or "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
         var result = safeNativeCommand
             ? new WindowsCommandResult(false, IsPickerCommand(commandName) ? "picker_failed" :
-                commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
+                commandName == "process_window_pick" ? "window_pick_failed" : commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
                 error is Win32Exception nativeError ? nativeError.NativeErrorCode : error.HResult)
             : CreateCommandFailureResult(error);
         WriteCommandDiagnostic("error", "command.failed", diagnosticCorrelationId,
@@ -928,6 +925,8 @@ internal sealed class PlatformPipeClient(
         CancellationToken cancellationToken, uint desktopProcessId) =>
         commandName switch
         {
+            "process_window_pick" => await platformAdapter.ProcessWindowPickAsync(
+                ProcessWindowPickContract.Parse(envelope), desktopProcessId, cancellationToken),
             "prepare_main_window" => await platformAdapter.PrepareMainWindowAsync(PlatformCommandParser.ParsePrepareMainWindow(envelope), diagnosticCorrelationId, cancellationToken),
             "prepare_notification_window" => await platformAdapter.PrepareNotificationWindowAsync(
                 PlatformCommandParser.ParsePrepareNotificationWindow(envelope), diagnosticCorrelationId, cancellationToken),
@@ -1171,10 +1170,18 @@ internal sealed class PlatformPipeClient(
         }
     }
 
-    internal static Guid ResolveDiagnosticCorrelationId(ProtocolEnvelope envelope) =>
-        envelope.Payload.ValueKind == JsonValueKind.Object &&
-        envelope.Payload.TryGetProperty("command", out var command) && command.ValueKind == JsonValueKind.String &&
-        command.GetString() == "show_context_menu" ? envelope.Id : envelope.CorrelationId ?? envelope.Id;
+    internal static Guid ResolveDiagnosticCorrelationId(ProtocolEnvelope envelope)
+    {
+        if (envelope.Payload.ValueKind == JsonValueKind.Object &&
+            envelope.Payload.TryGetProperty("command", out var command) && command.ValueKind == JsonValueKind.String)
+        {
+            if (command.GetString() == "process_window_pick" && envelope.Payload.TryGetProperty("data", out var data) &&
+                data.ValueKind == JsonValueKind.Object && data.TryGetProperty("session_id", out var session) &&
+                session.ValueKind == JsonValueKind.String && session.TryGetGuid(out var id)) return id;
+            if (command.GetString() == "show_context_menu") return envelope.Id;
+        }
+        return envelope.CorrelationId ?? envelope.Id;
+    }
 
 
     internal static ProtocolEnvelope? CreateKeyboardHealthSnapshotEnvelope(

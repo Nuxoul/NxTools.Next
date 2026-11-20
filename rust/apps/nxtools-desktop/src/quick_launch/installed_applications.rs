@@ -284,7 +284,161 @@ mod tests {
         let capabilities = quick_launch_result_capabilities(&result);
         assert!(!capabilities.preview);
         assert!(!capabilities.shell_actions);
-        assert!(!capabilities.shell_icon);
+        assert!(capabilities.shell_icon);
+    }
+
+    #[gpui_kit::test]
+    fn windows_apps_icons_use_visible_requests_result_ids_and_deferred_cache_hits(
+        cx: &mut TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        let (temp, application, endpoint) =
+            super::super::tests::quick_launch_application_fixture(cx);
+        let results = application.update(cx, |app, _| {
+            app.catalog
+                .borrow_mut()
+                .replace_installed_applications(vec![
+                    nxtools_finder::InstalledApplication {
+                        name: "Future One".into(),
+                        target: "shell:AppsFolder\\Future.One_fixture!App.main".into(),
+                    },
+                    nxtools_finder::InstalledApplication {
+                        name: "Future Two".into(),
+                        target: "shell:AppsFolder\\Future.Two_fixture!App.main".into(),
+                    },
+                ])
+                .expect("installed snapshot");
+            app.catalog
+                .borrow()
+                .search("Future", 10)
+                .expect("applications")
+        });
+        assert_eq!(results.len(), 2);
+        assert_ne!(
+            icon_resource_key(&results[0], 32),
+            icon_resource_key(&results[1], 32)
+        );
+        let first_id = results[0].entry.id.clone();
+        let second_id = results[1].entry.id.clone();
+        let first_target = results[0].entry.target.clone();
+        let png = temp.path().join("application.png");
+        std::fs::write(&png, crate::icons::ONE_PIXEL_PNG).expect("owned PNG");
+        let (panel, window) = super::super::tests::quick_launch_panel_fixture(cx, results.clone());
+        let handle = window.update(|window, _| window.window_handle());
+        application.update(window, |app, _| {
+            app.popup = Some(QuickLaunchWindow {
+                window: handle,
+                panel: panel.downgrade(),
+                native_window_handle: 1,
+            });
+        });
+        let initially_focused = panel.update_in(window, |panel, window, cx| {
+            panel.application = application.downgrade();
+            panel.is_open = true;
+            panel.last_presented_icon_range = None;
+            panel.update_presented_results(0..1, cx);
+            panel.search_input.focus_handle(cx).is_focused(window)
+        });
+        window.run_until_parked();
+        let mut requests = Vec::new();
+        while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+            let nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExtractShellIcon(
+                command,
+            )) = envelope.message
+            else {
+                panic!("icon loading must not show/focus/activate/preview a surface");
+            };
+            assert_eq!(command.size, 32);
+            requests.push((envelope.id, command.target));
+        }
+        assert_eq!(
+            requests.len(),
+            2,
+            "original visible-range overscan requests both rows"
+        );
+        let first_request = requests
+            .iter()
+            .find(|(_, target)| target == &first_target)
+            .expect("same namespace target")
+            .0;
+        let second_request = requests
+            .iter()
+            .find(|(_, target)| target != &first_target)
+            .expect("distinct namespace target")
+            .0;
+        application.update(window, |app, cx| {
+            app.request_icons(&results, cx);
+            assert_eq!(app.pending_icons.len(), 2, "in-flight resources coalesce");
+            app.handle_command_result(
+                first_request,
+                PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: Some(png.to_string_lossy().into_owned()),
+                },
+                cx,
+            );
+            app.handle_command_result(
+                second_request,
+                PlatformCommandResult {
+                    success: false,
+                    error: Some("shell_icon_query_failed".into()),
+                    native_error_code: Some(-2147467259),
+                    data: None,
+                },
+                cx,
+            );
+            app.request_icons(&results, cx);
+            assert!(
+                app.pending_icons.is_empty(),
+                "failed resource stays in its bounded cooldown"
+            );
+            assert!(!app.preview.visible);
+            assert!(app.preview.window.is_none());
+        });
+        panel.read_with(window, |panel, _| {
+            assert_eq!(panel.icons.get(&first_id), Some(&png));
+            assert!(
+                !panel.icons.contains_key(&second_id),
+                "failure never borrows another app's PNG"
+            );
+            assert!(panel.is_open);
+        });
+        assert_eq!(
+            source_icon(ApplicationSource::System),
+            MaterialIcon::Dashboard
+        );
+        panel.update_in(window, |panel, _, cx| {
+            panel.icons.clear();
+            application.update(cx, |app, cx| app.request_icons(&results, cx));
+            assert!(
+                panel.icons.is_empty(),
+                "cache hit must not re-enter the leased panel"
+            );
+        });
+        window.run_until_parked();
+        panel.read_with(window, |panel, _| {
+            assert_eq!(panel.icons.get(&first_id), Some(&png));
+            assert!(!panel.icons.contains_key(&second_id));
+            assert!(panel.is_open);
+        });
+        panel.update_in(window, |panel, window, cx| {
+            assert_eq!(
+                panel.search_input.focus_handle(cx).is_focused(window),
+                initially_focused
+            );
+        });
+        assert!(
+            window
+                .debug_bounds("quick-launch-result-icon-fallback-1")
+                .is_some(),
+            "failed application retains the rendered semantic fallback"
+        );
+        assert!(
+            endpoint.try_receive_command_for_contract_test().is_err(),
+            "no duplicate or surface command"
+        );
     }
 
     #[gpui_kit::test]
@@ -321,6 +475,14 @@ mod tests {
             assert_eq!(panel.results[0].entry.name, "未来系统工具");
             assert_eq!(panel.results[0].activation_count, 0);
         });
+        let icon = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("visible packaged application icon request");
+        assert!(matches!(
+            icon.message,
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ExtractShellIcon(command))
+                if command.target == "shell:AppsFolder\\Future.Tool_fixture!App" && command.size == 32
+        ));
         application.update(window, |app, cx| app.request_installed_applications(cx));
         let id = receive(&endpoint);
         panel.update_in(window, |panel, _, _| panel.is_open = false);
@@ -331,6 +493,10 @@ mod tests {
             assert!(!panel.is_open);
             assert_eq!(panel.results[0].entry.name, "未来系统工具");
         });
+        assert!(
+            endpoint.try_receive_command_for_contract_test().is_err(),
+            "closed receipt must not start icon or surface work"
+        );
     }
 
     #[gpui_kit::test]
