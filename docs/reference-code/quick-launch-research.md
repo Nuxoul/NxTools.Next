@@ -32,6 +32,46 @@ Canonical `D:\Code\Listary.Decompiled\6.3.5.94\managed\Listary` review: `Core/La
 
 Next retains its existing reusable HWND and recomputes monitor/work-area placement on every summon. C# monitor enumeration ordinal is not GPUI Windows DisplayId: the latter is HMONITOR (`vendor/gpui-pre-windows-039/src/display.rs:39,79`). Keep sampled cursor/monitor DPI and native pixel identity coherent, clamp to work area, bind preview to its parent monitor, and retain deferred generation-checked noactivate/bounds/show/focus boundaries. Task evidence: `.trellis/tasks/11-20-multi-monitor-window-controls/research/listary-placement.md`.
 
+### Windows10 outer corners (2026-11-20)
+
+Rechecked canonical managed Listary `Main/Views/LauncherSearchWindowFactory.cs:18-20`
+→ `LauncherSearchWindow.xaml.cs:24-32` → `SearchWindowBase.cs:25-35,318-336`.
+The base derives from WPF Window; view-model Show reaches `ShowWindow:383-398`
+and `base.Show:394`, Hide/Close bind directly to `base.Hide/base.Close:324,326`,
+and activation remains separate at `ActivateWindow:373-379` with native foreground
+then `base.Activate`. SourceInitialized reaches the existing outer-HWND placement
+at `LauncherSearchWindow.xaml.cs:50-69,91-96`, using NOACTIVATE|NOSIZE|NOZORDER.
+This is managed lifecycle evidence, not Listary native engine or WPF renderer source.
+Legacy NxTools has no Quick Launch implementation.
+
+Next keeps its current official Kit0.8.0 `Input::new`/`Size::Large`44DIP frame in
+the58DIP header,620DIP client width and60/530DIP compact/search heights. Historical
+42DIP/InputGroup measurements above do not override that current presentation.
+Released `vendor/gpui-component-080/src/root.rs:542-559` paints the Root background
+and decorates it with WindowBorder; `window_border.rs:19-22` explicitly records
+rectangular child masks and zero wrapper radius. A rounded descendant is therefore
+not native-corner evidence.
+
+The existing `SetWindowBoundsCommand` gains optional `corner_radius` device pixels;
+missing/null preserves the window region, explicit0 removes it. Rust's main-popup
+factory (`quick_launch/monitor_presentation.rs::bounds`) and dynamic resize
+(`quick_launch.rs::resize_popup_content`) supply semantic8DIP at the current
+target/window scale. Previews and other surfaces omit the field. The existing C#
+`ParseSetWindowBounds` → `WindowsPlatformAdapter.SetWindowBounds` →
+`NativeMethods.SetWindowBounds` chain keeps live frame compensation, outer x/y,
+NOACTIVATE|NOZORDER and client readback, then applies a native rounded region
+derived from the resized outer bounds before success. Windows owns a successfully
+transferred HRGN; failure deletes the caller-owned HRGN and retains the native
+error. There is no retained HWND region registry or additional presentation owner.
+
+Owned-HWND fixture `WindowBoundsCornerTests.OwnedRegionResizeAndReset`
+uses that real parser/adapter chain and GetWindowRgn/PtInRegion to verify four
+excluded corners, retained center/bottom edge,60→530→60 resize, frame compensation,
+small-size clamp, missing/null preservation, zero reset and unchanged foreground
+through hidden preparation and visible non-activating resize.
+It neither starts the ordinary adapter nor injects input. Evidence and acceptance
+limits: `.trellis/tasks/11-20-settings-lifecycle-feedback/quick-search-corners.md`.
+
 ## Reference roots
 
 | Root | Status |
@@ -1850,3 +1890,88 @@ current DLL's algorithm, parallelism, cache format or first-searchable publicati
 Next's per-record true-time hydration, transient/final search auxiliaries and per-volume publication
 are compared in [`listary-initial-indexing.md`](listary-initial-indexing.md). No cold-build speedup
 or slow-machine bottleneck share is established without stage measurements.
+
+### Win10 surface rejection and composition research (2026-11-21)
+
+The supplied Win10 crop rejects rounded inner Input inside a square dark shell. Prior STATIC HWND
+GetWindowRgn/PtInRegion tests prove region semantics, not GPUI composition/shadow pixels. Local
+Windows11 inspection is not Win10 acceptance. Research separates the Windows11-only system-corner
+hint, an analogous Win10 native-shadow bleed report, and Microsoft DirectComposition rounded clips
+(minimum Windows8). The locked renderer has premultiplied-alpha composition and separate alpha-ignore
+HWND paths; the actual path, region and shadow must be qualified on a controlled real GPUI surface.
+The proposed single InputGroup surface/20px type is a visual proposal, not a product change or new
+palette/framework authorization. Existing search/IME/results/preview/native owners remain.
+[Sources and native verification order](../../.trellis/tasks/11-21-launcher-surface-clipboard-flicker/launcher-research.md);
+[visual proposal](../ui/quick-launch-win10-proposal.html).
+
+### Isolated real Kit surface and white-background edge (2026-11-21)
+
+User accepts the single-surface direction and requests direct visual inspection without packaging.
+`rust/apps/nxtools-desktop/examples/quick_launch_surface.rs` owns an independent entry, stable official
+InputState/InputGroup/addon, opaque current popover fill and instance-transparent Base Root.
+`scripts/preview-quick-launch.ps1` builds only the example/tests or reopens with NoBuild; its
+`preview-quick-launch-window.cs` matches the freshly launched PID/exact preview title and reuses
+PlatformHost NativeMethods.SetWindowShadow(false)'s DWM policy, reading NCRENDERING_ENABLED=false.
+Actual Windows11client652x92 includes16DIPgutter around620x60/radius8/type20/28. No region or
+production native/framework/dependency change. Real native input/F2 and normal close were observed;
+two compiled layout/input/close tests and strict example lint pass.
+
+User accepts the overall native shape but reports stair-stepping on white. The exact active
+`vendor/gpui-pre-windows-039/src/shaders.hlsl::quad_fragment` uses fixed antialias_threshold0.5.
+White-backdrop corner RGB contains intermediate coverage, but the one-physical-pixel transition
+remains visually stepped. Public style APIs do not expose its width; renderer experimentation
+requires explicit approval. This is not marked repaired or Win10-approved. [Runner and evidence](../ui/quick-launch-gpui-preview.md).
+
+### Upstream transparent-edge source-over fix
+
+Verified merged Zed [PR65571](https://github.com/zed-industries/zed/pull/65571),
+commit[e18de65b](https://github.com/zed-industries/zed/commit/e18de65b75901f8720ff9c9320bb013395de54e5),
+changes Windows directx_renderer.rs::create_blend_state and create_blend_state_for_path_sprite
+DestBlendAlpha from ONE to INV_SRC_ALPHA. Both original assignments remain in the locked0.3.9
+snapshot. DirectXRenderPipelines::new feeds these states to ordinary primitives and path sprites;
+the composition swap chain is premultiplied-alpha. Additive alpha can amplify dark edge contrast
+where translucent antialiased fills/borders and shadows overlap. The upstream fix changes no SDF,
+radius, shader, RGB factors or draw passes. Microsoft source-over alpha is SA+DA*(1-SA).
+User authorizes online-source-led experimentation only in the isolated preview. A temporary
+backend override and native GetDesc regression keep production vendor/manifest/lock unchanged.
+Sources, excluded glass/SDF alternatives and exact scope:
+[source-over research](../../.trellis/tasks/11-21-launcher-surface-clipboard-flicker/source-over-research.md).
+
+### Dark rounded-edge pixel footprint
+
+The user still rejects the dark source-over corner. The isolated direction-aware candidate uses
+the screen-space SDF gradient's L1 pixel footprint, as derived in the referenced SDF article,
+with analytic circle/axis normals. Source-over stays; only the temporary quad shader's border
+admission and inner/outer coverage change. No radius, palette, ordinary-control or product change.
+`tests/graphics/gpui-pixel-coverage.hlsl` and the runner's PixelCoverage option record exact sites.
+
+Verified locked0.3.9 public Window::render_to_image -> WindowsWindow::render_to_image ->
+DirectXRenderer::render_to_image renders the current scene into its target, maps a staging texture
+and returns RGBA premultiplied bytes. The standalone example's capture.rs calls explicit draw
+on a deferred app turn after Root leases, clears the arena, saves raw/white frames plus DPI
+metadata and exits only with actual export success. This is GPU readback, not browser/CPU UI.
+
+The original arc sample fails the bounded coverage fixture; the candidate passes Dark/Light
+checks with byte-identical straight/interior samples and viewport, plus native blend-state1,
+component/input/close2, Debug build and strict example Clippy. Full-frame/corner GPU comparisons
+are inspected, not user/Win10 approval. Exact method, sources and limits:
+[pixel coverage](../../.trellis/tasks/11-21-launcher-surface-clipboard-flicker/pixel-coverage.md).
+
+### Background/border compensation test
+
+Verified core0.3.9 Style::paint emits background, inset shadows/children, then foreground border.
+Window::paint_quad splits transparent border-only primitives into four content-mask strips.
+The current opaque InputGroup therefore applies outer edge coverage to fill and border separately.
+The isolated UnderBorder experiment retains source-over and the original SDF ramp, passes real
+solid-border data to the background primitive, and returns compensated background coverage
+before the ordinary outer multiplier. The fully covered opaque case is defined without0/0.
+Foreground order and strip masks are unchanged; no formal framework source is modified.
+
+`scripts/build-quick-launch-under-border.ps1` creates temporary core/Windows copies and an isolated
+pinned manifest/private lock pointing at the actual example source. `-NoShadow` is diagnostic
+capture-only; normal preview keeps its shadow. `tests/graphics/check-gpui-under-border.py` checks
+all256corner pixels against one opaque fill/border coverage application. Baseline maximum RGBA
+error61.452/255 falls to0.784Dark/0.641Light; non-arc samples and viewport remain unchanged.
+Native blend-state1, component/input/close2, Debug build and strict candidate Clippy pass.
+Shadow-enabled comparisons are inspected, not generic transparency/child/platform certification.
+Exact formula, source sites and limits: [under-border test](../../.trellis/tasks/11-21-launcher-surface-clipboard-flicker/under-border.md).

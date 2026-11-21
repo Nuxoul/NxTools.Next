@@ -772,7 +772,6 @@ try {
     if ($BootstrapMigrationPackage) {
         $diagnosticStage = 'bootstrap_migration'
         Invoke-UpgradeBootstrapMigration $BootstrapMigrationPackage $CorrelationId -RepairMissing:$RepairMissingBootstrap -RotateTrusted:$RotateTrustedBootstrap
-        Invoke-UpgradeBootstrapMigration $BootstrapMigrationPackage $CorrelationId -RepairMissing:$RepairMissingBootstrap
     }
     if (!$InstallDirectory -or !(Test-Path -LiteralPath $InstallDirectory -PathType Container)) {
         # First installation has no prior application directory, but the protected

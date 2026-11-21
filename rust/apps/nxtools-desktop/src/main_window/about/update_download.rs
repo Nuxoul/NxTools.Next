@@ -402,4 +402,157 @@ mod tests {
         root.close()
             .expect("release owned fixture database and files");
     }
+
+    #[gpui_kit::test]
+    fn about_update_caption_close_keeps_main_and_accepted_download(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use std::{cell::RefCell, rc::Rc};
+        cx.update(gpui_kit::init);
+        let (downloads, root, engine) = application(cx);
+        let (platform, endpoint) = nxtools_ipc::platform_bridge(64);
+        endpoint.set_connected_for_contract_test(true);
+        let platform = Rc::new(platform);
+        let center = cx.new(|_| crate::notifications::NotificationCenter::default());
+        let slot = Rc::new(RefCell::new(None));
+        let captured = slot.clone();
+        let download_owner = downloads.downgrade();
+        let main_handle = {
+            let (_, surface) = cx.add_window_view(move |window, cx| {
+                let main = cx.new(|cx| {
+                    let mut view = MainWindow::new(
+                        gpui_kit::WeakEntity::<crate::clipboard::ClipboardApplication>::new_invalid(),
+                        gpui_kit::WeakEntity::<crate::quick_launch::QuickLaunchApplication>::new_invalid(),
+                        download_owner,
+                        crate::main_window::MainWindowShellContext {
+                            settings: None,
+                            platform: Some(platform),
+                            system_settings: Rc::new(RefCell::new(nxtools_core::SystemSettings::default())),
+                        },
+                        center,
+                        window,
+                        cx,
+                    );
+                    view.native_window_handle = 777;
+                    view
+                });
+                *captured.borrow_mut() = Some(main.clone());
+                Root::new(main, window, cx)
+            });
+            surface.simulate_resize(size(px(920.), px(480.)));
+            surface.update(|window, _| window.window_handle())
+        };
+        let main = slot.borrow_mut().take().expect("main owner");
+        for accepted_before_close in [true, false] {
+            main.update(cx, |main, cx| main.open_about(cx));
+            cx.run_until_parked();
+            let about_handle =
+                main.read_with(cx, |main, _| main.about_window.expect("About opened"));
+            let about = cx.update(|cx| {
+                about_handle
+                    .update(cx, |_, window, cx| {
+                        window
+                            .root::<Root>()
+                            .flatten()
+                            .expect("About Root")
+                            .read(cx)
+                            .view()
+                            .clone()
+                            .downcast::<About>()
+                            .expect("original About view")
+                    })
+                    .expect("About window")
+            });
+            about.update(cx, |about, cx| {
+                let id = Uuid::new_v4();
+                about.update_request = Some(id);
+                about.receive_update(
+                    id,
+                    Instant::now(),
+                    checked_release("0.7.9", "x86_64-pc-windows-msvc", release())
+                        .expect("newer release"),
+                    cx,
+                );
+            });
+            if accepted_before_close {
+                cx.run_until_parked();
+                assert!(matches!(
+                    about.read_with(cx, |view, _| view.update),
+                    UpdateStatus::Queued
+                ));
+            }
+            {
+                let mut surface = gpui_kit::VisualTestContext::from_window(about_handle, cx);
+                surface.simulate_resize(size(px(420.), px(480.)));
+                surface.refresh().expect("About caption");
+                let close = surface.update(|window, _| {
+                    gpui_kit::base::test_support::snapshots(window)
+                        .iter()
+                        .find(|node| {
+                            node.label() == Some("关闭")
+                                && node.role() == Some(gpui_kit::Role::Button)
+                        })
+                        .expect("actual About Close button")
+                        .bounds()
+                });
+                surface.simulate_click(close.center(), gpui_kit::Modifiers::default());
+                surface.run_until_parked();
+            }
+            cx.run_until_parked();
+            cx.read(|cx| {
+                assert!(!cx.windows().contains(&about_handle), "only About closes");
+                assert!(
+                    cx.windows().contains(&main_handle),
+                    "main window survives About close"
+                );
+                assert!(about.read(cx).closed && about.read(cx).update_request.is_none());
+                assert_eq!(
+                    downloads.read(cx).tasks().len(),
+                    1,
+                    "accepted installer remains in downloader"
+                );
+                assert!(
+                    engine
+                        .task(downloads.read(cx).tasks()[0].task.id())
+                        .expect("task read")
+                        .is_some()
+                );
+            });
+            main.update(cx, |_, cx| cx.notify());
+            let mut surface = gpui_kit::VisualTestContext::from_window(main_handle, cx);
+            surface.refresh().expect("main remains renderable");
+            while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
+                assert!(
+                    !matches!(
+                        envelope.message,
+                        nxtools_protocol::Message::PlatformCommand(
+                            nxtools_protocol::PlatformCommand::SetWindowVisibility(
+                                nxtools_protocol::SetWindowVisibilityCommand {
+                                    window_handle: 777,
+                                    visible: false
+                                }
+                            )
+                        )
+                    ),
+                    "About caption must never hide the main window"
+                );
+            }
+        }
+        cx.update(|cx| {
+            main_handle
+                .update(cx, |_, window, _| window.remove_window())
+                .expect("release main fixture");
+        });
+        drop(main);
+        let download_probe = downloads.downgrade();
+        drop(downloads);
+        drop(engine);
+        cx.update(|_| {});
+        cx.run_until_parked();
+        assert!(
+            download_probe.upgrade().is_none(),
+            "fixture releases downloader ownership"
+        );
+        root.close().expect("release owned About download fixture");
+    }
 }

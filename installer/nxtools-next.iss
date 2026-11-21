@@ -243,20 +243,12 @@ begin
     Parameters := Parameters + ' -RotateTrustedBootstrap';
   Log('installer.upgrade_close.started correlation=' + Correlation);
   WizardForm.StatusLabel.Caption := '正在恢复上次安装并准备升级，请稍候…';
-  if (BootstrapMigrationDirectory <> '') or
-    RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\NxToolsIndexerV1') then
+  if BootstrapMigrationDirectory <> '' then
   begin
-    if BootstrapMigrationDirectory <> '' then
-    begin
-      WizardForm.StatusLabel.Caption := '正在升级更新组件并准备安装，请在 Windows 提示时允许…';
-      Log('installer.bootstrap_migration.elevation_requested correlation=' + Correlation);
-    end else
-    begin
-      WizardForm.StatusLabel.Caption := '正在准备已安装的受保护组件，请在 Windows 提示时允许…';
-      Log('installer.upgrade_close.protected_elevation_requested correlation=' + Correlation);
-    end;
-    { Service presence requests privileges ONLY. The original helper still verifies exact
-      paths/hashes and recovery authority before any owned mutation; no validation bypass. }
+    WizardForm.StatusLabel.Caption := '正在升级更新组件并准备安装，请在 Windows 提示时允许…';
+    Log('installer.bootstrap_migration.elevation_requested correlation=' + Correlation);
+    { Explicit bootstrap maintenance owns its authorization. Ordinary preparation
+      first runs as the current user and requests elevation only on access denial. }
     Started := ShellExec('runas', PowerShellPath, Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end else
   begin

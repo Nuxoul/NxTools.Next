@@ -133,6 +133,7 @@ fn indexed_search_entries(items: &[IndexSearchItem]) -> Vec<ExternalSearchEntry>
 }
 
 const PANEL_WIDTH: f32 = 620.0;
+const PANEL_CORNER_RADIUS: f32 = 8.0;
 const LAUNCHER_LIST_MAX_HEIGHT: f32 = 470.0;
 const LAUNCHER_RESULT_ROW_HEIGHT: f32 = 52.0;
 const LAUNCHER_RESULT_ICON_SIZE: f32 = 32.0;
@@ -153,6 +154,10 @@ const INDEX_CANDIDATE_LIMIT: usize = 200;
 const ICON_PREFETCH_LIMIT: usize = 10;
 const ICON_RESOURCE_CACHE_LIMIT: usize = 96;
 const ICON_VISIBLE_OVERSCAN: usize = 2;
+
+fn quick_launch_corner_radius(scale_factor: f32) -> u32 {
+    (PANEL_CORNER_RADIUS * scale_factor).round().max(1.0) as u32
+}
 
 pub(crate) fn quick_launch_process_is_blacklisted(config: &AppConfig, process_name: &str) -> bool {
     config.process_is_blacklisted(process_name, ProcessBlacklistFeature::QuickLaunch)
@@ -1932,6 +1937,7 @@ impl QuickLaunchApplication {
                     y,
                     width: bounds.size.width.into(),
                     height: bounds.size.height.into(),
+                    corner_radius: Some(quick_launch_corner_radius(window.scale_factor())),
                 })
             })
             .ok()
@@ -3460,6 +3466,7 @@ impl QuickLaunchApplication {
                             y: device_y,
                             width: device_width,
                             height: device_height,
+                            corner_radius: None,
                         },
                     ));
                     let _ = platform.send_command(PlatformCommand::SetWindowTopmost(

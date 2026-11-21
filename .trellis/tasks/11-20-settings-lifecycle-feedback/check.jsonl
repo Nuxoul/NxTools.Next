@@ -1,0 +1,5 @@
+{"file":".trellis/tasks/11-20-settings-lifecycle-feedback/verification.md","reason":"Exact compiled/source results and remaining native hide/Win10/install acceptance"}
+{"file":".trellis/tasks/11-20-settings-lifecycle-feedback/quick-search-corners.md","reason":"Actual parse-to-native HRGN regression, scaled radius and lifetime"}
+{"file":".trellis/tasks/11-20-settings-lifecycle-feedback/markdown-settings.md","reason":"Real production bounds/states/scroll and preserved immediate saves"}
+{"file":".trellis/tasks/11-20-settings-lifecycle-feedback/about-close.md","reason":"User-confirmed hidden-not-exited symptom and unmatched installed visibility cause"}
+{"file":".trellis/spec/shared/verification.md","reason":"Separate source, fixture, native, physical and release evidence"}

@@ -19,6 +19,8 @@ internal static class Program
     {
         var tests = new (string Name, Func<Task> Run)[]
         {
+            ("window bounds corners fixture strict optional wire", WindowBoundsCornerTests.StrictOptionalWire),
+            ("window bounds corners fixture owned region resize reset", WindowBoundsCornerTests.OwnedRegionResizeAndReset),
             ("process window pick fixture strict wire", ProcessWindowPickTests.StrictWire),
             ("process window pick fixture ownership startup failure", ProcessWindowPickTests.OwnershipAndStartupFailure),
             ("process window pick fixture viewport hover names", ProcessWindowPickTests.ViewportHoverAndNames),
@@ -31,6 +33,13 @@ internal static class Program
             ("process window pick fixture native policy hook boundary", ProcessWindowPickTests.NativePolicyAndHookBoundary),
             ("process window pick fixture partial hooks lost release", ProcessWindowPickTests.NativePartialInstallAndLostRelease),
             ("process window pick fixture deferred cancel failure facts", ProcessWindowPickTests.CancelBeforeProcessingAndFailureFacts),
+            ("process window pick input fixture raw mouse packets", ProcessWindowPickTests.RawMousePackets),
+            ("process window pick input fixture raw Escape packets", ProcessWindowPickTests.RawEscapePackets),
+            ("process window pick input fixture invalid and pending clicks", ProcessWindowPickTests.IneligibleAndPendingClicksDoNotLeak),
+            ("process window pick input fixture lightweight callback", ProcessWindowPickTests.RawMouseCallbackIsLightweight),
+            ("process window pick input fixture held release ownership", ProcessWindowPickTests.HeldReleaseOwnership),
+            ("process window pick input native marked left selects without delivery", ProcessWindowPickInputNativeTests.MarkedLeftSelectsWithoutDelivery),
+            ("process window pick input native marked Escape cancels without delivery", ProcessWindowPickInputNativeTests.MarkedEscapeCancelsWithoutDelivery),
             ("installed applications fixture localized complete JSON", InstalledApplicationTests.LocalizedApplicationsAndJson),
             ("installed applications fixture invalid facts and empty", InstalledApplicationTests.InvalidFactsAndEmptyResult),
             ("installed applications fixture failure discards partial", InstalledApplicationTests.FailureNeverPublishesPartial),

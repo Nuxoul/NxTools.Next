@@ -109,7 +109,8 @@ struct About {
 
 impl About {
     fn close_window(&mut self, window: &mut Window) {
-        info!(event = "desktop.about.close.requested", correlation_id = %self.id);
+        info!(event = "desktop.about.close.requested", correlation_id = %self.id,
+            source = "caption", window_handle = crate::ui::native_window_handle(window).unwrap_or_default());
         self.retire_update();
         window.remove_window();
     }

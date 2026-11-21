@@ -193,6 +193,7 @@ impl ClipboardApplication {
             height: (stage.preview_size.height.as_f32() * stage.panel_scale_factor)
                 .round()
                 .max(1.0) as i32,
+            corner_radius: None,
         });
         self.dispatch_preview_presentation_step(stage, command, cx);
     }
@@ -222,6 +223,7 @@ impl ClipboardApplication {
                     height: (stage.preview_size.height.as_f32() * stage.panel_scale_factor)
                         .round()
                         .max(1.0) as i32,
+                    corner_radius: None,
                 })
             }
             PreviewStagePhase::InitialTopmost => {

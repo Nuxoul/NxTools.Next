@@ -240,6 +240,7 @@ Temporary privacy pause, resume, deadline, pipe reconnect or event-owner shutdow
 `SetClipboardCapturePausedCommand { paused: bool }`, wire command set_clipboard_capture_paused; `EventWindow.EnqueueClipboardPause(command, correlationId, cancellation)`. Success Data remains a JSON STRING containing exactly capture_paused:boolean, not an object. Evidence: `repo:csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.ClipboardPause.cs`, `repo:rust/apps/nxtools-desktop/src/clipboard/capture_pause.rs`.
 ### 3. Contracts
 Independent of ConfigureClipboard/hotkey and persisted enabled. Event owner applies gate before ACK and clears retry/source/attempts/timer. Guard update,retry and real ReadClipboardContent before sequence/source/native formats/Contains/Get. Resume samples current sequence metadata only and excludes that sequence from queued updates; never backfill paused content. Admission is bounded32, synchronous before reader advances; completion is detached through existing dispatcher so later commands remain responsive and pause/resume cannot reorder. Pending ID precedes Rust dispatch; only exact ACK marks applied. Runtime15minutes/manual, generation-scoped deadline/reconnect, no restart persistence. Rust rejects in-flight captures before management deferral and removes staging.
+Persistent ConfigureClipboard feature enablement separately retains any sampled metadata baseline, including0, without reading content or backfilling it. Zero metadata alone must not reject the feature transition; the next changed sequence may capture. Actual operation exceptions keep the feature gate closed and return the original native failure. Preserve the independent temporary-pause value across feature toggles; ClipboardPauseTests exercises this through the production EventWindow seam.
 ### 4. Validation & Error Matrix
 Missing/nonboolean/unknown fields -> reject. Queue full/stopped/post failure -> terminal failure/no applied data/no queued leak. Cancel before application removes request; application wins late cancellation. Apply/resume-baseline failure remains fail-closed with native code. Timeout/disconnect -> explicit unknown/failed UI, retry reachable, late ID cannot retire new intent. Stop immediately retires queued tasks then owner clears native retry state.
 ### 5. Good/Base/Bad Cases
@@ -883,3 +884,39 @@ opens a real Shell window or touches user files, Registry, services or `IContext
 Wrong: every queued Shell operation waits at most five seconds. Correct: machine setup/query waits are
 finite; the user-owned Invoke completion waits until return or logical cancellation while the original
 physical owner continues to cleanup.
+
+## Scenario: Blacklist raw input interception
+### 1. Scope / Trigger
+Original process_window_pick selection, left click and Escape on its dedicated STA owner.
+### 2. Signatures
+ProcessWindowPickNative.MouseHook/KeyboardHook -> ProcessWindowPickController.Input/DecideInput -> Tick/Finish; ProcessWindowPickCoordinator owns the real Application.Run loop. Protocol and original settings Apply remain unchanged.
+### 3. Contracts
+Decode relevant physical and injected packets identically. Mouse callback performs native root lookup and fixed-size state changes only; no window eligibility/composition/class/rectangle/process IO, publication or logs. Consume fresh selection down/up even for invalid/overlay/root0 and while selection is pending; retain first clicked root with a separate pending bit. Initial held-left/source input remains passthrough; timer physical-up observation can clear its stale latch, never retroactively intercept. Escape owns paired releases and deferred cancellation. Existing source visibility restoration precedes terminal publication; retained release ownership precedes unhook/reuse.
+Suppressed downs need not update GetAsyncKeyState. Terminal lost-release recovery must first observe pressed and then released; an uncorroborated false sample never clears the release latch. Without pressed-state evidence, retain ownership until its raw up callback. Deadline/disconnect/disposal retire selection, not an intercepted release.
+### 4. Validation & Error Matrix
+Invalid or unavailable target -> swallowed click then failed, not passthrough. Escape -> cancelled. Partial install/start failure -> original rollback/unhook. Terminal with intercepted key still down -> retain original release owner. Desktop/permission unavailable for native test -> typed SKIP, not PASS.
+### 5. Good/Base/Bad Cases
+Good: invalid target cannot receive a selection click. Base: valid target produces one selected and no rule publication. Bad: installed hook handles treated as interception evidence, injected flags discarded, or timer poll claimed to consume an already-delivered click.
+### 6. Tests Required
+Registered HookProc unmanaged-packet fixtures for physical-style/injected mouse and Escape, invalid/pending targets, initial-left recovery, lightweight callback and held-input release beyond two seconds without async pressed evidence. Retain original picker lifecycle/visibility/pipe tests and observed-down-to-up lost-release recovery. Separately authorized native probe uses real hooks and real owner loop, uniquely marked packets and owned windows only; physical input bypasses probe callback unchanged. Report native, fixture and physical/installed acceptance separately. Original lifecycle diagnostics add fixed aggregate received/swallowed counts and pending-release bits, never per-input logs.
+Owned SendInput probes use a fresh nonzero31-bit ExtraInfo marker and full native-value equality, preserving the observed input transport without admitting lower-bit-only matches. Keep injected flags unchanged. Timeout failures name the fixed wait stage; native acceptance requires actual down/up callbacks, production suppression, matching terminal and zero target input messages, not installation handles alone.
+### 7. Wrong vs Correct
+Wrong: eligibility fails inside hook -> CallNext -> target application handles click.
+Correct: own down/up immediately -> next owner turn validates first clicked target -> selected or explicit failed -> drain releases -> unhook.
+
+## Scenario: Optional native outer-window corners
+### 1. Scope / Trigger
+Quick Launch bounds application on Windows10/11, including compact/results/action transitions and monitor DPI changes.
+### 2. Signatures
+Original SetWindowBoundsCommand adds optional corner_radius device pixels: Rust Option<u32> defaults/omits None; C# nullable int defaults null. NativeMethods.SetWindowBounds uses the existing same-HWND size owner and original correlated result. Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch/monitor_presentation.rs`, `repo:csharp/NxTools.PlatformHost.Tests/WindowBoundsCornerTests.cs`.
+### 3. Contracts
+Absent/null preserves the region; explicit0 restores rectangular shape; positive applies only after exact client readback. Rust Quick Launch supplies semantic8DIP scaled to the current monitor/device scale for every staging/final/dynamic size. Other consumers supply None. C# reads current resized outer bounds, uses widened arithmetic and a clamped ellipse diameter, and transfers HRGN ownership only on successful SetWindowRgn. Failed transfer deletes the caller-owned region after capturing the native error. Keep outer placement, NOACTIVATE/NOZORDER, original input/state/IME and passive preview owners; no HWND registry, polling, duplicate resize, vendor patch or rounded-child substitute.
+### 4. Validation & Error Matrix
+Malformed/negative/fractional/overflow radius -> parser reject before effects. Invalid HWND/size/client mismatch or native region failure -> original typed failure/native code. None never resets an existing region. Accepted size alone is insufficient when a region was requested.
+### 5. Good/Base/Bad Cases
+Good: actual HWND corners excluded and center/current bottom retained after60->530->60 resize. Base: old commands omit the field and retain behavior. Bad: round only a GPUI child while an opaque root or descendants still fill square HWND corners.
+### 6. Tests Required
+Actual parse->adapter owned HWND/GDI fixture checks GetWindowRgn/PtInRegion/GetRgnBox, resize, frame compensation, reset/preservation, tiny dimensions, exact client size/position and unchanged foreground. Rust protocol omission/reset/roundtrip and96/120/144DPI main-popup factory regressions. Compiled fixtures are separate from actual GPUI/Win10/mixed-DPI/physical/user acceptance.
+### 7. Wrong vs Correct
+Wrong: rounded parent plus rectangular child content masks -> claim native corners.
+Correct: original bounds owner -> exact client readback -> requested native region -> correlated result; preserve official input frame and behavior.

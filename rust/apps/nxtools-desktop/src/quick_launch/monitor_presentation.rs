@@ -91,7 +91,7 @@ impl PlacementTarget {
             self.client.1 - (actual.1 - outer.1),
         );
         let origin = self.origin(outer);
-        (client.0 > 0 && client.1 > 0).then(|| bounds(hwnd, origin, client))
+        (client.0 > 0 && client.1 > 0).then(|| bounds(hwnd, origin, client, self.dpi))
     }
 
     fn confirms(self, command: &SetWindowBoundsCommand, geometry: WindowGeometry) -> bool {
@@ -115,13 +115,19 @@ fn dimensions(rect: WindowGeometryRect) -> (i32, i32) {
     )
 }
 
-fn bounds(hwnd: i64, (x, y): (i32, i32), (width, height): (i32, i32)) -> SetWindowBoundsCommand {
+fn bounds(
+    hwnd: i64,
+    (x, y): (i32, i32),
+    (width, height): (i32, i32),
+    dpi: u32,
+) -> SetWindowBoundsCommand {
     SetWindowBoundsCommand {
         window_handle: hwnd,
         x,
         y,
         width,
         height,
+        corner_radius: Some(super::quick_launch_corner_radius(dpi as f32 / 96.0)),
     }
 }
 
@@ -222,9 +228,12 @@ impl PopupPresentation {
         match step {
             Step::Hide | Step::HideAfterFrame => visibility(false),
             Step::StageMove => position(offscreen),
-            Step::StageSize => {
-                PlatformCommand::SetWindowBounds(bounds(hwnd, offscreen, self.target.client))
-            }
+            Step::StageSize => PlatformCommand::SetWindowBounds(bounds(
+                hwnd,
+                offscreen,
+                self.target.client,
+                self.target.dpi,
+            )),
             Step::StageCheck | Step::Measure | Step::Verify => {
                 PlatformCommand::QueryWindowGeometry(QueryWindowGeometryCommand {
                     window_handle: hwnd,
@@ -236,6 +245,7 @@ impl PopupPresentation {
                 hwnd,
                 self.target.origin(self.target.client),
                 self.target.client,
+                self.target.dpi,
             )),
             Step::Place => PlatformCommand::SetWindowBounds(
                 self.final_bounds.clone().expect("measured final bounds"),
@@ -626,6 +636,26 @@ mod tests {
         assert_eq!(envelope.correlation_id, Some(pending.op));
         assert!(endpoint.command_pending_for_contract_test(envelope.id));
         envelope
+    }
+
+    #[test]
+    fn popup_bounds_always_carry_scaled_outer_corners() {
+        for (dpi, radius) in [(96, 8), (120, 10), (144, 12)] {
+            let target = target(dpi);
+            let identity = PopupIdentity {
+                session: Uuid::new_v4(),
+                hwnd: HWND,
+                connection: 1,
+            };
+            let mut pending = PopupPresentation::new(identity, target);
+            pending.final_bounds = target.final_bounds(HWND, geometry(target, 0, 0, DISPLAY));
+            for step in [Step::StageSize, Step::TargetSize, Step::Place] {
+                let PlatformCommand::SetWindowBounds(command) = pending.command(step) else {
+                    panic!("popup size step must use native bounds");
+                };
+                assert_eq!(command.corner_radius, Some(radius));
+            }
+        }
     }
 
     #[test]

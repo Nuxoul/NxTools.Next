@@ -120,6 +120,7 @@ impl ClipboardApplication {
                 y: bounds.origin.y.into(),
                 width: bounds.size.width.into(),
                 height: bounds.size.height.into(),
+                corner_radius: None,
             }),
             cx,
         );
@@ -242,6 +243,7 @@ impl ClipboardApplication {
                         y: PREVIEW_STAGING_COORDINATE,
                         width,
                         height,
+                        corner_radius: None,
                     }),
                     cx,
                 );
@@ -320,6 +322,7 @@ impl ClipboardApplication {
                         y,
                         width,
                         height,
+                        corner_radius: None,
                     }),
                     cx,
                 );

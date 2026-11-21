@@ -449,3 +449,40 @@ About does not need this parent-blocking lifetime. Its actual about_window_optio
 retains fixed dimensions and close-only controls while bypassing that modal branch; the
 source policy gate and constructor regression protect this boundary. No other Dialog kind
 or framework source is changed.
+
+## Blacklist raw input boundary
+
+`ProcessWindowPickNative::MouseHook/KeyboardHook` decode the registered low-level hook packets;
+both physical and Windows-injected left/Escape packets reach the same controller decision.
+Mouse callbacks use only RootAt (WindowFromPoint/GetAncestor), not Facts or process resolution.
+`ProcessWindowPickController::Input/DecideInput` owns paired suppression and a separate pending
+click bit, so root0, overlay and an unavailable target cannot turn a selection click into ordinary
+application interaction. Tick resolves eligibility and the first clicked target or publishes failed;
+Escape retires selection on that same owner loop. Initial held-left release remains passthrough,
+with physical-up observation clearing a stale startup latch. Terminal aggregate input counts
+distinguish callbacks received/swallowed from mere hook installation without logging input streams.
+[Input contract](../../.trellis/tasks/11-20-picker-input-interception/design.md).
+
+The isolated native probe uses the real coordinator STA and native registered callbacks with
+unchanged injected flags. A nonzero GUID-derived31-bit ExtraInfo marker survives the observed
+input transport and is compared by full native value; nonmatching user input passes unchanged.
+Left and Escape each passed actual down1/up1/consumed2, exact controller terminal and zero target
+messages, followed by real hook/thread/window cleanup. Owned injected-input acceptance remains
+separate from physical, foreign-target and installed acceptance. Native SDK/GitHub references and
+fixed timeout stages are recorded in [the native probe contract](../../.trellis/tasks/11-20-picker-input-interception/native-probe.md).
+
+## Settings feedback: authorization and About visibility
+
+Normal Setup already defaults to lowest privileges. PrepareToInstall runs ordinary preparation as
+the current user; mere indexer service registration no longer requests runas. Existing actual
+access-denied exit5 fallback and explicit Bootstrap maintenance/repair/rotation retain authorization.
+The helper invokes migration once with both switches. Complete app exit releases runtime files,
+not SCM/protected-directory authority; original signed broker/enrollment and recovery stay intact.
+[Installer boundary](../../.trellis/tasks/11-20-settings-lifecycle-feedback/installer.md).
+
+About remains an independent modeless window; caption Close retires its own request and removes
+only its own window, not the globally owned downloader or accepted tasks. The combined original
+MainWindow/open_about/paused-engine fixture covers caption Close before/after deferred admission.
+Finite main native/caption close diagnostics record source, surface, target HWND and tray policy;
+About records its original correlation and target. The reported installed main-window hide is not
+accepted as resolved without a matching native reproduction. [Visibility evidence](../../.trellis/tasks/11-20-settings-lifecycle-feedback/about-close.md).

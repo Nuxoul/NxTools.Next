@@ -398,3 +398,20 @@ Timing0–100ms uses success,101–300warning,301+danger; missing time is absent
 Category Rules/help/official Medium Select/Small outlined Add share one wrapping header over the original
 draft/Apply owner. Source/fixture evidence and visual/native limits live in the
 [interaction task](../../tasks/11-09-desktop-interaction-polish/prd.md).
+
+## Win10 Quick Launch corners and compact reader settings
+
+The explicit settings/lifecycle feedback keeps the current620DIP Quick Launch width,58DIP header,
+official Large44DIP Input and existing focus/IME/result/action owners. Its outer HWND requests
+semantic8DIP corners through the original SetWindowBounds device-pixel operation at every size;
+native region clipping covers all descendants without changing Kit or drawing a second frame.
+Other native surfaces do not opt in. Source/GDI regression is not Win10 visual acceptance.
+
+Markdown Reader retains the shared460x320 feature window/first-body enable row and one scroll
+owner. Official Normal GroupBox separates Reading Preferences then Windows File Association;
+Small horizontal Form/Field aligns264DIP labels with the elastic168DIP lane at normal width.
+Default36x20 Switches sit in32DIP row slots; font/association/preview actions remain Small outlined
+Buttons outside Toolbar.child adaptation. Immediate section saves, all four association actions,
+per-extension observed state, original enable/preview policy and deferred feedback remain.
+Actual Light/Dark layout/action/scroll regressions are separate from native/DPI/user visual approval.
+Owning scope: [settings feedback](../../tasks/11-20-settings-lifecycle-feedback/prd.md).

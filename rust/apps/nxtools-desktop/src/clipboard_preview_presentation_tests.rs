@@ -154,7 +154,8 @@ fn first_preview_confirms_noactivate_bounds_topmost_then_show(cx: &mut TestAppCo
             x: 150,
             y: 175,
             width: 500,
-            height: 513
+            height: 513,
+            corner_radius: None
         }))
     ));
     confirm(&fixture, &bounds, true, cx);
@@ -616,6 +617,7 @@ fn round2_reused_preview_confirms_new_native_size_before_render_reveal(cx: &mut 
                 window_handle: 88,
                 width: 238,
                 height: 95,
+                corner_radius: None,
                 ..
             }))
         ),

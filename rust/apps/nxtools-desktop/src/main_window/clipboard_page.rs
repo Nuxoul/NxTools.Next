@@ -56,8 +56,33 @@ pub(crate) struct ClipboardOverview {
     pub(crate) text: usize,
     pub(crate) images: usize,
     pub(crate) files: usize,
+    pub(crate) has_snapshot: bool,
     pub(crate) loading: bool,
     pub(crate) error: bool,
+}
+
+impl ClipboardOverview {
+    fn metadata(&self) -> String {
+        if !self.has_snapshot {
+            return if self.error {
+                "历史统计暂不可用"
+            } else if self.loading {
+                "正在加载历史统计…"
+            } else {
+                "历史统计尚未加载"
+            }
+            .to_owned();
+        }
+        let summary = format!(
+            "共 {} 条 · 文本 {} · 图片 {} · 文件 {}",
+            self.total, self.text, self.images, self.files
+        );
+        if self.error {
+            format!("{summary} · 刷新失败")
+        } else {
+            summary
+        }
+    }
 }
 
 impl MainWindow {
@@ -75,10 +100,8 @@ impl MainWindow {
             .upgrade()
             .map(|application| application.read(cx).clipboard_worker_handle())
         else {
-            self.clipboard_overview = ClipboardOverview {
-                error: true,
-                ..ClipboardOverview::default()
-            };
+            self.clipboard_overview.loading = false;
+            self.clipboard_overview.error = true;
             cx.notify();
             return;
         };
@@ -88,7 +111,6 @@ impl MainWindow {
             self.clipboard_overview_generation.wrapping_add(1).max(1);
         let generation = self.clipboard_overview_generation;
         self.clipboard_overview.loading = true;
-        self.clipboard_overview.error = false;
         let main_window = cx.entity().downgrade();
         cx.spawn(async move |_, cx| {
             let result = worker.counts_async().await;
@@ -104,6 +126,7 @@ impl MainWindow {
                             text: counts.text,
                             images: counts.images,
                             files: counts.files,
+                            has_snapshot: true,
                             loading: false,
                             error: false,
                         };
@@ -499,17 +522,7 @@ impl MainWindow {
 impl MainWindow {
     pub(crate) fn render_clipboard(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let theme = self.theme;
-        let overview = self.clipboard_overview();
-        let metadata = if overview.loading {
-            "正在加载历史统计…".to_owned()
-        } else if overview.error {
-            "历史统计暂不可用".to_owned()
-        } else {
-            format!(
-                "共 {} 条 · 文本 {} · 图片 {} · 文件 {}",
-                overview.total, overview.text, overview.images, overview.files
-            )
-        };
+        let metadata = self.clipboard_overview().metadata();
         let settings = self.clipboard_settings(cx);
         let owner = cx.entity().downgrade();
         let item =
@@ -757,7 +770,15 @@ impl MainWindow {
                                 });
                             }),
                     )
-                    .child(div().text_color(self.theme.text_muted).child(status)),
+                    .child(
+                        div()
+                            .id("clipboard-feature-status")
+                            .flex_1()
+                            .min_w_0()
+                            .debug_selector(|| "clipboard-feature-status".into())
+                            .text_color(self.theme.text_muted)
+                            .child(status),
+                    ),
             )
             .child(
                 div()

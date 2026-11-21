@@ -166,8 +166,9 @@ $serviceProbe = "RegKeyExists(HKLM64, 'SYSTEM\CurrentControlSet\Services\NxTools
 $callback = $callback.Replace($serviceProbe, $(if ($protected) { 'True' } else { 'False' }))
 if ($protected) {
     $elevatedCode = if ($Scenario -eq 'protected-failure') { 7 } else { 0 }
+    $ordinaryBranch = if ($Scenario -eq 'protected-success') { '[IO.File]::WriteAllText((Join-Path $InstallDirectory ''helper-ran.txt''),''ordinary preparation''); exit 0' } else { 'exit 5' }
     $helper = 'param([string]$InstallDirectory,[string]$CorrelationId,[string]$StatePath,[string]$NewManifestPath,[string]$NewSignaturePath,[switch]$FixtureElevated)' + "`r`n" +
-        '[IO.File]::WriteAllText((Join-Path $InstallDirectory ''helper-ran.txt''),''ran''); if (!$FixtureElevated) { exit 1 }; [IO.File]::WriteAllText((Join-Path $InstallDirectory ''elevated-ran.txt''),''ran'')' + "`r`nexit $elevatedCode"
+        'if (!$FixtureElevated) { '+$ordinaryBranch+' }; [IO.File]::WriteAllText((Join-Path $InstallDirectory ''helper-ran.txt''),''ran''); [IO.File]::WriteAllText((Join-Path $InstallDirectory ''elevated-ran.txt''),''ran'')' + "`r`nexit $elevatedCode"
     [IO.File]::WriteAllText((Join-Path $work 'close-owned-processes.ps1'), $helper, [Text.UTF8Encoding]::new($true))
     $launchBody = if ($Scenario -eq 'protected-cancel') { '  ResultCode := 1223; Result := False;' } else { '  Result := Exec(PowerShellPath, Parameters + '' -FixtureElevated'', '''', SW_HIDE, ewWaitUntilTerminated, ResultCode);' }
     $adapter = "function FixtureElevated(PowerShellPath, Parameters: String; var ResultCode: Integer): Boolean;`r`nbegin`r`n$launchBody`r`nend;`r`n`r`n"
@@ -251,7 +252,7 @@ try {
             $runtimeText -match 'installer.dependency.completed' -and
             $runtimeText -notmatch 'bootstrap_migration.detecting|upgrade_close.started'
     } elseif ($Scenario -eq 'protected-success') {
-        $passed = $runner.ExitCode -eq 0 -and $helperRan -and $markerInstalled -and (Test-Path (Join-Path $target 'elevated-ran.txt')) -and ([regex]::Matches($runtimeText,'protected_elevation_requested')).Count -eq 1
+        $passed = $runner.ExitCode -eq 0 -and $helperRan -and $markerInstalled -and !(Test-Path (Join-Path $target 'elevated-ran.txt')) -and $runtimeText -notmatch 'protected_elevation_requested|upgrade_close.elevation_required'
     } elseif ($Scenario -eq 'protected-cancel') {
         $passed = $runner.ExitCode -ne 0 -and !$helperRan -and !$markerInstalled -and $runtimeText -match 'upgrade_close.failed.*code=1223'
     } elseif ($Scenario -eq 'protected-failure') {

@@ -6,9 +6,11 @@ use crate::ui::components::settings::{
 };
 use gpui_kit::component::{
     form::{Field, Form},
+    group_box::{GroupBox, GroupBoxVariants as _},
     label::Label,
     switch::Switch,
 };
+use gpui_kit::{AnyElement, Role};
 use nxtools_core::{AppConfig, MarkdownReaderSettings};
 use nxtools_protocol::{
     MarkdownAssociationAction, MarkdownAssociationCommand, MarkdownAssociationExtensionState,
@@ -322,7 +324,7 @@ impl Render for SettingsView {
         let association = state.and_then(|state| state.association.as_ref());
         let registered =
             association.is_some_and(|state| state.md.registered || state.markdown.registered);
-        let mut defaults = Form::vertical().small();
+        let mut defaults = Form::horizontal().small().label_width(px(264.));
         let font = settings.font_size;
         let fonts = div()
             .flex()
@@ -344,48 +346,54 @@ impl Render for SettingsView {
                 busy || font >= MarkdownReaderSettings::MAX_FONT_SIZE,
             ));
         defaults = defaults
-            .child(Field::new().label("默认字号").child(fonts))
-            .child(
-                Field::new().label("宽版正文").child(
-                    Switch::new("markdown-pref-wide")
-                        .small()
-                        .checked(settings.wide_body)
-                        .disabled(busy)
-                        .on_change(|value, window, cx| {
-                            let value = *value;
-                            window.defer(cx, move |window, cx| {
-                                save(Change::Wide(value), window.window_handle(), cx)
-                            });
-                        }),
-                ),
-            )
-            .child(
-                Field::new().label("宽窗默认固定大纲").child(
-                    Switch::new("markdown-pref-outline")
-                        .small()
-                        .checked(settings.show_outline)
-                        .disabled(busy)
-                        .on_change(|value, window, cx| {
-                            let value = *value;
-                            window.defer(cx, move |window, cx| {
-                                save(Change::Outline(value), window.window_handle(), cx)
-                            });
-                        }),
-                ),
-            );
+            .child(preference_field("markdown-default-font", "默认字号", fonts))
+            .child(preference_field(
+                "markdown-default-wide",
+                "宽版正文",
+                Switch::new("markdown-pref-wide")
+                    .accessibility_label("宽版正文")
+                    .checked(settings.wide_body)
+                    .disabled(busy)
+                    .on_change(|value, window, cx| {
+                        let value = *value;
+                        window.defer(cx, move |window, cx| {
+                            save(Change::Wide(value), window.window_handle(), cx)
+                        });
+                    }),
+            ))
+            .child(preference_field(
+                "markdown-default-outline",
+                "宽窗默认固定大纲",
+                Switch::new("markdown-pref-outline")
+                    .accessibility_label("宽窗默认固定大纲")
+                    .checked(settings.show_outline)
+                    .disabled(busy)
+                    .on_change(|value, window, cx| {
+                        let value = *value;
+                        window.defer(cx, move |window, cx| {
+                            save(Change::Outline(value), window.window_handle(), cx)
+                        });
+                    }),
+            ));
         let association_rows = div()
             .flex()
             .flex_col()
             .gap_2()
-            .child(Label::new("Windows 文件关联"))
-            .child(association_row(
-                ".md",
-                association_label(association.map(|state| &state.md)),
-            ))
-            .child(association_row(
-                ".markdown",
-                association_label(association.map(|state| &state.markdown)),
-            ))
+            .child(
+                Form::horizontal()
+                    .small()
+                    .label_width(px(264.))
+                    .child(association_row(
+                        "markdown-assoc-md",
+                        ".md",
+                        association_label(association.map(|state| &state.md)),
+                    ))
+                    .child(association_row(
+                        "markdown-assoc-markdown",
+                        ".markdown",
+                        association_label(association.map(|state| &state.markdown)),
+                    )),
+            )
             .child(
                 div()
                     .flex()
@@ -422,25 +430,39 @@ impl Render for SettingsView {
             );
         let preview_platform = self.platform.clone();
         let body = div()
+            .w_full()
+            .min_w_0()
+            .flex_none()
             .flex()
             .flex_col()
             .gap_3()
-            .when(busy, |body| body.child(Label::new("正在应用设置…")))
-            .child(association_rows)
-            .child(defaults)
+            .child(settings_group(
+                "markdown-settings-reading",
+                "阅读偏好",
+                false,
+                defaults.into_any_element(),
+            ))
+            .child(settings_group(
+                "markdown-settings-association",
+                "Windows 文件关联",
+                busy,
+                association_rows.into_any_element(),
+            ))
             .child(
-                Button::new("markdown-settings-preview")
-                    .debug_selector(|| "markdown-settings-preview".into())
-                    .label("打开预览…")
-                    .small()
-                    .outline()
-                    .disabled(!settings.enabled)
-                    .on_click(move |_, window, cx| {
-                        let platform = preview_platform.clone();
-                        window.defer(cx, move |_, cx| {
-                            show(platform, cx);
-                        });
-                    }),
+                div().flex_none().flex().child(
+                    Button::new("markdown-settings-preview")
+                        .debug_selector(|| "markdown-settings-preview".into())
+                        .label("打开预览…")
+                        .small()
+                        .outline()
+                        .disabled(!settings.enabled)
+                        .on_click(move |_, window, cx| {
+                            let platform = preview_platform.clone();
+                            window.defer(cx, move |_, cx| {
+                                show(platform, cx);
+                            });
+                        }),
+                ),
             );
         let toggle_platform = self.platform.clone();
         feature_settings_window(
@@ -520,14 +542,84 @@ fn association_button(
         })
 }
 
-fn association_row(ext: &'static str, label: &'static str) -> impl IntoElement {
+fn settings_group(
+    id: &'static str,
+    title: &'static str,
+    busy: bool,
+    content: AnyElement,
+) -> impl IntoElement {
     div()
-        .flex()
-        .justify_between()
-        .child(Label::new(ext))
-        .child(Label::new(label))
+        .id(SharedString::from(format!("{id}-semantic")))
+        .debug_selector(move || id.into())
+        .role(Role::Group)
+        .aria_label(title)
+        .w_full()
+        .min_w_0()
+        .flex_none()
+        .child(
+            GroupBox::new()
+                .id(id)
+                .normal()
+                .gap_2()
+                .title(
+                    div()
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .child(title)
+                        .when(busy, |title| {
+                            title.child(
+                                div()
+                                    .debug_selector(|| "markdown-settings-busy".into())
+                                    .child(Label::new("正在应用设置…").text_sm()),
+                            )
+                        }),
+                )
+                .child(content),
+        )
+}
+
+fn preference_field(id: &'static str, title: &'static str, control: impl IntoElement) -> Field {
+    Field::new()
+        .items_center()
+        .gap_0()
+        .label_fn(move |_, _| {
+            div()
+                .debug_selector(move || format!("{id}-title"))
+                .min_h_8()
+                .flex()
+                .items_center()
+                .child(title)
+        })
+        .child(
+            div()
+                .debug_selector(move || format!("{id}-control"))
+                .w_full()
+                .min_w_0()
+                .min_h_8()
+                .flex()
+                .items_center()
+                .justify_end()
+                .child(control),
+        )
+}
+
+fn association_row(id: &'static str, ext: &'static str, label: &'static str) -> Field {
+    preference_field(
+        id,
+        ext,
+        div()
+            .id(id)
+            .role(Role::Group)
+            .aria_label(format!("{ext}：{label}"))
+            .child(Label::new(label)),
+    )
 }
 
 #[cfg(test)]
 #[path = "settings_notification_tests.rs"]
 mod notification_tests;
+
+#[cfg(test)]
+#[path = "settings_layout_tests.rs"]
+mod layout_tests;

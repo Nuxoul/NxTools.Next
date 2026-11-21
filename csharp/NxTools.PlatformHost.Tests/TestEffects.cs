@@ -5,6 +5,9 @@ internal static class TestEffects
 {
     private static readonly HashSet<string> Fixtures = new(StringComparer.Ordinal)
     {
+        // Owned STATIC HWNDs/passive reveal/GDI readback; no adapter startup, hooks or global input.
+        "WindowBoundsCornerTests.StrictOptionalWire",
+        "WindowBoundsCornerTests.OwnedRegionResizeAndReset",
         // Injected hit/process/hook/style/clock facts, original router and GUID-owned pipe; no live windows/input.
         "ProcessWindowPickTests.StrictWire",
         "ProcessWindowPickTests.OwnershipAndStartupFailure",
@@ -18,6 +21,12 @@ internal static class TestEffects
         "ProcessWindowPickTests.NativePolicyAndHookBoundary",
         "ProcessWindowPickTests.NativePartialInstallAndLostRelease",
         "ProcessWindowPickTests.CancelBeforeProcessingAndFailureFacts",
+        // Real managed HookProc delegates with owned unmanaged packets and injected OS facts only.
+        "ProcessWindowPickTests.RawMousePackets",
+        "ProcessWindowPickTests.RawEscapePackets",
+        "ProcessWindowPickTests.IneligibleAndPendingClicksDoNotLeak",
+        "ProcessWindowPickTests.RawMouseCallbackIsLightweight",
+        "ProcessWindowPickTests.HeldReleaseOwnership",
         // Injected enumeration/Process.Start, fake logs and bounded STA only; no live Shell reads or launches.
         "InstalledApplicationTests.LocalizedApplicationsAndJson",
         "InstalledApplicationTests.InvalidFactsAndEmptyResult",
@@ -763,6 +772,9 @@ internal static class TestEffects
         }
         var (effect, scope) = symbol switch
         {
+            "ProcessWindowPickInputNativeTests.MarkedLeftSelectsWithoutDelivery" or
+            "ProcessWindowPickInputNativeTests.MarkedEscapeCancelsWithoutDelivery" =>
+                (TestEffect.NativeAcceptance, "Real global WH_MOUSE_LL/WH_KEYBOARD_LL on original coordinator STA; GUID-marked cursor move and atomic left/Escape pair only to owned target, physical/nonmatching input passes unchanged; owned source-only enumeration/hide/restore, hidden overlay, target message counts, bounded thread/unhook cleanup and conditional cursor/foreground restore; no product/user-app input/Registry/service/settings"),
             "FloatingAssistantOleAcceptance.ActualOleRoutesAcrossOwnedProcesses" =>
                 (TestEffect.NativeAcceptance, "Temporarily moves/restores real cursor; bounded Windows DoDragDrop to owned receiver over owned child renderer only; no buttons/keys/clipboard/network/files/service"),
             "NativeContextMenuTests.OwnedHwndOverflowAndExactCancel" =>

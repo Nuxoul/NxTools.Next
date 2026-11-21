@@ -588,7 +588,8 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             command.X,
             command.Y,
             command.Width,
-            command.Height);
+            command.Height,
+            command.CornerRadius);
 
 
 

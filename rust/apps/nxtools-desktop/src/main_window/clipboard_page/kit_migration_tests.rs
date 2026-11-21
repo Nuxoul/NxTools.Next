@@ -940,3 +940,235 @@ fn audit08_clipboard_picker_pointer_keyboard_once_and_cancel_preserve_data(
         assert!(!fixture.directory.path().join("backups").exists());
     }
 }
+
+struct HeldOverviewReply {
+    release: Option<std::sync::mpsc::SyncSender<()>>,
+    task: Option<std::thread::JoinHandle<Result<(), String>>>,
+}
+impl HeldOverviewReply {
+    fn new(worker: crate::clipboard_worker::ClipboardCaptureWorkerHandle) -> Self {
+        let (entered_tx, entered_rx) = std::sync::mpsc::sync_channel(1);
+        let (release_tx, release_rx) = std::sync::mpsc::sync_channel(1);
+        let task = std::thread::spawn(move || {
+            worker.wait_at_presentation_test_barrier(entered_tx, release_rx)
+        });
+        entered_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .expect("counts worker entered barrier");
+        Self {
+            release: Some(release_tx),
+            task: Some(task),
+        }
+    }
+    fn finish(mut self) {
+        self.release
+            .take()
+            .expect("release sender")
+            .send(())
+            .expect("release counts worker");
+        self.task
+            .take()
+            .expect("barrier owner")
+            .join()
+            .expect("barrier thread")
+            .expect("barrier operation");
+    }
+}
+impl Drop for HeldOverviewReply {
+    fn drop(&mut self) {
+        if let Some(release) = self.release.take() {
+            let _ = release.send(());
+        }
+        if let Some(task) = self.task.take() {
+            let _ = task.join();
+        }
+    }
+}
+
+fn settle_overview(fixture: &Fixture, cx: &mut TestAppContext) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        cx.run_until_parked();
+        if !fixture
+            .main
+            .read_with(cx, |main, _| main.clipboard_overview_loading)
+        {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "statistics request must settle"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+fn take_toggle_configurations(fixture: &Fixture) -> Vec<(uuid::Uuid, bool)> {
+    let mut configurations = Vec::new();
+    while let Ok(envelope) = fixture.endpoint.try_receive_command_for_contract_test() {
+        match envelope.message {
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ConfigureClipboard(
+                command,
+            )) => {
+                configurations.push((envelope.id, command.enabled));
+            }
+            nxtools_protocol::Message::PlatformCommand(
+                PlatformCommand::SetWindowVisibility(_)
+                | PlatformCommand::SetWindowBounds(_)
+                | PlatformCommand::ActivateWindow(_),
+            ) => panic!("feature toggle must not change native window presentation"),
+            _ => {}
+        }
+    }
+    configurations
+}
+
+fn assert_toggle_header_stability(cx: &mut TestAppContext, selector: &'static str) {
+    let fixture = fixture(cx);
+    fixture.endpoint.set_connected_for_contract_test(true);
+    fixture.application.update(cx, |application, cx| {
+        application.set_feature_enabled(false, cx)
+    });
+    cx.run_until_parked();
+    let initial = take_toggle_configurations(&fixture);
+    let initial_id = initial
+        .last()
+        .expect("initial applied feature configuration")
+        .0;
+    terminal(&fixture, initial_id, true, cx);
+    settle_overview(&fixture, cx);
+    assert_eq!(
+        fixture
+            .application
+            .read_with(cx, |app, _| app.feature_configuration_status().to_owned()),
+        "已停用"
+    );
+    assert_eq!(
+        fixture
+            .main
+            .read_with(cx, |main, _| main.clipboard_overview.total),
+        0,
+        "a valid empty snapshot must also be stable"
+    );
+
+    for reduced_motion in [false, true] {
+        cx.update(|cx| {
+            cx.set_global(crate::ui::motion::UiMotionPreference::Known { reduced_motion });
+            cx.set_reduce_motion(reduced_motion);
+        });
+        let requested = !fixture
+            .application
+            .read_with(cx, |app, _| app.clipboard_settings().enabled);
+        let mut surface = VisualTestContext::from_window(fixture.window, cx);
+        surface.refresh().expect("settled Clipboard header");
+        let before = surface
+            .debug_bounds(selector)
+            .expect("actual header presentation");
+        let identity = fixture.main.entity_id();
+        let held = HeldOverviewReply::new(fixture.worker.clone());
+        let toggle = surface.update(|window, _| {
+            test_support::snapshots(window)
+                .into_iter()
+                .find(|node| {
+                    node.role() == Some(gpui_kit::Role::Switch)
+                        && node.label() == Some("启用剪贴板")
+                })
+                .expect("official feature Switch")
+                .bounds()
+        });
+        surface.simulate_click(toggle.center(), Modifiers::default());
+        surface.run_until_parked();
+        surface
+            .refresh()
+            .expect("pending native apply with held statistics");
+        assert!(
+            fixture
+                .main
+                .read_with(&surface, |main, _| main.clipboard_overview.loading)
+        );
+        assert_eq!(
+            fixture.application.read_with(&surface, |app, _| app
+                .feature_configuration_status()
+                .to_owned()),
+            "正在应用"
+        );
+        assert_eq!(
+            surface
+                .debug_bounds(selector)
+                .expect("pending header remains painted"),
+            before,
+            "toggle must retain last-good statistics and status layout during background refresh: {selector}"
+        );
+        let commands = take_toggle_configurations(&fixture);
+        assert_eq!(
+            commands.len(),
+            1,
+            "one requested native configuration per click"
+        );
+        assert_eq!(commands[0].1, requested);
+        terminal(&fixture, commands[0].0, true, cx);
+        surface
+            .refresh()
+            .expect("native apply completed while statistics remain pending");
+        assert_eq!(
+            surface
+                .debug_bounds(selector)
+                .expect("completed status header"),
+            before
+        );
+        assert_eq!(
+            fixture.application.read_with(&surface, |app, _| app
+                .feature_configuration_status()
+                .to_owned()),
+            if requested { "已启用" } else { "已停用" }
+        );
+        assert_eq!(fixture.main.entity_id(), identity);
+        held.finish();
+        settle_overview(&fixture, cx);
+        surface.refresh().expect("statistics refresh finished");
+        assert_eq!(
+            surface
+                .debug_bounds(selector)
+                .expect("settled refreshed header"),
+            before
+        );
+        assert!(
+            take_toggle_configurations(&fixture).is_empty(),
+            "no duplicate configuration or presentation work"
+        );
+    }
+}
+
+#[gpui_kit::test]
+fn clipboard_toggle_keeps_statistics_during_refresh(cx: &mut TestAppContext) {
+    assert_toggle_header_stability(cx, "clipboard-module-header-metadata");
+}
+
+#[gpui_kit::test]
+fn clipboard_toggle_keeps_status_lane_width(cx: &mut TestAppContext) {
+    assert_toggle_header_stability(cx, "clipboard-feature-status");
+}
+
+#[test]
+fn clipboard_overview_snapshot_distinguishes_loading_empty_and_failed() {
+    let mut overview = ClipboardOverview::default();
+    assert_eq!(overview.metadata(), "历史统计尚未加载");
+    overview.loading = true;
+    assert_eq!(overview.metadata(), "正在加载历史统计…");
+    overview.error = true;
+    assert_eq!(overview.metadata(), "历史统计暂不可用");
+    overview.has_snapshot = true;
+    overview.error = false;
+    overview.loading = true;
+    assert_eq!(overview.metadata(), "共 0 条 · 文本 0 · 图片 0 · 文件 0");
+    overview.total = 12;
+    overview.text = 7;
+    overview.images = 3;
+    overview.files = 2;
+    assert_eq!(overview.metadata(), "共 12 条 · 文本 7 · 图片 3 · 文件 2");
+    overview.error = true;
+    assert_eq!(
+        overview.metadata(),
+        "共 12 条 · 文本 7 · 图片 3 · 文件 2 · 刷新失败"
+    );
+}

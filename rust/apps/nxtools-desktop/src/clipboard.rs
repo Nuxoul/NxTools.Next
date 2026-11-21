@@ -3627,6 +3627,7 @@ impl ClipboardApplication {
                             y: (bounds.origin.y.as_f32() * scale).round() as i32,
                             width: (bounds.size.width.as_f32() * scale).round() as i32,
                             height: (bounds.size.height.as_f32() * scale).round() as i32,
+                            corner_radius: None,
                         }))
                         .map_err(|error| format!("failed to size clipboard popup: {error}"));
                     match bounds_result {

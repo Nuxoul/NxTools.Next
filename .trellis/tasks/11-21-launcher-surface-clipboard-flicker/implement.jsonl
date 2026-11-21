@@ -1,0 +1,6 @@
+{"file":".trellis/tasks/11-21-launcher-surface-clipboard-flicker/prd.md","reason":"Rejected square shell screenshot, research scope and Clipboard flicker report"}
+{"file":".trellis/tasks/11-21-launcher-surface-clipboard-flicker/design.md","reason":"Last-good statistics, stable status lane, native semantics and visual proposal boundary"}
+{"file":".trellis/spec/shared/ui-component-selection.md","reason":"Existing official controls and single-frame InputGroup public composition"}
+{"file":".trellis/spec/nxtools-desktop/backend/quality-guidelines.md","reason":"Real-owner pending/terminal regression and evidence levels"}
+{"file":"docs/reference-code/clipboard.md","reason":"Feature enablement/capture/pause and current header owners"}
+{"file":"docs/reference-code/quick-launch-research.md","reason":"Current locked renderer/native limitations and original search lifecycle"}

@@ -18,7 +18,6 @@ internal sealed class ProcessWindowPickNative(ProcessPickApi? operations = null)
     private ProcessPickApi.HookProc? _mouseCallback, _keyboardCallback;
     private IntPtr _mouseHook, _keyboardHook;
     private Func<ProcessPickInput, long, bool>? _input;
-    private long _source, _overlay;
     public long ElapsedMilliseconds => _api.ElapsedMilliseconds;
 
     public bool ValidateOwners(long source, long overlay, uint peer)
@@ -109,7 +108,7 @@ internal sealed class ProcessWindowPickNative(ProcessPickApi? operations = null)
 
     public void InstallHooks(Func<ProcessPickInput, long, bool> input, long source, long overlay)
     {
-        _input = input; _source = source; _overlay = overlay;
+        _input = input;
         _mouseCallback = MouseHook; _keyboardCallback = KeyboardHook;
         _mouseHook = _api.Install(14, _mouseCallback);
         if (_mouseHook == IntPtr.Zero) throw new Win32Exception(_api.LastError);
@@ -122,16 +121,15 @@ internal sealed class ProcessWindowPickNative(ProcessPickApi? operations = null)
         if (code >= 0 && message.ToInt64() is 0x201 or 0x202)
         {
             var mouse = Marshal.PtrToStructure<ProcessPickApi.MouseData>(data);
-            // Only the native root/eligibility lookup and a fixed-size input decision run here.
-            // ResolveProcess and all event/log work happen on a later timer turn.
-            if ((mouse.Flags & 1) == 0 && HandleMouse(message.ToInt32() == 0x201, mouse.X, mouse.Y)) return new IntPtr(1);
+            // Only the native root lookup and a fixed-size input decision run here.
+            // Window eligibility, process resolution and publication run on a later timer turn.
+            if (HandleMouse(message.ToInt32() == 0x201, mouse.X, mouse.Y)) return new IntPtr(1);
         }
         return _api.Next(code, message, data);
     }
     internal bool HandleMouse(bool down, int x, int y)
     {
         var root = down ? _api.RootAt(x, y) : 0;
-        if (down && ReadWindow(root, _source, _overlay) is null) root = 0;
         return _input?.Invoke(down ? ProcessPickInput.LeftDown : ProcessPickInput.LeftUp, root) == true;
     }
     private IntPtr KeyboardHook(int code, IntPtr message, IntPtr data)
@@ -139,7 +137,7 @@ internal sealed class ProcessWindowPickNative(ProcessPickApi? operations = null)
         if (code >= 0 && message.ToInt64() is 0x100 or 0x101 or 0x104 or 0x105)
         {
             var keyboard = Marshal.PtrToStructure<ProcessPickApi.KeyboardData>(data);
-            if (keyboard.Key == 27 && (keyboard.Flags & 0x10) == 0 && HandleEscape(message.ToInt64() is 0x100 or 0x104)) return new IntPtr(1);
+            if (keyboard.Key == 27 && HandleEscape(message.ToInt64() is 0x100 or 0x104)) return new IntPtr(1);
         }
         return _api.Next(code, message, data);
     }

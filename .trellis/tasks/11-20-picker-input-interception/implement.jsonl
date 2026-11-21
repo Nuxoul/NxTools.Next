@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/11-20-picker-input-interception/prd.md","reason":"Local physical input report, scoped repair and explicit isolated native authorization"}
+{"file":".trellis/tasks/11-20-picker-input-interception/design.md","reason":"Raw HookProc, paired suppression, deferred validation and diagnostic contract"}
+{"file":".trellis/spec/platformhost/native-contracts.md","reason":"Native input owner and bounded lifecycle requirements"}
+{"file":"docs/reference-code/system-shell.md","reason":"Original settings reference and registered input call chain"}

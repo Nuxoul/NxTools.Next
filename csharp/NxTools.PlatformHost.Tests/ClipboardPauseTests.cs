@@ -104,6 +104,21 @@ internal static class ClipboardPauseTests
         f.Sequence = 4;
         f.Update();
         Assert(f.Window.ClipboardCaptureState.Paused && f.ContentReads == 2, "temporary pause survives feature switch");
+
+        using var empty = new Fixture();
+        Assert(empty.Window.ApplyClipboardCaptureEnabled(false).Success, "disable before zero-sequence enable");
+        empty.Sequence = 0;
+        Assert(empty.Window.ApplyClipboardCaptureEnabled(true).Success, "zero sequence must not prevent feature enablement");
+        empty.Update(); empty.Retry();
+        Assert(empty.ContentReads == 0, "enable never reads the unavailable baseline");
+        empty.Sequence = 2;
+        empty.Update();
+        Assert(empty.ContentReads == 1 && empty.CapturedSequences.SequenceEqual(new uint[] { 2 }),
+            "the next changed clipboard sequence is captured after zero baseline");
+        Assert(empty.Window.ApplyClipboardCaptureEnabled(false).Success, "disable before real native failure");
+        empty.FailSequence = true;
+        var failedEnable = empty.Window.ApplyClipboardCaptureEnabled(true);
+        Assert(!failedEnable.Success && failedEnable.NativeErrorCode == 5, "actual sequence exceptions retain native failure");
     }
 
     public static async Task PauseCommandAndReadGate()

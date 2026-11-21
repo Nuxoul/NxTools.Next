@@ -138,6 +138,7 @@ impl ArchiveApplication {
                         y: (bounds.origin.y.as_f32() * scale).round() as i32,
                         width: (bounds.size.width.as_f32() * scale).round() as i32,
                         height: (bounds.size.height.as_f32() * scale).round() as i32,
+                        corner_radius: None,
                     };
                     let view = cx.new(|cx| JobProgressView::new_drag(initial, owner, cx));
                     *captured.borrow_mut() = Some((view.downgrade(), hwnd, native_bounds));

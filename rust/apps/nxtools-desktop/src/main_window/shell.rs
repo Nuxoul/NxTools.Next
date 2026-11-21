@@ -263,6 +263,12 @@ impl MainWindow {
         let detail_owner = self.downloads.clone();
         let detail_scope = self.download_detail_scope.clone();
         window_control(control, theme, move |_, window, cx| {
+            let correlation_id = uuid::Uuid::new_v4();
+            if matches!(control, MainWindowControl::Close) {
+                tracing::info!(event = "desktop.window.close.requested", %correlation_id,
+                    source = "caption", surface = if detail_scope.is_some() { "download_detail" } else { "main" },
+                    window_handle, close_to_tray = system_settings.borrow().close_to_tray);
+            }
             if matches!(control, MainWindowControl::Close)
                 && let Some(scope) = detail_scope.as_ref()
             {
@@ -295,12 +301,13 @@ impl MainWindow {
                 {
                     if let Some(platform) = platform.as_ref() {
                         if platform
-                            .send_command(PlatformCommand::SetWindowVisibility(
-                                SetWindowVisibilityCommand {
+                            .send_command_with_id(
+                                PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
                                     window_handle,
                                     visible: false,
-                                },
-                            ))
+                                }),
+                                correlation_id,
+                            )
                             .is_err()
                         {
                             cx.quit();

@@ -41,8 +41,10 @@ internal sealed class ProcessWindowPickController(
     private CancellationToken _cancellation;
     private uint _peer;
     private long _started, _terminalAt;
-    private bool _terminal, _stopped, _initialLeft, _leftUp, _escapeUp, _escapePending;
+    private bool _terminal, _stopped, _initialLeft, _leftUp, _escapeUp, _escapePending, _clickPending;
+    private bool _leftObservedPressed, _escapeObservedPressed;
     private long _clicked;
+    private long _mouseDowns, _mouseUps, _escapeDowns, _escapeUps, _mouseSwallowed, _escapeSwallowed;
     private ProcessPickWindow? _lastHit;
     private ProcessPickViewport? _viewport;
     private bool _hoverSent;
@@ -59,7 +61,7 @@ internal sealed class ProcessWindowPickController(
         if (command.Action == "show_overlay")
         {
             if (_session?.SessionId != command.SessionId || _terminal || _cancellation.IsCancellationRequested ||
-                _clicked != 0 || _escapePending) return new(false, "window_pick_retired");
+                _clickPending || _escapePending) return new(false, "window_pick_retired");
             if (native.ElapsedMilliseconds - _started >= 120_000)
             { Finish("cancelled", "deadline"); return new(false, "window_pick_retired"); }
             try
@@ -76,7 +78,9 @@ internal sealed class ProcessWindowPickController(
             return new(false, "invalid_process_window_pick_request");
         if (Occupied) return new(false, "window_pick_busy");
         _session = command; _peer = peer; _cancellation = cancellation; _started = native.ElapsedMilliseconds;
-        _terminal = _hoverSent = _leftUp = _escapeUp = _escapePending = false; _clicked = 0; _lastHit = null;
+        _terminal = _hoverSent = _leftUp = _escapeUp = _escapePending = _clickPending = false; _clicked = 0; _lastHit = null;
+        _leftObservedPressed = _escapeObservedPressed = false;
+        _mouseDowns = _mouseUps = _escapeDowns = _escapeUps = _mouseSwallowed = _escapeSwallowed = 0;
         Diagnostic("accepted", "accepted", "start", null);
         var prepared = false;
         try
@@ -108,26 +112,53 @@ internal sealed class ProcessWindowPickController(
 
     internal bool Input(ProcessPickInput input, long root)
     {
-        if (_session is null) return false;
+        var session = _session;
+        if (session is null) return false;
+        switch (input)
+        {
+            case ProcessPickInput.LeftDown: _mouseDowns++; break;
+            case ProcessPickInput.LeftUp: _mouseUps++; break;
+            case ProcessPickInput.EscapeDown: _escapeDowns++; break;
+            case ProcessPickInput.EscapeUp: _escapeUps++; break;
+        }
+        var swallowed = DecideInput(session, input, root);
+        if (swallowed)
+        {
+            if (input is ProcessPickInput.LeftDown or ProcessPickInput.LeftUp) _mouseSwallowed++;
+            else _escapeSwallowed++;
+        }
+        return swallowed;
+    }
+
+    private bool DecideInput(ProcessWindowPickCommand session, ProcessPickInput input, long root)
+    {
         if (input == ProcessPickInput.LeftUp)
         {
             _initialLeft = false;
             if (!_leftUp) return false;
-            _leftUp = false; return true;
+            _leftUp = _leftObservedPressed = false; return true;
         }
         if (input == ProcessPickInput.EscapeUp)
         {
             if (!_escapeUp) return false;
-            _escapeUp = false; return true;
+            _escapeUp = _escapeObservedPressed = false; return true;
         }
         if (input == ProcessPickInput.EscapeDown)
         {
             if (_terminal && !_escapeUp) return false;
+            if (!_escapeUp) _escapeObservedPressed = false;
             _escapeUp = true; _escapePending = true; return true;
         }
-        if (_terminal || _initialLeft || _clicked != 0 || _escapePending || root == 0 ||
-            root == _session.SourceWindowHandle || root == _session.OverlayWindowHandle) return false;
-        _clicked = root; _leftUp = true; return true;
+        if (_terminal) return _leftUp;
+        if (_initialLeft || root == session.SourceWindowHandle) return false;
+        if (!_leftUp) _leftObservedPressed = false;
+        _leftUp = true;
+        if (!_clickPending && !_escapePending)
+        {
+            _clicked = root == session.OverlayWindowHandle ? 0 : root;
+            _clickPending = true;
+        }
+        return true;
     }
 
     internal void Tick()
@@ -138,11 +169,12 @@ internal sealed class ProcessWindowPickController(
             var age = native.ElapsedMilliseconds - _started;
             if (!_terminal)
             {
+                if (_initialLeft && !native.IsPressed(ProcessPickInput.LeftDown)) _initialLeft = false;
                 if (_stopped || _cancellation.IsCancellationRequested) Finish("cancelled", _stopped ? "disposed" : "disconnected");
                 else if (age >= 120_000) Finish("cancelled", "deadline");
                 else if (!native.ValidateOwners(_session.SourceWindowHandle, _session.OverlayWindowHandle, _peer)) Finish("cancelled", "owner_gone");
                 else if (_escapePending) Finish("cancelled", "escape");
-                else if (_clicked != 0)
+                else if (_clickPending)
                 {
                     var hit = native.ReadWindow(_clicked, _session.SourceWindowHandle, _session.OverlayWindowHandle);
                     var candidate = Candidate(hit, out var code);
@@ -152,12 +184,20 @@ internal sealed class ProcessWindowPickController(
             }
             if (_session is not null && _terminal)
             {
-                // The120s deadline retires selection/reveal, not an intercepted release.
-                // A lost release is retired only after observing the physical key up.
-                if (native.ElapsedMilliseconds - _terminalAt >= 2000)
+                // Suppressed downs need not enter async key state. A false sample alone
+                // cannot retire their release owner; fallback requires an observed down->up.
+                var releaseRecoveryDue = native.ElapsedMilliseconds - _terminalAt >= 2000;
+                if (_leftUp)
                 {
-                    if (!native.IsPressed(ProcessPickInput.LeftDown)) _leftUp = false;
-                    if (!native.IsPressed(ProcessPickInput.EscapeDown)) _escapeUp = false;
+                    var pressed = native.IsPressed(ProcessPickInput.LeftDown);
+                    _leftObservedPressed |= pressed;
+                    if (releaseRecoveryDue && _leftObservedPressed && !pressed) _leftUp = false;
+                }
+                if (_escapeUp)
+                {
+                    var pressed = native.IsPressed(ProcessPickInput.EscapeDown);
+                    _escapeObservedPressed |= pressed;
+                    if (releaseRecoveryDue && _escapeObservedPressed && !pressed) _escapeUp = false;
                 }
                 if (!_leftUp && !_escapeUp) Cleanup();
             }
@@ -220,7 +260,11 @@ internal sealed class ProcessWindowPickController(
     {
         try { log.Write(phase == "failed" ? "warning" : "info", "blacklist.window_pick." + phase, _session!.SessionId,
             new Dictionary<string, object?> { ["state"] = state, ["reason"] = reason,
-                ["elapsed_ms"] = native.ElapsedMilliseconds - _started, ["native_error_code"] = code }); }
+                ["elapsed_ms"] = native.ElapsedMilliseconds - _started, ["native_error_code"] = code,
+                ["mouse_down_received"] = _mouseDowns, ["mouse_up_received"] = _mouseUps,
+                ["escape_down_received"] = _escapeDowns, ["escape_up_received"] = _escapeUps,
+                ["mouse_events_swallowed"] = _mouseSwallowed, ["escape_events_swallowed"] = _escapeSwallowed,
+                ["pending_mouse_release"] = _leftUp, ["pending_escape_release"] = _escapeUp }); }
         catch { /* Diagnostics cannot change native input ownership. */ }
     }
 }

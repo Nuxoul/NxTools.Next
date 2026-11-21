@@ -678,7 +678,8 @@ private static extern bool GetClientRect(
             int x,
             int y,
             int width,
-            int height)
+            int height,
+            int? cornerRadius = null)
         {
             if (window == IntPtr.Zero || !IsWindow(window))
             {
@@ -688,6 +689,9 @@ private static extern bool GetClientRect(
             {
                 return new WindowsCommandResult(false, "Window bounds must have a positive size.");
             }
+
+            if (cornerRadius is < 0)
+                return new WindowsCommandResult(false, "Window corner radius must be nonnegative device pixels.");
 
             // Every GPUI caller supplies a client/content size in device pixels.
             // Keep the existing outer x/y placement contract, but compensate the
@@ -708,11 +712,57 @@ private static extern bool GetClientRect(
                 var nativeError = Marshal.GetLastWin32Error();
                 return new WindowsCommandResult(false, "Native client bounds application failed.", NativeErrorCode: nativeError);
             }
-            return TryGetClientScreenRectangle(window, out var after) &&
-                after.Width == width && after.Height == height
-                ? new WindowsCommandResult(true)
-                : new WindowsCommandResult(false, "Windows did not apply the requested GPUI client bounds.");
+            if (!TryGetClientScreenRectangle(window, out var after) ||
+                after.Width != width || after.Height != height)
+                return new WindowsCommandResult(false, "Windows did not apply the requested GPUI client bounds.");
+            return cornerRadius is { } radius
+                ? ApplyWindowCornerRegion(window, radius)
+                : new WindowsCommandResult(true);
         }
+
+        private static WindowsCommandResult ApplyWindowCornerRegion(IntPtr window, int radius)
+        {
+            // A null command radius never reaches this method. Explicit zero restores
+            // the ordinary rectangular window; Windows owns any previously assigned region.
+            if (radius == 0)
+                return SetWindowRgn(window, IntPtr.Zero, true) != 0
+                    ? new WindowsCommandResult(true)
+                    : new WindowsCommandResult(false, "Native window region reset failed.",
+                        NativeErrorCode: Marshal.GetLastWin32Error());
+
+            if (!AnchoredWindowPlacement.TryGetWindowRectangle(window, out var outer))
+                return new WindowsCommandResult(false, "Native window region bounds are unavailable.",
+                    NativeErrorCode: Marshal.GetLastWin32Error());
+            var width = (long)outer.Right - outer.Left;
+            var height = (long)outer.Bottom - outer.Top;
+            if (width <= 0 || height <= 0 || width >= int.MaxValue || height >= int.MaxValue)
+                return new WindowsCommandResult(false, "Native window region bounds exceed the size range.");
+            // GDI takes ellipse diameters, not radii. Clamp in wide arithmetic
+            // against the actual outer size, including the current native frame.
+            var diameter = (int)Math.Min(2L * radius, Math.Min(width, height));
+            var region = CreateRoundRectRgn(0, 0, (int)width + 1, (int)height + 1, diameter, diameter);
+            if (region == IntPtr.Zero)
+                return new WindowsCommandResult(false, "Native rounded window region creation failed.",
+                    NativeErrorCode: Marshal.GetLastWin32Error());
+            // Successful SetWindowRgn transfers ownership to Windows. Only a failed
+            // transfer leaves an HRGN for this caller to delete.
+            if (SetWindowRgn(window, region, true) != 0)
+                return new WindowsCommandResult(true);
+            var nativeError = Marshal.GetLastWin32Error();
+            _ = DeleteObject(region);
+            return new WindowsCommandResult(false, "Native rounded window region application failed.",
+                NativeErrorCode: nativeError);
+        }
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        private static extern IntPtr CreateRoundRectRgn(int left, int top, int right, int bottom, int ellipseWidth, int ellipseHeight);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern int SetWindowRgn(IntPtr window, IntPtr region, [MarshalAs(UnmanagedType.Bool)] bool redraw);
+
+        [DllImport("gdi32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool DeleteObject(IntPtr region);
 
         /// <summary>
         /// Resizes the window while preserving its real current visual center.

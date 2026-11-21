@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/11-21-launcher-surface-clipboard-flicker/verification.md","reason":"Nineteen compiled regressions, browser-only visual evidence and native acceptance gaps"}
+{"file":".trellis/tasks/11-21-launcher-surface-clipboard-flicker/launcher-research.md","reason":"Confirmed platform sources, exact API gap and Win10 native verification order"}
+{"file":"docs/ui/quick-launch-win10-proposal.html","reason":"Single-frame20px visual proposal; not native GPUI implementation"}
+{"file":".trellis/spec/shared/verification.md","reason":"Source/compiled/browser/native/physical evidence distinction"}

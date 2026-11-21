@@ -130,6 +130,7 @@ fn multimonitor_link_first_show_and_reuse_use_current_work_area_without_activati
             stage.message,
             Message::PlatformCommand(PlatformCommand::SetWindowBounds(SetWindowBoundsCommand {
                 x: PREVIEW_STAGING_COORDINATE,
+                corner_radius: None,
                 ..
             }))
         ));

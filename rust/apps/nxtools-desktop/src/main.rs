@@ -449,16 +449,21 @@ fn run(
                     let native_window_handle =
                         crate::ui::native_window_handle(window).unwrap_or_default();
                     window.on_window_should_close(cx, move |_, _| {
+                        let correlation_id = uuid::Uuid::new_v4();
+                        info!(event = "desktop.window.close.requested", %correlation_id,
+                            source = "native", surface = "main", window_handle = native_window_handle,
+                            close_to_tray = close_behavior.borrow().close_to_tray);
                         if !close_behavior.borrow().close_to_tray || native_window_handle == 0 {
                             return true;
                         }
-                        let hidden = close_platform.send_command(
+                        let hidden = close_platform.send_command_with_id(
                             nxtools_protocol::PlatformCommand::SetWindowVisibility(
                                 nxtools_protocol::SetWindowVisibilityCommand {
                                     window_handle: native_window_handle,
                                     visible: false,
                                 },
                             ),
+                            correlation_id,
                         );
                         hidden.is_err()
                     });

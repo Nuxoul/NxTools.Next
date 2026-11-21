@@ -80,7 +80,7 @@ internal sealed partial class WindowsPlatformAdapter
                 {
                     ClearPendingClipboardRead();
                     uint? baseline = enabled ? _clipboardCapture.Sequence() : null;
-                    if (baseline == 0) throw new InvalidOperationException("Clipboard enable sequence is unavailable.");
+                    // A zero metadata baseline still excludes old/queued content on enable.
                     _clipboardPause.SetEnabled(enabled, baseline);
                     return new(true);
                 }

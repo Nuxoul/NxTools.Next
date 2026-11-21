@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>速启搜索面板视觉提案</title>
+<style>
+@font-face{font-family:Sarasa;src:url('../../rust/apps/nxtools-desktop/assets/fonts/SarasaUiSC-Regular.ttf') format('truetype');font-weight:400;font-display:swap}
+:root{color-scheme:dark;--page:#18181b;--text:#f4f4f5;--muted:#a1a1aa;--panel:#1f1f23;--line:#414147;--focus:#9d9ea3;--shadow:0 8px 28px #00000038,0 2px 6px #00000020}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--text);font-family:Sarasa,'Microsoft YaHei UI',sans-serif;line-height:1.6}
+main{max-width:960px;padding:40px 32px;margin:auto}
+header{display:flex;gap:24px;align-items:flex-start;justify-content:space-between;margin-bottom:24px}
+h1{font-size:24px;font-weight:400;line-height:1.4;margin:0 0 8px}
+p{font-size:14px;color:var(--muted);margin:0;max-width:65ch}
+button{font:inherit;font-size:13px;color:var(--text);background:transparent;border:1px solid var(--line);border-radius:6px;padding:6px 12px;white-space:nowrap;cursor:pointer}
+button:hover{background:#ffffff0a}
+button:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+.stage{position:relative;min-height:360px;background:#76b7d2;display:flex;align-items:flex-start;justify-content:center;padding:92px 24px 80px;border-radius:8px;overflow:hidden}
+.launcher{width:620px;max-width:100%;height:60px;display:flex;align-items:center;gap:12px;padding:0 16px;border:1px solid var(--line);border-radius:8px;background:var(--panel);box-shadow:var(--shadow)}
+.launcher:focus-within{border-color:var(--focus)}
+.search-icon{flex:none;width:20px;height:20px;stroke:var(--muted);fill:none;stroke-width:1.7;stroke-linecap:round}
+input{width:100%;min-width:0;border:0;outline:none;background:transparent;color:var(--text);font:400 20px/28px Sarasa,'Microsoft YaHei UI',sans-serif;caret-color:var(--text);padding:0}
+input::placeholder{color:var(--muted);opacity:1}
+.details{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:24px;margin:24px 0}
+.details h2{font-size:14px;font-weight:400;margin:0 0 4px}
+.details p{font-size:13px}
+.note{font-size:12px;border-top:1px solid var(--line);padding-top:16px}
+body.light{color-scheme:light;--page:#fafafa;--text:#242428;--muted:#6b6b75;--panel:#fafafa;--line:#bfc0c7;--focus:#70717b;--shadow:0 8px 28px #00000026,0 2px 6px #00000012}
+@media(max-width:620px){main{padding:24px 16px}.stage{padding:64px 16px;min-height:280px}.details{grid-template-columns:1fr;gap:16px}header{gap:16px}h1{font-size:20px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+<div><h1>速启搜索面板</h1><p>只保留一层搜索边界，减轻边框、阴影和字号的视觉重量。</p></div>
+<button id="theme" type="button" aria-pressed="false">查看浅色</button>
+</header>
+<section class="stage" aria-label="搜索面板外观提案">
+<form class="launcher" role="search" onsubmit="return false">
+<svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 4.5 4.5"/></svg>
+<input aria-label="速启搜索" placeholder="搜索应用、文件或文件夹" autocomplete="off" spellcheck="false">
+</form>
+</section>
+<section class="details" aria-label="视觉方向">
+<div><h2>单层轮廓</h2><p>图标、输入与反馈放在同一搜索面板中，不再嵌入另一只输入框。</p></div>
+<div><h2>克制的圆角与阴影</h2><p>保留 8px 圆角，用一层轻阴影区分桌面，不叠加矩形系统阴影。</p></div>
+<div><h2>更平衡的字号</h2><p>提议采用 20px 常规字重，保持 60px 面板高度和原有输入状态。</p></div>
+</section>
+<p class="note">此页面用于确认外观方向。原生裁剪、窗口阴影、DPI、IME 与 Win10 实际显示需在正式 GPUI 窗口中单独验证。</p>
+</main>
+<script>
+const themeButton=document.getElementById('theme');
+themeButton.addEventListener('click',()=>{const light=document.body.classList.toggle('light');themeButton.textContent=light?'查看深色':'查看浅色';themeButton.setAttribute('aria-pressed',String(light));});
+</script>
+</body>
+</html>

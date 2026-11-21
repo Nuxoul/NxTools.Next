@@ -149,7 +149,10 @@ internal static class ProcessWindowPickTests
         var terminal = PlatformEventEnvelopeFactory.Create(f.Events[^1]).Payload.GetProperty("data");
         Check(!terminal.TryGetProperty("candidate", out _) && !terminal.TryGetProperty("viewport", out _), "optional absent terminal facts omitted");
         Check(f.Log.Events.Select(e => e.Name).SequenceEqual(new[] { "blacklist.window_pick.accepted", "blacklist.window_pick.started", "blacklist.window_pick.completed" }), "finite accepted/started/terminal only, never hover");
-        Check(f.Log.Events.All(e => e.Id == Session && e.Fields.Keys.Order().SequenceEqual(new[] { "elapsed_ms", "native_error_code", "reason", "state" })), "diagnostics exact payload-free fields");
+        Check(f.Log.Events.All(e => e.Id == Session && e.Fields.Keys.Order().SequenceEqual(new[] {
+            "elapsed_ms", "escape_down_received", "escape_events_swallowed", "escape_up_received", "mouse_down_received",
+            "mouse_events_swallowed", "mouse_up_received", "native_error_code", "pending_escape_release", "pending_mouse_release", "reason", "state" })),
+            "diagnostics contain only fixed lifecycle fields and aggregate input counts");
         Check(!JsonSerializer.Serialize(f.Log.Events).Contains("private-app"), "no process names in diagnostics");
         Check(!PlatformPipeClient.ShouldLogCommandLifecycle("process_window_pick"), "render-qualified show commands never turn hover into generic command logs");
         return Task.CompletedTask;
@@ -250,8 +253,8 @@ internal static class ProcessWindowPickTests
         Check((api.Styles[(20, -20)] & 0x080800A0) == 0x080800A0 && (api.Styles[(20, -16)] & 0x00CF0000) == 0,
             "layered transparent noactivate toolwindow and borderless native style");
         Check(api.LayeredInitialized, "layered alpha initialized while hidden before native placement");
-        foreach (var root in new long[] { 0, 10, 20, 40, 41, 42, 43, 44 })
-        { api.PointerRoot = root; Check(!native.HandleMouse(true, -100, 100), "ineligible/source/overlay down is passed through"); }
+        api.PointerRoot = 10;
+        Check(!native.HandleMouse(true, -100, 100) && !native.HandleMouse(false, -100, 100), "source initiating input remains pass-through");
         api.PointerRoot = 30;
         Check(native.HandleMouse(true, -100, 100) && api.ProcessReads == 0 && events.Count == 0, "actual native callback has no process reads or IPC");
         controller.Tick();
@@ -438,6 +441,134 @@ internal static class ProcessWindowPickTests
             restoreApi.OwnerHandle?.IsClosed == true && restoreApi.Installed.Count == 0, "one restore failure cannot prevent remaining restores or native cleanup");
     }
 
+    internal static Task RawMousePackets()
+    {
+        foreach (var flags in new uint[] { 1, 0 })
+        {
+            var f = StartRaw();
+            try
+            {
+                Check(Packet(f.Api, 14, 0x201, new ProcessPickApi.MouseData { X = -100, Y = 100, Flags = flags }) == new IntPtr(1), "raw mouse down must be swallowed, including Windows-injected input");
+                f.Controller.Tick();
+                Check(f.Events.Single().State == "selected", "raw callback reaches production selection");
+                Check(Packet(f.Api, 14, 0x202, new ProcessPickApi.MouseData { Flags = flags }) == new IntPtr(1), "raw paired up stays swallowed");
+                f.Controller.Tick();
+            }
+            finally { DrainRaw(f.Controller); }
+        }
+        return Task.CompletedTask;
+    }
+
+    internal static Task RawEscapePackets()
+    {
+        foreach (var flags in new uint[] { 0x10, 0 })
+        {
+            var f = StartRaw();
+            try
+            {
+                Check(Packet(f.Api, 13, 0x100, new ProcessPickApi.KeyboardData { Key = 27, Flags = flags }) == new IntPtr(1), "raw Escape down must be swallowed, including Windows-injected input");
+                f.Controller.Tick();
+                Check(f.Events.Single().State == "cancelled", "raw Escape cancels the actual session");
+                Check(Packet(f.Api, 13, 0x101, new ProcessPickApi.KeyboardData { Key = 27, Flags = flags }) == new IntPtr(1), "raw Escape up stays swallowed");
+                f.Controller.Tick();
+            }
+            finally { DrainRaw(f.Controller); }
+        }
+        return Task.CompletedTask;
+    }
+
+    internal static Task IneligibleAndPendingClicksDoNotLeak()
+    {
+        foreach (var root in new long[] { 0, 20, 40, 41, 42, 43, 44 })
+        {
+            var f = StartRaw(); f.Api.PointerRoot = root;
+            try
+            {
+                Check(Packet(f.Api, 14, 0x201, new ProcessPickApi.MouseData()) == new IntPtr(1), "ineligible target must not receive a selection-mode click");
+                f.Controller.Tick();
+                Check(f.Events.Single().State == "failed", "ineligible click reports a terminal failure rather than silent passthrough");
+                Check(Packet(f.Api, 14, 0x202, new ProcessPickApi.MouseData()) == new IntPtr(1), "ineligible target release is also swallowed");
+                f.Controller.Tick();
+            }
+            finally { DrainRaw(f.Controller); }
+        }
+        var burst = StartRaw();
+        try
+        {
+            for (var i = 0; i < 2; i++)
+            {
+                Check(Packet(burst.Api, 14, 0x201, new ProcessPickApi.MouseData()) == new IntPtr(1), "pending selection cannot leak a second down");
+                Check(Packet(burst.Api, 14, 0x202, new ProcessPickApi.MouseData()) == new IntPtr(1), "pending selection cannot leak a second up");
+            }
+            burst.Controller.Tick(); Check(burst.Events.Single().State == "selected", "one final result for burst input");
+        }
+        finally { DrainRaw(burst.Controller); }
+        using var held = new Fixture(); held.Native.LeftPressed = true; held.Start();
+        held.Native.LeftPressed = false; held.Controller.Tick();
+        Check(held.Controller.Input(ProcessPickInput.LeftDown, 30), "a released startup button cannot leave all later clicks in passthrough mode");
+        return Task.CompletedTask;
+    }
+
+    internal static Task RawMouseCallbackIsLightweight()
+    {
+        var f = StartRaw();
+        try
+        {
+            var facts = f.Api.FactReads;
+            Check(Packet(f.Api, 14, 0x201, new ProcessPickApi.MouseData()) == new IntPtr(1), "physical-style packet swallowed");
+            Check(f.Api.FactReads == facts && f.Api.ProcessReads == 0 && f.Events.Count == 0, "hook callback must not inspect window composition/class/rect or resolve process/publish");
+            Packet(f.Api, 14, 0x202, new ProcessPickApi.MouseData()); f.Controller.Tick();
+        }
+        finally { DrainRaw(f.Controller); }
+        return Task.CompletedTask;
+    }
+
+    internal static Task HeldReleaseOwnership()
+    {
+        foreach (var escape in new[] { false, true })
+        {
+            var f = StartRaw();
+            IntPtr Send(bool down) => escape
+                ? Packet(f.Api, 13, down ? 0x100 : 0x101, new ProcessPickApi.KeyboardData { Key = 27 })
+                : Packet(f.Api, 14, down ? 0x201 : 0x202, new ProcessPickApi.MouseData());
+            try
+            {
+                Check(Send(true) == new IntPtr(1), "held input down swallowed");
+                f.Controller.Tick();
+                f.Api.Now = 3000; f.Controller.Tick();
+                Check(f.Controller.Occupied && f.Api.Installed.Count == 2,
+                    "unobserved async pressed state cannot retire an intercepted release");
+                if (escape) Check(Send(true) == new IntPtr(1), "held Escape repeat stays swallowed");
+                Check(Send(false) == new IntPtr(1), "held input release stays swallowed after two seconds");
+                f.Controller.Tick();
+                Check(!f.Controller.Occupied && f.Api.Installed.Count == 0, "actual release cleans held input owner");
+            }
+            finally { DrainRaw(f.Controller); }
+        }
+        return Task.CompletedTask;
+    }
+
+    private static (FakeApi Api, ProcessWindowPickController Controller, List<ProcessWindowPickChangedEvent> Events) StartRaw()
+    {
+        var api = new FakeApi(); var events = new List<ProcessWindowPickChangedEvent>();
+        var controller = new ProcessWindowPickController(new ProcessWindowPickNative(api), e => { events.Add(e); return true; }, NullPlatformLog.Instance);
+        Check(controller.Execute(StartCommand(), 42, CancellationToken.None).Success, "raw callback fixture admitted");
+        return (api, controller, events);
+    }
+
+    private static IntPtr Packet<T>(FakeApi api, int kind, int message, T value) where T : struct
+    {
+        var pointer = System.Runtime.InteropServices.Marshal.AllocHGlobal(System.Runtime.InteropServices.Marshal.SizeOf<T>());
+        try
+        {
+            System.Runtime.InteropServices.Marshal.StructureToPtr(value, pointer, false);
+            return api.Callbacks[kind](0, new IntPtr(message), pointer);
+        }
+        finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(pointer); }
+    }
+    private static void DrainRaw(ProcessWindowPickController controller)
+    { controller.Stop(); controller.Input(ProcessPickInput.LeftUp, 0); controller.Input(ProcessPickInput.EscapeUp, 0); controller.Tick(); }
+
     private sealed class FakeApi : ProcessPickApi
     {
         internal readonly Dictionary<long, ProcessPickWindowFacts> Windows = new()
@@ -482,13 +613,15 @@ internal static class ProcessWindowPickTests
             return Windows.Keys.ToArray();
         }
         internal readonly HashSet<IntPtr> Installed = [];
+        internal readonly Dictionary<int, HookProc> Callbacks = new();
+        internal int FactReads;
         internal int FailedHook, ProcessReads;
         internal bool ClientMismatch, DisplayChanged;
         internal bool LayeredInitialized = false;
         internal bool FailLayered;
         internal long PointerRoot = 30;
         internal override int LastError => 5;
-        internal override ProcessPickWindowFacts Facts(long handle) => Windows.GetValueOrDefault(handle) ?? new(false, false, false, 0, 0, false, 0, 0, 0, 0);
+        internal override ProcessPickWindowFacts Facts(long handle) { FactReads++; return Windows.GetValueOrDefault(handle) ?? new(false, false, false, 0, 0, false, 0, 0, 0, 0); }
         internal override ProcessPickViewport Viewport() => new(-1920, -200, DisplayChanged ? 3000u : 3840u, 1280);
         internal override ProcessPickViewport ClientViewport(long handle) => ClientMismatch ? Viewport() with { Left = -1919 } : Viewport();
         internal override long GetStyle(long hwnd, int index) => Styles.GetValueOrDefault((hwnd, index), index == -16 ? 0x00CF0000 : 0);
@@ -520,7 +653,7 @@ internal static class ProcessWindowPickTests
         internal override long RootAt(int x, int y) => PointerRoot;
         internal override string? ProcessName(uint pid, out int error) { ProcessReads++; error = 0; return "owned-fixture.exe"; }
         internal override IntPtr Install(int kind, HookProc callback)
-        { Check(Windows[10].Visible && Windows[11].Visible, "hook admission precedes source hiding"); if (kind == FailedHook) return IntPtr.Zero; var handle = new IntPtr(kind); Installed.Add(handle); return handle; }
+        { Check(Windows[10].Visible && Windows[11].Visible, "hook admission precedes source hiding"); if (kind == FailedHook) return IntPtr.Zero; var handle = new IntPtr(kind); Callbacks[kind] = callback; Installed.Add(handle); return handle; }
         internal override void Unhook(IntPtr hook) { Installed.Remove(hook); }
         internal override IntPtr Next(int code, IntPtr message, IntPtr data) => IntPtr.Zero;
     }

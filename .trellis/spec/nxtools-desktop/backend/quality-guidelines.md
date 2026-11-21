@@ -699,3 +699,20 @@ Good: About leaves the primary window enabled while open and avoids framework pa
 Production About pointer Close asserts one WindowClosed and retired update, caption snapshots assert only Close, and the constructor-policy test asserts Normal/fixed capabilities. `python tests/architecture/about-window-policy.py` binds the actual factory/call site to the inspected native modal branch. Existing About layout/update, settings transactions and caption tests remain. Shared settled entrance must not replay after ordinary refresh; use the released animation's actual clock. Real parent-window frame capture and physical/DPI interaction remain separate acceptance.
 ### 7. Wrong vs Correct
 Wrong: assume is_minimizable/is_resizable options remove private TitleBar controls or that a caption change proves all UI flashing resolved. Correct: use the existing client close component and explicit modeless creation policy, protect the actual lifecycle with regressions, and report native/visual evidence separately.
+
+## Scenario: Stable Clipboard header during feature apply
+### 1. Scope / Trigger
+Main Clipboard enable Switch, background statistics refresh and native configuration receipts.
+### 2. Signatures
+ClipboardOverview.has_snapshot/metadata; MainWindow.request_clipboard_overview; original ClipboardApplication.set_feature_enabled/feature_configuration_status. Evidence: `repo:rust/apps/nxtools-desktop/src/main_window/clipboard_page.rs` and its kit_migration_tests.rs.
+### 3. Contracts
+Only successful counts establish a snapshot, including valid zero. Keep last-good numeric metadata while refreshing; initial load/unavailable remains explicit. A real failure retains counts with failure copy and is not cleared until success. Missing worker does not fabricate zero. Preserve request generation/coalescing and original worker/subscription/feature/pause owners. Status uses a stable elastic lane, not label-dependent width; pending native apply and confirmed/error values remain distinct. No blanket motion disable or per-frame logging.
+### 4. Validation & Error Matrix
+Loaded+loading -> retain counts. Initial failure -> unavailable, not zero. Loaded failure -> last counts plus visible failure. Pending ACK -> original pending status, no false success. Retired generation -> no stale replacement. Normal enable/disable does not change history.
+### 5. Good/Base/Bad Cases
+Good: toggle with held counts keeps header/status layout and correct native states. Base: new history changes update counts through the original worker. Bad: every application notify replaces valid counts with loading copy or resets status layout/entrance animation.
+### 6. Tests Required
+Actual Root/MainWindow/official Switch with temporary worker and fake configuration ACK; test-only bounded worker barrier inspects pending/terminal/settled frames, normal/reduced motion, valid empty snapshot, entity identity, one command and closed-popup no-presentation changes. Retain keyboard/persistence/motion and snapshot error tests. Frame bounds/model text are separate from native glyph-opacity/Win10/DPI/physical/user acceptance.
+### 7. Wrong vs Correct
+Wrong: overview.loading -> replace all numbers with a loading label after every feature-state notification.
+Correct: successful snapshot presence -> numeric projection during refresh; stable status lane -> original pending/applied/error semantics.

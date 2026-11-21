@@ -936,6 +936,23 @@ impl ClipboardCaptureWorkerHandle {
             .map_err(|_| "clipboard history worker reply type mismatch".to_owned())?
     }
 
+    #[cfg(test)]
+    pub(crate) fn wait_at_presentation_test_barrier(
+        &self,
+        entered: mpsc::SyncSender<()>,
+        release: mpsc::Receiver<()>,
+    ) -> Result<(), String> {
+        self.request_state_message(move |_| {
+            entered
+                .send(())
+                .map_err(|_| "test barrier observer closed".to_owned())?;
+            release
+                .recv_timeout(std::time::Duration::from_secs(10))
+                .map_err(|_| "test barrier release timed out".to_owned())?;
+            Ok(())
+        })
+    }
+
     pub(crate) fn export_archive(
         &self,
         path: PathBuf,

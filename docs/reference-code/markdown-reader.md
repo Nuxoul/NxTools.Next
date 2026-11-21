@@ -99,3 +99,15 @@ calls toggle_expand; its rendered entry's full-click callback wraps the caller's
 `mod.rs::outline_items` represents subheadings as expanded TreeItem children. A heading navigation
 click must not also invoke the parent Tree's folder toggle. Preserve the original Root release,
 Tree keyboard navigation and Reader source-anchor selection; no framework patch or replacement tree.
+
+## Compact feature settings composition
+
+The existing460x320 feature window keeps its common caption, first-body enable row and sole scroll
+owner. SettingsView composes official Normal GroupBox reading preferences, then Windows file
+association, followed by preview. Small horizontal Form/Field aligns264DIP labels and the elastic
+control lane; Switch uses the official default tier and all font/association/preview actions use
+Small outlined Buttons without Toolbar.child adaptation. Immediate section saves, four original
+association actions, observed .md/.markdown states and deferred notification/source identities
+remain. Base control snapshots and actual group/field/action bounds are compiled fixture evidence;
+ordinary GPUI Group accessibility is not certified by Base test snapshots or a Windows reader.
+[Component and lifecycle contract](../../.trellis/tasks/11-20-settings-lifecycle-feedback/markdown-settings.md).

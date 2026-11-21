@@ -16,6 +16,9 @@ internal sealed class ProcessWindowPickCoordinator : IDisposable
     internal ProcessWindowPickCoordinator(Func<ProcessWindowPickChangedEvent, bool> publish, IPlatformLog log)
     { _controller = new(new ProcessWindowPickNative(), publish, log); }
 
+    internal ProcessWindowPickCoordinator(ProcessWindowPickController controller)
+    { _controller = controller; }
+
     internal ProcessWindowPickCoordinator(ProcessWindowPickController controller, Func<Action, bool> enqueue)
     { _controller = controller; _fixtureEnqueue = enqueue; }
 

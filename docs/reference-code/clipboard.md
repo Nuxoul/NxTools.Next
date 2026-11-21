@@ -1064,3 +1064,26 @@ No clipboard representation, content or paths cross into the elevated input requ
 Rechecked legacy `Views/ClipboardHistoryPopupWindow.axaml.cs:127-167,206-259,430-507`: Open/Activated focuses search, Deactivated and the45ms outside-pointer monitor hide through HidePopup -> preview/menu retirement -> inherited Window.Hide. Native Avalonia internals are unavailable. Next's original chain is ordinary `EventWindow::MonitorPointerPress -> GlobalPointerPressedEvent -> ClipboardApplication::handle_platform_event -> ClipboardPanel::handle_pointer_pressed -> close_with_reason -> native visibility acknowledgement`. A same-session administrator window can remain foreground after a failed popup activation; another click on it creates no ForegroundChanged fallback, and the ordinary mouse-state sampler can miss that press.
 
 Use the existing authenticated elevated helper's message window to observe primary/secondary press transitions on administrator targets and forward the sampled root HWND, helper identity and original timestamp. Ordinary EventWindow validates the current helper/configuration, converts the original sample time and assigns the original platform event sequence before the same pointer event dispatch. No clipboard data, pointer-movement stream, new worker or global mouse hook is needed. Keep pin/menu/pending-paste/current-popup/preview and stale-sample guards in Rust; press release/held state cannot repeatedly dismiss. The same private helper channel may activate only the currently connected Desktop peer's windows, with final foreground/focus readback; ordinary windows and unavailable-before-dispatch fallback retain their original path. No whole-desktop elevation or protected deployment change is implied.
+
+## Persistent feature enable baseline
+
+The existing Clipboard feature Switch saves its original section before ConfigureClipboard.
+EventWindow.ApplyClipboardCaptureEnabled clears pending source/retry state and records only
+GetClipboardSequenceNumber metadata. Baseline0 remains an excluded baseline, not feature rejection;
+no old content is read and the next changed sequence uses the original capture path. Actual
+operation exceptions still return native failure and leave capture closed. Independent temporary
+pause survives feature disable/enable. ClipboardPauseTests exercises the real EventWindow seam
+with injected sequence0, changed sequence and genuine native exception; live clipboard is separate.
+[Current feedback contract](../../.trellis/tasks/11-20-settings-lifecycle-feedback/clipboard.md).
+
+## Feature-toggle header stability
+
+MainWindow's original Clipboard application observer requests counts on state notification;
+ConfigureClipboard pending and terminal updates can both notify without changing history.
+ClipboardOverview therefore records successful-snapshot presence independently of loading and
+valid zero counts. Main header metadata retains the last successful numbers during refresh;
+initial loading/unavailability and failed refresh remain explicit. The existing status element
+uses a stable elastic lane while feature_configuration_status still reports pending/applied/error.
+The real page/Switch/worker-barrier regression checks intermediate and terminal frames, original
+entity/command ownership and normal/reduced motion. No native capture/pause/zero-baseline behavior
+or shared animation framework changes. [Current boundary](../../.trellis/tasks/11-21-launcher-surface-clipboard-flicker/design.md).

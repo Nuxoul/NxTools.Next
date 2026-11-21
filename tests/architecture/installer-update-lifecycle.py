@@ -25,10 +25,15 @@ for name in ('NxTools.release.json', 'NxTools.release.sig'):
 assert '-NewManifestPath' in prepare and '-NewSignaturePath' in prepare
 assert "UpgradePreparationReady := False;" in prepare
 assert prepare.index("Started := Exec(") < prepare.index("UpgradePreparationReady := True;")
+assert "RegKeyExists(HKLM64, 'SYSTEM\\CurrentControlSet\\Services\\NxToolsIndexerV1')" not in prepare, 'Service registration alone must not request installation elevation'
+assert "if BootstrapMigrationDirectory <> '' then" in prepare
+assert 'if Started and (ResultCode = 5) then' in prepare
 assert "if UpgradePreparationReady and (not UpgradeFilesCommitted) and (not UpgradeFinalizationFailed)" in source
 entry = helper.split("if ($LibraryOnly) { return }", 1)[1]
 assert "Prepare-UpgradeBrowserHost $InstallDirectory $StatePath $CorrelationId -NewManifestPath $NewManifestPath -NewSignaturePath $NewSignaturePath" in entry
 assert "Suspend-UpgradeBrowserHost $InstallDirectory" not in entry
+assert len(re.findall(r'^\s*Invoke-UpgradeBootstrapMigration\s', entry, re.M)) == 1, 'One preparation owns exactly one bootstrap migration invocation'
+assert '-RepairMissing:$RepairMissingBootstrap -RotateTrusted:$RotateTrustedBootstrap' in entry
 preparation = helper.split("function Prepare-UpgradeBrowserHost", 1)[1].split("if ($LibraryOnly) { return }", 1)[0]
 assert preparation.index("Assert-UpgradeSetRecord $installPath $state") < preparation.index("Complete-UpgradeOwnedSet $installPath $statePath $state -Committed")
 assert preparation.index("Undo-UpgradeOwnedSet $installPath $statePath $state") < preparation.index("Suspend-UpgradeBrowserHost $installPath $statePath $OperationId")
@@ -87,3 +92,4 @@ assert '--uninstall-archive-integration' in uninstall
 assert 'Remove-NxToolsArchiveRegistration' not in uninstall and 'archive-shell-integration-applied.json' not in uninstall
 assert uninstall.index('Restore-NxToolsArchiveIntegration $InstallDirectory $CorrelationId') < uninstall.index('if ($RemovePersonalData) { Invoke-NxToolsPersonalDataCleanup')
 print('PASS installer archive Apply is mandatory, original-user and observed; uninstall delegates before data cleanup; source-only')
+print('PASS ordinary preparation requests elevation only for explicit maintenance or actual access denial; one bootstrap invocation; source-only')
