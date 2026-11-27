@@ -56,6 +56,7 @@ pub(crate) struct FloatingAssistantApplication {
     pub(super) generation: u64,
     connection: Option<u64>,
     lifecycle: Lifecycle,
+    material_wait: Option<Uuid>,
     bounds: Option<FloatingAssistantBounds>,
     dirty: bool,
     hovered: bool,
@@ -114,6 +115,7 @@ impl FloatingAssistantApplication {
             generation: 1,
             connection: None,
             lifecycle: Lifecycle::default(),
+            material_wait: None,
             bounds: None,
             dirty: false,
             hovered: false,
@@ -299,23 +301,12 @@ impl FloatingAssistantApplication {
     ) {
         let id = Uuid::new_v4();
         self.lifecycle.begin(id, phase);
-        let command = self.command(operation, None);
+        self.material_wait = None;
         if phase == Phase::Prepare && self.connection.is_none() {
             self.connection = self.platform.floating_assistant_connection();
         }
-        if self
-            .connection
-            .ok_or(nxtools_ipc::PlatformBridgeError::Disconnected)
-            .and_then(|origin| self.platform.send_floating_assistant(command, id, origin))
-            .is_err()
-        {
-            self.lifecycle.pending = None;
-            self.fail("Windows 平台未连接，悬浮窗尚未应用；请重试。", cx);
-            return;
-        }
-        tracing::info!(event="floating_assistant.window.accepted",correlation_id=%id,session_id=%self.session,generation=self.generation,?phase,"floating native operation admitted");
-        // Retire retains its exact identity until the original result or pipe EOF.
         if phase == Phase::Retire {
+            self.dispatch_pending(id, operation, phase, cx);
             return;
         }
         cx.spawn(async move |this, cx| {
@@ -327,20 +318,49 @@ impl FloatingAssistantApplication {
                     .is_some_and(|(pending, _)| pending == id)
                 {
                     owner.lifecycle.pending = None;
+                    owner.material_wait = None;
                     owner.fail("悬浮窗的 Windows 应用操作超时，请重试。", cx);
                     owner.emergency_hide(cx);
                 }
             });
         })
         .detach();
+        if self.material_admitted(id, operation, phase, cx) {
+            self.dispatch_pending(id, operation, phase, cx);
+        }
+    }
+    fn dispatch_pending(
+        &mut self,
+        id: Uuid,
+        operation: FloatingAssistantOperation,
+        phase: Phase,
+        cx: &mut Context<Self>,
+    ) {
+        let command = self.command(operation, None);
+        if self
+            .connection
+            .ok_or(nxtools_ipc::PlatformBridgeError::Disconnected)
+            .and_then(|origin| self.platform.send_floating_assistant(command, id, origin))
+            .is_err()
+        {
+            self.lifecycle.pending = None;
+            self.fail("Windows 平台未连接，悬浮窗尚未应用；请重试。", cx);
+            return;
+        }
+        tracing::info!(event="floating_assistant.window.accepted",correlation_id=%id,session_id=%self.session,generation=self.generation,?phase,"floating native operation admitted");
     }
     fn sync(&mut self, cx: &mut Context<Self>) {
         if !self.platform.is_connected() {
             return;
         }
         if self.lifecycle.pending.is_some() {
-            self.dirty = true;
-            return;
+            if self.material_wait.is_some() && !self.desired_visible() {
+                self.material_wait = None;
+                self.lifecycle.pending = None;
+            } else {
+                self.dirty = true;
+                return;
+            }
         }
         if !self.desired_visible() {
             self.dirty = false;
@@ -876,5 +896,8 @@ impl Drop for FloatingAssistantApplication {
     }
 }
 
+mod material;
+#[cfg(test)]
+mod material_tests;
 #[cfg(test)]
 mod tests;

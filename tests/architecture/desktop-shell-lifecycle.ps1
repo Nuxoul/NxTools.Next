@@ -118,7 +118,8 @@ $globalRulesSource = Get-Content -Raw (Join-Path $root 'rust\apps\nxtools-deskto
 foreach ($contract in @('Settings::new("global-official-settings")', 'SettingPage::new(',
     'SettingGroup::new()', 'SettingItem::render(', 'aligned_setting_row(', 'input_segmented_control(',
     '.resettable(false)', 'Form::vertical()', 'Field::new()', 'Switch::new(',
-    'AppConfig::update_global_settings_with_blacklist(', 'self.publish_live_blacklist(correlation_id, cx)',
+    'let next_config = match AppConfig::merge_global_settings_with_blacklist(', '&baseline_system,',
+    'let system = next_config.system.clone();', 'self.publish_live_blacklist(correlation_id, cx)',
     'fn save(', 'cx.defer(move |cx|', 'self.pending_apply.is_some() || self.draft_busy.get()',
     'GLOBAL_SETTINGS_WINDOW_WIDTH: f32 = 720.0', 'GLOBAL_SETTINGS_WINDOW_HEIGHT: f32 = 480.0')) {
     if (-not $globalSettingsSource.Contains($contract)) { throw "Global Settings component/original owner missing: $contract" }

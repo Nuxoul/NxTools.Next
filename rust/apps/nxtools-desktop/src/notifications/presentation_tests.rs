@@ -353,11 +353,12 @@ fn notification_sizing_short_copy_stays_natural_and_long_copy_scrolls_to_end(
         "real longbody not flexcompressed"
     );
     for _ in 0..8 {
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: copy.center(),
             delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(-1000.0))),
             modifiers: Default::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         draw(surface);
     }

@@ -375,6 +375,12 @@ pub(crate) struct QuickLaunchPreviewSession {
     pub(crate) pending_stage: Option<QuickLaunchPreviewPendingStage>,
     pub(crate) image_asset: Option<Arc<Image>>,
     pub(crate) exit_generation: u64,
+    pub(crate) material: crate::ui::material::Preparation,
+    pub(crate) material_wait: Option<super::preview_presentation::PreviewMaterialWait>,
+    pub(crate) material_lifecycle: Option<(uuid::Uuid, Instant)>,
+    pub(crate) material_subscriptions: Vec<Subscription>,
+    pub(crate) no_activate_ready: bool,
+    pub(crate) restore_primary_focus: bool,
 }
 
 #[derive(Clone)]
@@ -398,6 +404,9 @@ pub(crate) struct QuickLaunchPreviewWindowIdentity {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum QuickLaunchPreviewStagePhase {
+    InitialNoActivate,
+    InitialBounds,
+    InitialShow,
     MoveOffscreen,
     ShowOffscreen,
     RevealOnscreen,

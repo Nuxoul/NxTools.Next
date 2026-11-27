@@ -31,7 +31,7 @@ fn fixture(
     let application = cx.update(|cx| {
         let notifications = cx.new(|_| NotificationCenter::default());
         cx.new(|cx| {
-            DownloadApplication::new(
+            super::ordinary_presentation_fixture::confirmed_application(
                 DownloadEngine::open_in_memory().expect("memory engine"),
                 Rc::new(platform),
                 notifications,
@@ -151,7 +151,7 @@ fn reveal_server(surface: &mut VisualTestContext) {
         if row.top() >= body.top() && row.bottom() <= body.bottom() {
             return;
         }
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(body.right() - px(8.0), body.center().y),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -1.0)),
             ..Default::default()

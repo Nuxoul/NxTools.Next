@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 ASSETS = ROOT / "rust/apps/nxtools-desktop/assets/themes"
-schema = (ROOT / "vendor/gpui-component-080/src/theme/schema.rs").read_text(encoding="utf-8")
+schema = (ROOT / "vendor/gpui-component-0100/src/theme/schema.rs").read_text(encoding="utf-8")
 known = set(re.findall(r'#\[serde\(rename = "([^"]+)"\)\]', schema))
 
 def luminance(value):

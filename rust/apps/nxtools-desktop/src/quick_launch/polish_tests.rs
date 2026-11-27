@@ -284,7 +284,7 @@ fn polished_preview_keeps_identity_and_path_inside_fixed_native_shell(cx: &mut T
     assert_eq!(content.bottom(), footer.top());
 }
 
-fn release_activation(window: &mut gpui_kit::VisualTestContext, key: &str) {
+fn release_activation(window: &mut gpui_kit::VisualTestContext, key: &'static str) {
     window.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: gpui_kit::Keystroke::parse(key).expect("activation release"),
     });

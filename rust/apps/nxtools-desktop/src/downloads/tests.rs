@@ -1870,11 +1870,12 @@ fn production_delayed_start_uses_shared_popover_and_preserves_draft_lifecycle(
             if day.top() >= shell.top() + px(4.0) && day.bottom() <= time.top() - px(4.0) {
                 return day;
             }
-            window.simulate_event(gpui_kit::ScrollWheelEvent {
+            window.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(shell.center().x, time.top() - px(40.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -1.0)),
                 modifiers: Modifiers::default(),
                 touch_phase: gpui_kit::TouchPhase::Moved,
+                source: Default::default(),
             });
             window.run_until_parked();
             window
@@ -3780,7 +3781,7 @@ pub(super) fn download_application_for_window_test_with_platform(
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let application = cx.update(|cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            super::ordinary_presentation_fixture::confirmed_application(
                 engine,
                 Rc::new(platform),
                 notifications,
@@ -5308,7 +5309,7 @@ fn shutdown_now_crosses_the_typed_platform_boundary_and_closes_on_success(cx: &m
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let application = cx.update(|cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            super::ordinary_presentation_fixture::confirmed_application(
                 engine,
                 Rc::new(platform),
                 notifications,
@@ -6275,7 +6276,7 @@ fn reveal_category_setting(
         } else {
             -3.0
         };
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(content.right() - px(30.0), content.center().y),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, direction)),
             ..Default::default()
@@ -6323,7 +6324,7 @@ fn category_settings_select_and_edit_on_one_page_scroll(cx: &mut TestAppContext)
         .debug_bounds("download-settings-shell-content")
         .expect("page");
     for _ in 0..3 {
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(content.right() - px(30.0), content.center().y),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 4.0)),
             ..Default::default()
@@ -6375,7 +6376,7 @@ fn category_settings_select_and_edit_on_one_page_scroll(cx: &mut TestAppContext)
     assert!(name.size.height >= px(32.0) && directory_field.size.height >= px(32.0));
     assert!(extensions.top() >= name.top() && url.top() >= extensions.top());
     for _ in 0..2 {
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: name.center(),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 4.0)),
             ..Default::default()
@@ -6389,7 +6390,7 @@ fn category_settings_select_and_edit_on_one_page_scroll(cx: &mut TestAppContext)
         .expect("natural editor");
     let name = reveal_category_setting(&mut window, "download-settings-category-name-field");
     for _ in 0..2 {
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: name.center(),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -4.0)),
             ..Default::default()

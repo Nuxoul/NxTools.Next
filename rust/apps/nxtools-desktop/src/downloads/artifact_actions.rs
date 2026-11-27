@@ -519,11 +519,8 @@ impl DownloadApplication {
         cx: &mut Context<Self>,
     ) {
         if let Some(window) = self.delete_confirmation_windows.get(&task_id).cloned() {
-            if batch.is_none()
-                && window
-                    .update(cx, |_, window, _| window.activate_window())
-                    .is_ok()
-            {
+            if batch.is_none() && cx.windows().contains(&window) {
+                self.prepare_delete_material(task_id, window, false, cx);
                 return;
             }
             let _ = window.update(cx, |_, window, _| window.remove_window());
@@ -537,14 +534,14 @@ impl DownloadApplication {
             WindowOptions {
                 window_bounds: Some(window_bounds),
                 titlebar: None,
-                focus: true,
-                show: true,
+                focus: false,
+                show: false,
                 kind: WindowKind::Normal,
                 is_movable: true,
                 is_resizable: false,
                 is_minimizable: false,
                 display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.Download.DeleteConfirmation".into()),
                 window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
@@ -579,6 +576,7 @@ impl DownloadApplication {
             Ok(window) => {
                 self.delete_confirmation_windows
                     .insert(task_id, window.into());
+                self.prepare_delete_material(task_id, window.into(), true, cx);
                 if is_batch {
                     self.pending_batch_confirmation = Some(task_id);
                     cx.notify();

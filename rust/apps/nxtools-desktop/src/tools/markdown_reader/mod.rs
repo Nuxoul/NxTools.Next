@@ -9,9 +9,14 @@ mod export_tests;
 mod foreground;
 #[cfg(test)]
 mod header_tests;
+#[cfg(test)]
+mod heading_flash_motion_tests;
 mod history;
 #[cfg(test)]
 mod history_tests;
+mod material;
+#[cfg(test)]
+mod material_tests;
 mod outline;
 #[cfg(test)]
 mod outline_pointer_tests;
@@ -63,8 +68,9 @@ pub(crate) struct ReaderWindow(Option<AnyWindowHandle>);
 impl gpui_kit::Global for ReaderWindow {}
 
 fn show(platform: Option<Rc<PlatformBridge>>, cx: &mut App) -> Option<AnyWindowHandle> {
-    let handle = show_window(platform, Uuid::new_v4(), cx)?;
-    let _ = handle.update(cx, |_, window, _| window.activate_window());
+    let operation = Uuid::new_v4();
+    let handle = show_window(platform, operation, cx)?;
+    cx.defer(move |cx| material::present(handle, operation, false, cx));
     Some(handle)
 }
 
@@ -85,15 +91,23 @@ fn show_window(
     let started = Instant::now();
     let bounds = WindowBounds::centered(size(px(1020.), px(720.)), cx);
     tracing::info!(event = "markdown.reader.started", correlation_id = %correlation);
+    let material_platform = platform.clone();
+    let material_pending = material_platform.is_some();
     let result = cx.open_window(
         gpui_kit::WindowOptions {
+            show: !material_pending,
+            focus: !material_pending,
             window_bounds: Some(bounds),
             window_min_size: Some(size(px(680.), px(460.))),
             ..caption_window_options()
         },
         move |window, cx| {
             window.set_window_title("Markdown 阅读器 — NxTools");
-            let view = cx.new(|cx| Reader::new(platform, window, cx));
+            let view = cx.new(|cx| {
+                let mut view = Reader::new(platform, window, cx);
+                view.material_pending = material_pending;
+                view
+            });
             let owner = view.downgrade();
             window.on_window_should_close(cx, move |window, cx| {
                 let owner = owner.clone();
@@ -108,6 +122,9 @@ fn show_window(
     let handle = result.ok().map(AnyWindowHandle::from);
     if let Some(handle) = handle {
         cx.set_global(ReaderWindow(Some(handle)));
+        if let Some(platform) = material_platform {
+            material::prepare(handle, platform, cx);
+        }
     }
     tracing::info!(event = "markdown.reader.finished", correlation_id = %correlation, success = handle.is_some(), elapsed_ms = started.elapsed().as_millis());
     handle
@@ -173,7 +190,7 @@ pub(crate) fn open_external(
                     reader.open_paths(vec![path], None, operation, window, cx);
                 }
                 cx.defer_in(window, move |reader, window, _| {
-                    reader.request_foreground(operation, window)
+                    reader.present_when_ready(operation, true, window)
                 });
                 true
             })
@@ -227,6 +244,8 @@ struct Reader {
     platform: Option<Rc<PlatformBridge>>,
     picker: Option<(Uuid, Instant)>,
     foreground: Option<(Uuid, Instant)>,
+    material_pending: bool,
+    material_presentation: Option<(Uuid, bool)>,
     tabs: Vec<TabDocument>,
     active: usize,
     next_tab: usize,
@@ -300,6 +319,8 @@ impl Reader {
             platform,
             picker: None,
             foreground: None,
+            material_pending: false,
+            material_presentation: None,
             tabs: Vec::new(),
             active: 0,
             next_tab: 0,
@@ -1150,7 +1171,7 @@ impl Reader {
                                 let link = link.to_string();
                                 window.defer(cx, move |window, cx| {
                                     let _ = owner.update(cx, |this, cx| {
-                                        if !this.active_tab().is_some_and(|tab| tab.id == id) {
+                                        if this.active_tab().is_none_or(|tab| tab.id != id) {
                                             return;
                                         }
                                         if let Some(anchor) = link.strip_prefix('#') {

@@ -260,7 +260,8 @@ impl ArchiveApplication {
                 let owner = owner.clone();
                 let prompt = prompt.clone();
                 let dialog_alive = alive.clone();
-                window.open_dialog(cx, move |dialog, _, _| {
+                window.open_dialog(cx, move |dialog, _, cx| {
+                    let dialog = dialog.bg(crate::theme::overlay_background(cx));
                     let confirm_owner = owner.clone();
                     let cancel_owner = owner.clone();
                     let confirm_prompt = prompt.clone();

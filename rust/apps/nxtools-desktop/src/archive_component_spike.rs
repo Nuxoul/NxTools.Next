@@ -275,7 +275,7 @@ fn click(surface: &mut VisualTestContext, id: usize, modifiers: Modifiers, count
     });
     draw(surface);
 }
-fn key(surface: &mut VisualTestContext, stroke: &str) {
+fn key(surface: &mut VisualTestContext, stroke: &'static str) {
     surface.simulate_event(KeyDownEvent {
         keystroke: Keystroke::parse(stroke).expect("fixture key"),
         is_held: false,

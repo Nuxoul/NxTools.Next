@@ -105,7 +105,7 @@ impl Drop for KeyboardFixture {
     }
 }
 
-fn down(surface: &mut VisualTestContext, key: &str, held: bool, character: bool) {
+fn down(surface: &mut VisualTestContext, key: &'static str, held: bool, character: bool) {
     surface.simulate_event(gpui_kit::KeyDownEvent {
         keystroke: gpui_kit::Keystroke::parse(key).expect("keyboard fixture key"),
         is_held: held,
@@ -113,7 +113,7 @@ fn down(surface: &mut VisualTestContext, key: &str, held: bool, character: bool)
     });
 }
 
-fn up(surface: &mut VisualTestContext, key: &str) {
+fn up(surface: &mut VisualTestContext, key: &'static str) {
     surface.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: gpui_kit::Keystroke::parse(key).expect("keyboard fixture release"),
     });

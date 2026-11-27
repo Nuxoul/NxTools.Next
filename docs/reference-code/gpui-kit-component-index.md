@@ -1,7 +1,7 @@
-# GPUI Kit component index: current0.8.0 delta and historical0.7.1 map
+# GPUI Kit component index: current0.10.0 route and historical0.7.1 map
 
-## Current product0.8.0 (2026-10-21)
-Read [current release/API/patch delta](gpui-kit-080.md) FIRST. User explicitly authorized exactKit0.8.0/defaultpre0.3.9; priorpins below are historical, not a prohibition on this approvedupgrade. All priorcatalogsourcecoordinates still have0.8.0releasefiles; Diff/publiceditor_host now exist. CurrentToolbarparentghost+compactrule persists. The historicaltable/pagehashes below are NOT rewritten as a new79pageaudit and do not certify every0.8.0method/interaction. Newvendorpaths and patchprovenance are in currentreleaseindex; use exact0.8.0source for newwork.
+## Current product0.10.0
+Read [current release/API/patch delta](gpui-kit-0100.md) FIRST. User explicitly authorized exact Kit0.10.0/defaultpre0.3.12; prior pins below are historical. Toolbar parent ghost+compact rules and existing layout/lifecycle owners remain. Historical table/page hashes below are not a new79-page audit and do not certify current API/interaction acceptance. Active vendor paths and provenance are in the current release index; inspect exact0.10.0 source for new work.
 
 ## Historical component re-audit (2026-10-15)
 FIRST read the short mandatory [component selection rules](../../.trellis/spec/shared/ui-component-selection.md), then the [79-entry historical table](gpui-kit-component-table.md) or [offline searchable viewer](gpui-kit-components.html). The 2026-10-15 audit found website 0.7.3 and 79 Component pages; all 79 were fetched/read, with Diff then unavailable in product-locked 0.7.1 (no module/export). The 78-entry table below remains the detailed **historical locked 0.7.1 source map**, not a fresh 0.8.0 inventory. Base 47/Shell 15 were not refreshed in that audit. [Machine-readable provenance](gpui-kit-component-catalog.json) retains its page/source digests and version distinction.
@@ -20,12 +20,12 @@ page from leaf controls or keep the old hand-painted layout. The user requested
 this index after the Settings page-level component was overlooked despite being
 in the approved migration plan.
 
-- Historical inventory date: 2026-10-11; product dependency at that time was `gpui-kit = "=0.7.1"`. Current [Cargo.toml](../../Cargo.toml) pins 0.8.0.
+- Historical inventory date: 2026-10-11; product dependency at that time was `gpui-kit = "=0.7.1"`. Current [Cargo.toml](../../Cargo.toml) pins 0.10.0.
 - Historical [Component catalog](https://gpui-kit.com/zh-CN/component/) snapshot: 78 named documentation entries, excluding the landing page; the separate 2026-10-15 audit recorded 79. Counts describe documentation families, not Rust types.
 - Historical [Base catalog](https://gpui-kit.com/zh-CN/base/):47 navigation entries including Getting Started/shared infrastructure; not refreshed in2026-10-15 Component-only re-audit.
 - Historical [Shell catalog](https://gpui-kit.com/zh-CN/shell/):15 documentation entries, not15styled Rust components; not refreshed this time.
 - The historical 78-page audit and later 79-page audit inspected purpose/import/public entries; neither claims every method/example compiled, every demo executed or every interaction visually accepted.
-- The later historical website selector was 0.7.3 and differed from product-locked 0.7.1. For current work follow exact published 0.8.0 source and [release delta](gpui-kit-080.md), not guessed imports or historical API limits.
+- The later historical website selector was 0.7.3 and differed from product-locked 0.7.1. For current work follow exact published 0.10.0 source and [release delta](gpui-kit-0100.md), not guessed imports or historical API limits.
 - Published-source notation below: `C:` means `gpui-component-0.7.1/src/`, `B:` means `gpui-base-0.7.1/src/`, `G:` means `gpui-pre-0.3.8/src/`. File paths are crate-relative, not workspace files. Public import prefixes are `gpui_kit::component::`, `gpui_kit::base::` and `gpui_kit::` respectively.
 - On this workstation the verified published snapshots are under `C:\Users\Administrator\.pi-desktop\scratch\b54c35cc-1a3b-45d3-ba44-64d6f226efc4\gpui-kit-071-reference\`. They are a local lookup convenience; restore the exact published version if unavailable, never silently substitute main/latest.
 - Provenance, native exceptions and detailed release contracts: [gpui-kit-071.md](gpui-kit-071.md) and [release research](../../.trellis/tasks/10-10-gpui-kit-component-visual-migration/research/kit-release-contracts.md).

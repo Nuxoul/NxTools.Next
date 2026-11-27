@@ -3403,7 +3403,7 @@ pub(crate) fn new_download_window_options(window_bounds: WindowBounds) -> Window
         is_resizable: false,
         is_minimizable: false,
         display_id: None,
-        window_background: WindowBackgroundAppearance::Opaque,
+        window_background: WindowBackgroundAppearance::Transparent,
         app_id: Some("NxTools.NewDownload".into()),
         window_min_size: Some(new_download_window_size(false)),
         window_decorations: Some(WindowDecorations::Client),

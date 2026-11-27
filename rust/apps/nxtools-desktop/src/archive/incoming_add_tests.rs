@@ -148,6 +148,9 @@ fn incoming_add_button_uses_requested_name(cx: &mut TestAppContext) {
 #[gpui_kit::test]
 fn incoming_add_failure_uses_operation_notice_once(cx: &mut TestAppContext) {
     use crate::notifications::{NotificationCenter, NotificationLevel};
+    use nxtools_protocol::window_material::{
+        AppliedWindowMaterial, EffectiveWindowMaterial, MaterialFallbackReason, MaterialSurface,
+    };
     let (owner, endpoint, id, _) = preview_fixture(cx);
     let center = cx.new(|_| NotificationCenter::default());
     cx.update(|cx| crate::notifications::register(&center, cx));
@@ -238,14 +241,25 @@ fn incoming_add_failure_uses_operation_notice_once(cx: &mut TestAppContext) {
         added[0]
     });
     assert_ne!(popup, main);
+    let mut popup_hwnd = None;
+    let mut applied_material = false;
     let mut revealed = false;
     for _ in 0..8 {
         let wire = endpoint
             .try_receive_command_for_contract_test()
             .expect("notification native phase");
+        let mut material = false;
         let data = match wire.message {
             Message::PlatformCommand(PlatformCommand::PrepareNotificationWindow(prepare)) => {
                 assert!(!prepare.keep_visible, "hidden preparation before reveal");
+                popup_hwnd = Some(prepare.window_handle);
+                cx.update(|cx| {
+                    crate::ui::material::runtime::set_test_window_handle(
+                        popup,
+                        prepare.window_handle,
+                        cx,
+                    )
+                });
                 let surface = VisualTestContext::from_window(popup, cx);
                 surface.simulate_scale_factor_change(1.0);
                 surface.simulate_resize(gpui_kit::size(
@@ -257,8 +271,29 @@ fn incoming_add_failure_uses_operation_notice_once(cx: &mut TestAppContext) {
                     prepare.width, prepare.height
                 ))
             }
+            Message::PlatformCommand(PlatformCommand::ApplyWindowMaterial(command)) => {
+                assert_eq!(Some(command.window_handle), popup_hwnd);
+                assert_eq!(command.surface, MaterialSurface::Transparent);
+                assert!(!applied_material && !revealed);
+                let receipt = AppliedWindowMaterial {
+                    session_id: command.session_id,
+                    facts_revision: command.facts_revision,
+                    window_handle: command.window_handle,
+                    generation: command.generation,
+                    style: command.style,
+                    surface: command.surface,
+                    dark: command.dark,
+                    effective: EffectiveWindowMaterial::Transparent,
+                    fallback_reason: MaterialFallbackReason::None,
+                    native_error_code: 0,
+                };
+                material = true;
+                Some(serde_json::to_string(&receipt).expect("typed transparent receipt"))
+            }
             Message::PlatformCommand(PlatformCommand::SetWindowVisibility(show)) => {
                 assert!(show.visible);
+                assert!(applied_material, "transparent receipt precedes reveal");
+                assert_eq!(Some(show.window_handle), popup_hwnd);
                 assert!(!revealed, "no duplicate reveal");
                 revealed = true;
                 None
@@ -270,19 +305,29 @@ fn incoming_add_failure_uses_operation_notice_once(cx: &mut TestAppContext) {
             }
             _ => panic!("unexpected noncommand notification phase"),
         };
+        let result = PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data,
+        };
+        endpoint
+            .route_command_result_for_contract_test(wire.id, result.clone())
+            .expect("original notification router terminal");
         cx.update(|cx| {
-            crate::notifications::screen::handle(
-                PlatformNotification::CommandResult {
-                    correlation_id: wire.id,
-                    result: PlatformCommandResult {
-                        success: true,
-                        error: None,
-                        native_error_code: None,
-                        data,
-                    },
-                },
-                cx,
-            )
+            let notification = PlatformNotification::CommandResult {
+                correlation_id: wire.id,
+                result,
+            };
+            if material {
+                assert!(crate::ui::material::runtime::handle_notification(
+                    &notification,
+                    cx
+                ));
+                applied_material = true;
+            } else {
+                crate::notifications::screen::handle(notification, cx);
+            }
         });
         cx.run_until_parked();
         if revealed {

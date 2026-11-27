@@ -158,6 +158,7 @@ fn notification_duration_global_input_cancel_range_save_reopen_and_failure(
         assert!(
             app.apply_global(
                 app.config.network.clone(),
+                app.config.system.clone(),
                 system,
                 app.config.process_blacklist.clone(),
                 uuid::Uuid::new_v4(),

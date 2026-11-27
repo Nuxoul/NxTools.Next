@@ -5,6 +5,9 @@ use nxtools_protocol::{
     PlatformCommand, PlatformCommandResult, SetWindowBoundsCommand, SetWindowNoActivateCommand,
     SetWindowVisibilityCommand, archive_virtual_drag::ArchiveVirtualDragProgress,
 };
+#[cfg(test)]
+#[path = "drag_material_tests.rs"]
+mod material_tests;
 pub(super) struct DragPresentation {
     pub(super) operation: Uuid,
     generation: u64,
@@ -17,6 +20,7 @@ pub(super) struct DragPresentation {
     view: WeakEntity<JobProgressView>,
     hidden: bool,
     prepare: Option<(Uuid, u8)>,
+    material_pending: bool,
     hwnd: i64,
     bounds: SetWindowBoundsCommand,
 }
@@ -138,7 +142,6 @@ impl ArchiveApplication {
                         y: (bounds.origin.y.as_f32() * scale).round() as i32,
                         width: (bounds.size.width.as_f32() * scale).round() as i32,
                         height: (bounds.size.height.as_f32() * scale).round() as i32,
-                        corner_radius: None,
                     };
                     let view = cx.new(|cx| JobProgressView::new_drag(initial, owner, cx));
                     *captured.borrow_mut() = Some((view.downgrade(), hwnd, native_bounds));
@@ -167,6 +170,7 @@ impl ArchiveApplication {
                     view,
                     hidden: false,
                     prepare: None,
+                    material_pending: false,
                     hwnd,
                     bounds,
                 });
@@ -241,8 +245,38 @@ impl ArchiveApplication {
             slot.hidden = true;
             return true;
         }
-        if stage < 2 {
-            self.prepare_drag_presentation(stage + 1, cx);
+        if stage == 1 {
+            slot.material_pending = true;
+            let operation = slot.operation;
+            let generation = slot.generation;
+            let session = slot.session;
+            let window = slot.window;
+            let owner = cx.entity().downgrade();
+            let platform = self.platform.clone();
+            cx.defer(move |cx| {
+                crate::ui::material::runtime::when_ready(
+                    window, platform, nxtools_protocol::window_material::MaterialSurface::Backdrop,
+                    std::time::Duration::from_secs(8),
+                    move |result, cx| {
+                        let _ = owner.update(cx, |app, cx| {
+                            let Some(slot) = app.jobs.drag_progress.as_mut().filter(|slot| {
+                                slot.operation == operation && slot.generation == generation
+                                    && slot.session == session && slot.window == window
+                                    && slot.material_pending && !slot.hidden
+                            }) else { return; };
+                            slot.material_pending = false;
+                            if let Err(reason) = result {
+                                slot.hidden = true;
+                                tracing::warn!(event="archive.drag_progress.material_failed",correlation_id=%operation,generation,reason);
+                                return;
+                            }
+                            app.prepare_drag_presentation(2, cx);
+                        });
+                    }, cx,
+                );
+            });
+        } else if stage == 0 {
+            self.prepare_drag_presentation(1, cx);
         }
         true
     }
@@ -250,6 +284,10 @@ impl ArchiveApplication {
         if let Some(slot) = self.jobs.drag_progress.as_mut().filter(|slot| !slot.ended) {
             slot.ended = true;
             slot.prepare = None;
+            if slot.material_pending {
+                slot.hidden = true;
+                slot.material_pending = false;
+            }
             let mut event = slot.latest.clone();
             event.phase = "failed".into();
             event.cleanup_complete = Some(false);
@@ -279,6 +317,7 @@ impl ArchiveApplication {
         };
         slot.hidden = true;
         slot.prepare = None;
+        slot.material_pending = false;
         let window = slot.window;
         let hwnd = slot.hwnd;
         if hwnd > 0 {

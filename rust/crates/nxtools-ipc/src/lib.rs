@@ -8,6 +8,7 @@ mod floating_cleanup;
 #[cfg(windows)]
 pub mod install_archive_integration;
 pub mod raw_numbered_join;
+mod window_material;
 use std::collections::HashMap;
 use std::io::{BufRead, Write};
 use std::sync::{
@@ -67,6 +68,7 @@ struct ActiveConnection {
     cancel_turn: bool,
     commands_paused: bool,
     floating_cleanup: Option<Envelope>,
+    material: window_material::MaterialCommands,
 }
 
 /// Original-connection command consumer with bounded, fair cancellation delivery.
@@ -102,6 +104,9 @@ impl PlatformCommandReceiver {
                 .or_else(|| active.take_authorization_revoke())
         {
             return Ok(cancel);
+        }
+        if let Some(material) = active.take_material() {
+            return Ok(material);
         }
         let result = match self.commands.try_recv() {
             Ok(envelope) => {
@@ -182,6 +187,12 @@ impl CommandRouter {
         envelope: Envelope,
         summon_reply: Option<Sender<PlatformCommandResult>>,
     ) -> std::result::Result<uuid::Uuid, QueueAdmissionError> {
+        if matches!(
+            &envelope.message,
+            Message::PlatformCommand(PlatformCommand::ApplyWindowMaterial(_))
+        ) {
+            return self.enqueue_material(envelope, summon_reply);
+        }
         let command_id = envelope.id;
         let timeout = match &envelope.message {
             Message::PlatformCommand(PlatformCommand::FloatingAssistant(command))
@@ -527,6 +538,7 @@ impl PlatformServerEndpoint {
             generation,
             commands_paused: false,
             floating_cleanup: None,
+            material: window_material::MaterialCommands::default(),
             commands: sender,
             command_wake,
             archive_reads: Vec::new(),
@@ -719,7 +731,7 @@ impl PlatformServerEndpoint {
                                 .is_some_and(|active| active.holds_authorization_receipt(*id))
                     })
                     .collect::<Vec<_>>();
-                router
+                let mut expired = router
                     .pending
                     .extract_if(|id, pending| {
                         pending.generation == generation
@@ -732,14 +744,21 @@ impl PlatformServerEndpoint {
                         id,
                         summon_reply: pending.summon_reply,
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                router.expire_material(&mut expired);
+                expired
             })
             .unwrap_or_default()
     }
 
     async fn send_timeout_results(&self, pending: Vec<PendingTerminal>) -> Result<()> {
+        self.send_failed_results(pending, "platform command timed out")
+            .await
+    }
+
+    async fn send_failed_results(&self, pending: Vec<PendingTerminal>, error: &str) -> Result<()> {
         for pending in pending {
-            let result = failed_platform_result("platform command timed out");
+            let result = failed_platform_result(error);
             if let Some(reply) = pending.summon_reply {
                 let _ = reply.send(result).await;
             } else {
@@ -929,7 +948,7 @@ pub enum PlatformBridgeError {
 pub fn dispatch(message: &Envelope) -> Option<Envelope> {
     let response = match &message.message {
         Message::Hello(hello) => {
-            const SUPPORTED_CAPABILITIES: [&str; 36] = [
+            const SUPPORTED_CAPABILITIES: [&str; 37] = [
                 "archive_read_v1",
                 "archive_job_large_count_v1",
                 "clipboard_file_drop_read_v1",
@@ -953,6 +972,7 @@ pub fn dispatch(message: &Envelope) -> Option<Envelope> {
                 "window_topmost",
                 "window_no_activate",
                 "window_bounds",
+                nxtools_protocol::window_material::CAPABILITY,
                 "taskbar_progress",
                 "taskbar_progress_overlay",
                 "window_visibility",
@@ -1197,24 +1217,7 @@ async fn handle_connection(
                             let correlation_id = envelope
                                 .correlation_id
                                 .context("platform command result had no correlation ID")?;
-                            if let Some(pending) = endpoint.complete_command(generation, correlation_id) {
-                                if let Some(reply) = pending.summon_reply {
-                                    let _ = reply.send(result.clone()).await;
-                                } else {
-                                    endpoint
-                                        .send_notification(PlatformNotification::CommandResult {
-                                            correlation_id,
-                                            result: result.clone(),
-                                        })
-                                        .await?;
-                                }
-                            } else {
-                                warn!(
-                                    generation,
-                                    %correlation_id,
-                                    "ignored platform command result for a stale or unknown command"
-                                );
-                            }
+                            endpoint.route_command_result(generation, correlation_id, result.clone()).await?;
                         }
                         _ => {
                             if let Some(response) = dispatch(&envelope) {
@@ -1880,6 +1883,7 @@ mod tests {
                 "quick_launch_configuration".into(),
                 "foreground_context".into(),
                 "window_topmost".into(),
+                nxtools_protocol::window_material::CAPABILITY.into(),
                 "window_visibility".into(),
                 "window_minimized".into(),
                 "window_position".into(),
@@ -1906,6 +1910,7 @@ mod tests {
                 "quick_launch_configuration",
                 "foreground_context",
                 "window_topmost",
+                nxtools_protocol::window_material::CAPABILITY,
                 "window_visibility",
                 "window_minimized",
                 "window_position",

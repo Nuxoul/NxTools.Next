@@ -4,8 +4,8 @@ import re
 
 root = Path(__file__).resolve().parents[2]
 source = (root / "rust/apps/nxtools-desktop/src/main_window/about.rs").read_text(encoding="utf-8-sig")
-windows = (root / "vendor/gpui-pre-windows-039/src/window.rs").read_text(encoding="utf-8-sig")
-events = (root / "vendor/gpui-pre-windows-039/src/events.rs").read_text(encoding="utf-8-sig")
+windows = (root / "vendor/gpui-pre-windows-0312/src/window.rs").read_text(encoding="utf-8-sig")
+events = (root / "vendor/gpui-pre-windows-0312/src/events.rs").read_text(encoding="utf-8-sig")
 assert "if params.kind == WindowKind::Dialog" in windows
 assert "EnableWindow(parent_window, false)" in windows
 assert "EnableWindow(parent_hwnd, true)" in events

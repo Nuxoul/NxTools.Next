@@ -4,7 +4,10 @@
   "archive_sha256": "513d4f0fc7d596d3bdef2a73a524ffb83dabc95bf484f2855a698e7f431290a9",
   "source": "https://static.crates.io/crates/gpui-pre-windows/gpui-pre-windows-0.3.9.crate",
   "modified_files": [
-    "src/events.rs"
+    "src/directx_renderer.rs",
+    "src/events.rs",
+    "src/shaders.hlsl",
+    "src/window.rs"
   ],
   "files": {
     "build.rs": "d01829e27c91591c6fc8ee12ea90f279debc7b378c42253739cd94c7eb37a1a4",

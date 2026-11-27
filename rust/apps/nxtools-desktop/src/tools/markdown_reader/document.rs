@@ -307,12 +307,13 @@ mod tests {
 
     #[test]
     fn markdown_reader_reads_headings_duplicates_and_local_images() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = tempfile::tempdir().expect("create document fixture directory");
         let path = directory.path().join("readme.md");
         let text = "# 标题\n\n## **章节**\n\n```text\n## not a heading\n```\n\n## 章节\n\n![local](sample%20image.png) ![remote](https://example.invalid/image.png)";
-        fs::write(&path, text).unwrap();
-        fs::write(directory.path().join("sample image.png"), b"image fixture").unwrap();
-        let doc = read(path).unwrap();
+        fs::write(&path, text).expect("write headings document fixture");
+        fs::write(directory.path().join("sample image.png"), b"image fixture")
+            .expect("write local image fixture");
+        let doc = read(path).expect("read headings and local images");
         assert_eq!(
             doc.headings
                 .iter()
@@ -331,22 +332,35 @@ mod tests {
 
     #[test]
     fn markdown_reader_save_keeps_bom_and_refuses_external_conflict() {
-        let folder = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().expect("create save fixture directory");
         let path = folder.path().join("document.md");
         let before = b"\xef\xbb\xbf# Original\r\n";
-        fs::write(&path, before).unwrap();
-        let opened = read(path.clone()).unwrap();
+        fs::write(&path, before).expect("write original BOM document");
+        let opened = read(path.clone()).expect("read original BOM document");
         assert_eq!(opened.original(), before);
-        let same = save(path.clone(), before, "# Original\r\n").unwrap();
+        let same = save(path.clone(), before, "# Original\r\n")
+            .expect("save unchanged document without altering its stamp");
         assert_eq!(same.stamp.modified, opened.stamp.modified);
-        let saved = save(path.clone(), before, "# Edits\r\n").unwrap();
-        assert_eq!(fs::read(&path).unwrap(), b"\xef\xbb\xbf# Edits\r\n");
-        fs::write(&path, b"# External edit\n").unwrap();
+        let saved =
+            save(path.clone(), before, "# Edits\r\n").expect("save edited document preserving BOM");
+        assert_eq!(
+            fs::read(&path).expect("read saved BOM document"),
+            b"\xef\xbb\xbf# Edits\r\n"
+        );
+        fs::write(&path, b"# External edit\n").expect("write conflicting external edit");
         assert!(matches!(
             save(path.clone(), &saved.original(), "# Draft\n"),
             Err(ReadError::Changed)
         ));
-        assert_eq!(fs::read(&path).unwrap(), b"# External edit\n");
-        assert_eq!(fs::read_dir(folder.path()).unwrap().count(), 1);
+        assert_eq!(
+            fs::read(&path).expect("read preserved external edit"),
+            b"# External edit\n"
+        );
+        assert_eq!(
+            fs::read_dir(folder.path())
+                .expect("list save fixture directory")
+                .count(),
+            1
+        );
     }
 }

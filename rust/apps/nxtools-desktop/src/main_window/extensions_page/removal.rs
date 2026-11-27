@@ -45,6 +45,7 @@ impl ExtensionManagerView {
                 let submitted = Rc::new(Cell::new(false));
                 let clear_data = Rc::new(Cell::new(false));
                 window.open_dialog(cx, move |dialog, window, cx| {
+                    let dialog = dialog.bg(crate::theme::overlay_background(cx));
                     let current = owner.upgrade().is_some_and(|owner| !owner.read(cx).busy && owner.read(cx).packages == reviewed);
                     let confirm_owner = owner.clone();
                     let confirm_review = reviewed.clone();

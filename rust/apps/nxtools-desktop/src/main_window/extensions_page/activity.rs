@@ -14,7 +14,7 @@ use gpui_kit::component::{
 
 #[derive(Clone)]
 enum Activity {
-    Manual(ManualRun),
+    Manual(Box<ManualRun>),
     Automatic(EventTerminal),
 }
 
@@ -44,7 +44,7 @@ fn ordered_activity(
 ) -> Vec<Activity> {
     let mut activity = manual
         .into_iter()
-        .map(Activity::Manual)
+        .map(|run| Activity::Manual(Box::new(run)))
         .chain(automatic.into_iter().map(Activity::Automatic))
         .filter(|row| !failed_only || row.failed())
         .collect::<Vec<_>>();

@@ -8,6 +8,29 @@ Debug builds require Rust 1.96 and .NET SDK 8.0.421. Run:
 .\scripts\build.ps1
 ```
 
+## Workspace verification prerequisites
+
+Debug and Release verification require Python and an existing 7-Zip CLI with Zstandard decoding
+support, in addition to Windows' built-in `tar.exe`. The TAR/stream producer uses Windows `tar.exe`
+and Python to generate tiny synthetic inputs, and 7-Zip to verify the Zstandard data independently.
+The wrapper searches for `7z.exe` or `7zz.exe` on `PATH`, then `%ProgramFiles%\7-Zip\7z.exe`. Set
+`NXTOOLS_TAR_STREAM_ORACLE` to override discovery for a custom install:
+
+```powershell
+$env:NXTOOLS_TAR_STREAM_ORACLE = 'C:\Tools\7-Zip\7z.exe'
+.\scripts\build.ps1
+```
+
+Before the unfiltered Debug `cargo test --workspace --jobs 1`, the wrapper creates fresh inputs,
+builds the Debug isolated-codecs archive worker and the Debug PlatformHost test apphost, and runs only
+the AC repair progress and OPT03 create result producers to export the C# wire files. These isolated
+entries do not need signed release material. The fixture inputs and worker copy live in a unique
+directory under `PI_SCRATCH_DIR` (or Windows Temp) until Rust testing finishes. The wrapper removes
+that directory and restores the caller's fixture environment and `STORY_MD` on success or failure.
+The later manifest-bound test host, Release capability gates and full Debug C# fixture run remain
+separate from this prerequisite stage. Set `PI_SCRATCH_DIR` to an existing absolute directory for
+the full C# fixture run; fixtures such as OPT05 require it explicitly.
+
 ## Release
 
 GPUI 0.2.2 compiles its DirectX shaders during non-debug builds and therefore requires the

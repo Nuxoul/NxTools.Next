@@ -3,6 +3,8 @@ mod application;
 mod batch;
 mod browser;
 #[cfg(test)]
+pub(crate) mod ordinary_material_test_support;
+#[cfg(test)]
 pub(crate) use browser::ArchiveBrowser;
 mod draft;
 mod forms;

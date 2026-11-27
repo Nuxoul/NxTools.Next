@@ -1,5 +1,5 @@
 ; Explicit updater bootstrap maintenance. Never entered by the normal installer.
-#define MyAppVersion "0.7.4"
+#define MyAppVersion "0.7.5"
 #define PackageDir "..\artifacts\win-x64"
 [Setup]
 AppName=NxTools 更新服务维护

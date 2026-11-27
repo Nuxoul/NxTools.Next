@@ -1879,6 +1879,28 @@ impl Render for QuickLaunchPanel {
             window.request_animation_frame();
         }
         let theme = self.theme;
+        // On a frosted panel the panel itself is the search field; a second framed input inside
+        // it reads as a box within a box. Solid keeps the framed input.
+        let framed_search = !cx
+            .try_global::<crate::theme::UiThemeState>()
+            .is_some_and(|state| state.material_style.is_frosted());
+        let corners = crate::ui::popup_surface::corners(window, cx);
+        // The search header touches the inside of the existing 1 DIP shell border.
+        let inner_corner = |radius: gpui_kit::Pixels| (radius - px(1.0)).max(px(0.0));
+        let header_corners = gpui_kit::Corners {
+            top_left: inner_corner(corners.top_left),
+            top_right: inner_corner(corners.top_right),
+            bottom_left: if self.results_visible || self.status.is_some() {
+                px(0.0)
+            } else {
+                inner_corner(corners.bottom_left)
+            },
+            bottom_right: if self.results_visible || self.status.is_some() {
+                px(0.0)
+            } else {
+                inner_corner(corners.bottom_right)
+            },
+        };
         let panel = cx.entity().downgrade();
         let recent_button_panel = panel.clone();
         let preview_scroll_application = self.application.clone();
@@ -2020,7 +2042,7 @@ impl Render for QuickLaunchPanel {
                 .relative()
                 .flex_1()
                 .min_h_0()
-                .on_scroll_wheel(move |_event, _window, cx| {
+                .on_scroll(move |_event, _window, cx| {
                     schedule_application_update(
                         preview_scroll_application.clone(),
                         |application, cx| {
@@ -2060,6 +2082,7 @@ impl Render for QuickLaunchPanel {
             .size_full()
             .overflow_hidden()
             .bg(theme.canvas)
+            .map(|panel| crate::ui::popup_surface::round(panel, corners))
             .text_color(theme.text)
             .border_1()
             // Reserve the original inset without enclosing the Kit input in
@@ -2077,6 +2100,7 @@ impl Render for QuickLaunchPanel {
                     .border_b_1()
                     .border_color(theme.canvas)
                     .bg(theme.canvas)
+                    .map(|header| crate::ui::popup_surface::round(header, header_corners))
                     .flex()
                     .items_center()
                     .gap(px(SPACING_8))
@@ -2095,6 +2119,7 @@ impl Render for QuickLaunchPanel {
                                 Input::new(&self.search_input)
                                     .aria_label("速启搜索")
                                     .focus_bordered(false)
+                                    .appearance(framed_search)
                                     .with_size(ControlSize::Large)
                                     .py(px(SPACING_4))
                                     .w_full()
@@ -2272,3 +2297,7 @@ pub(crate) fn quick_launch_bounds(
 #[cfg(test)]
 #[path = "auxiliary_theme_tests.rs"]
 mod auxiliary_theme_tests;
+
+#[cfg(test)]
+#[path = "corner_surface_tests.rs"]
+mod corner_surface_tests;

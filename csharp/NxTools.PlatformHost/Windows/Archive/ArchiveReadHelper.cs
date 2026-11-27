@@ -48,9 +48,11 @@ internal sealed class ArchiveReadHelper
         var owner = Path.GetFileName(full) == "package" ? Path.GetDirectoryName(full)! : full;
         var leaf = Path.GetFileName(owner);
         var sessionScratch = Environment.GetEnvironmentVariable("PI_SCRATCH_DIR");
+        var sessionStorage = sessionScratch is null ? null : Path.GetFullPath(sessionScratch).TrimEnd('\\') + "\\";
         if (sessionScratch is not null && string.Equals(Path.GetDirectoryName(owner), Path.GetFullPath(sessionScratch).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase) &&
             leaf.StartsWith("hz5-", StringComparison.Ordinal) && Guid.TryParseExact(leaf[4..], "D", out var recoveryFixture) && recoveryFixture != Guid.Empty) return;
-        if ((!full.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) && !full.StartsWith(scratch, StringComparison.OrdinalIgnoreCase)) ||
+        if ((!full.StartsWith(temporary, StringComparison.OrdinalIgnoreCase) && !full.StartsWith(scratch, StringComparison.OrdinalIgnoreCase) &&
+                (sessionStorage is null || !full.StartsWith(sessionStorage, StringComparison.OrdinalIgnoreCase))) ||
             !leaf.StartsWith("archive-product-", StringComparison.Ordinal) || leaf.Length < 36 || !Guid.TryParse(leaf[^36..], out _))
             throw new ArgumentException("Package must be an owned archive-product GUID root under temporary storage.");
     }

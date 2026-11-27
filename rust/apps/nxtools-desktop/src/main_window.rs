@@ -98,10 +98,10 @@ mod tools_page;
 pub(crate) mod visual_preview;
 
 use self::clipboard_page::*;
-pub(crate) use self::download_page::{download_failure_summary, format_duration};
 #[cfg(test)]
 pub(crate) use self::download_page::projection_tests;
 use self::download_page::*;
+pub(crate) use self::download_page::{download_failure_summary, format_duration};
 use self::quick_launch_page::*;
 
 #[cfg(test)]
@@ -552,7 +552,8 @@ impl Render for MainWindow {
         if self.shell.active_module() != MainModule::Downloads {
             self.retire_download_detail_scope(cx);
         }
-        let content = match self.shell.active_module() {
+        let module = self.shell.active_module();
+        let content = match module {
             MainModule::Downloads => self.render_downloads(cx),
             MainModule::QuickFind => self.render_quick_find(cx),
             MainModule::Clipboard => self.render_clipboard(cx),
@@ -560,6 +561,15 @@ impl Render for MainWindow {
             MainModule::Extensions => self.render_extensions(window, cx),
             MainModule::Archive => self.render_archive(),
         };
+        // Module switches fade the content in once (120 ms); navigation, title and scroll anchors
+        // stay put, and the same module re-rendering never replays it.
+        let content = crate::ui::motion::animated_surface(
+            format!("main-module-{module:?}"),
+            crate::ui::motion::ENTER_DURATION,
+            content,
+            0.0,
+            0.0,
+        );
         div()
             .id("nxtools-main-window")
             .debug_selector(|| "nxtools-main-window".into())
@@ -583,7 +593,30 @@ impl Render for MainWindow {
                     .min_h_0()
                     .flex()
                     .child(self.render_sidebar(window, cx))
-                    .child(div().flex_1().min_w_0().h_full().child(content)),
+                    .child({
+                        let area = div().flex_1().min_w_0().h_full();
+                        match crate::ui::material::paint::content_layer(window, cx) {
+                            // One content layer under the clear title bar and sidebar.
+                            Some(layer) => {
+                                let dark = cx
+                                    .try_global::<crate::theme::UiThemeState>()
+                                    .copied()
+                                    .unwrap_or_default()
+                                    .is_dark();
+                                area.bg(layer)
+                                    .when(crate::ui::material::rounded_corners(cx), |area| {
+                                        area.rounded_tl(gpui_kit::px(
+                                            crate::theme::material::WINDOW_RADIUS,
+                                        ))
+                                    })
+                                    .border_t_1()
+                                    .border_l_1()
+                                    .border_color(crate::theme::material::card_stroke(dark))
+                            }
+                            None => area,
+                        }
+                        .child(content)
+                    }),
             )
             .child(self.render_notifications(window, cx))
     }

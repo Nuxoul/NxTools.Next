@@ -296,7 +296,11 @@ fn markdown_reader_card(theme: Theme, cx: &mut Context<MainWindow>) -> ListItem 
                         .text_color(theme.text_secondary),
                 )
                 .child(Label::new(MARKDOWN_READER_CARD.title))
-                .child(tool_status(theme, enabled, "tool-markdown-reader-status-dot"))
+                .child(tool_status(
+                    theme,
+                    enabled,
+                    "tool-markdown-reader-status-dot",
+                ))
                 .child(
                     Button::new("tool-markdown-reader-configure")
                         .debug_selector(|| "tool-markdown-reader-configure".into())
@@ -577,13 +581,8 @@ impl Render for ToolSettingsWindowBody {
 
 fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Context<MainWindow>) {
     if let Some(existing) = this.tool_settings_windows.get(card.id).copied() {
-        if existing
-            .update(cx, |_, window, _| {
-                window.activate_window();
-                window.refresh();
-            })
-            .is_ok()
-        {
+        if cx.windows().contains(&existing) {
+            prepare_tool_settings_window(this, card.id, existing, false, cx);
             return;
         }
         this.tool_settings_windows.remove(card.id);
@@ -602,14 +601,14 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
         WindowOptions {
             window_bounds: Some(window_bounds),
             titlebar: None,
-            focus: true,
-            show: true,
+            focus: this.platform.is_none(),
+            show: this.platform.is_none(),
             kind: WindowKind::Normal,
             is_movable: true,
             is_resizable: false,
             is_minimizable: true,
             display_id: None,
-            window_background: WindowBackgroundAppearance::Opaque,
+            window_background: WindowBackgroundAppearance::Transparent,
             app_id: Some(format!("NxTools.ToolSettings.{}", card.id)),
             window_min_size: Some(window_size),
             window_decorations: Some(WindowDecorations::Client),
@@ -617,6 +616,7 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
             inactive_frame_interval: None,
             icon: None,
             tabbing_identifier: None,
+            ..Default::default()
         },
         move |window, cx| {
             if card.id == currency_settings::CARD.id {
@@ -649,8 +649,69 @@ fn open_tool_settings_window(this: &mut MainWindow, card: ToolCard, cx: &mut Con
         },
     );
     if let Ok(window) = opened {
-        this.tool_settings_windows.insert(card.id, window.into());
+        let handle = window.into();
+        this.tool_settings_windows.insert(card.id, handle);
+        prepare_tool_settings_window(this, card.id, handle, true, cx);
     } else {
         tracing::error!(tool = card.id, "failed to open tool settings window");
     }
 }
+
+fn prepare_tool_settings_window(
+    this: &MainWindow,
+    key: &'static str,
+    handle: gpui_kit::AnyWindowHandle,
+    first_show: bool,
+    cx: &mut Context<MainWindow>,
+) {
+    let owner = cx.entity().downgrade();
+    let platform = this.platform.clone();
+    let id = uuid::Uuid::new_v4();
+    let started = std::time::Instant::now();
+    cx.defer(move |cx| {
+        if !first_show && crate::ui::material::runtime::is_waiting(handle, cx) {
+            return;
+        }
+        let completion = move |result: Result<(), &'static str>, cx: &mut gpui_kit::App| {
+            let Some(owner) = owner.upgrade() else { return; };
+            if owner.read(cx).tool_settings_windows.get(key) != Some(&handle)
+                || !cx.windows().contains(&handle) {
+                return;
+            }
+            match result {
+                Ok(()) => {
+                    let _ = handle.update(cx, |_, window, _| {
+                        window.activate_window();
+                        window.refresh();
+                    });
+                    tracing::info!(event = "desktop.tool_settings.material.ready", correlation_id = %id,
+                        tool = key, elapsed_ms = started.elapsed().as_millis() as u64);
+                }
+                Err(reason) => {
+                    let notifications = owner.read(cx).notifications.clone();
+                    if first_show {
+                        owner.update(cx, |owner, _| { owner.tool_settings_windows.remove(key); });
+                        let _ = handle.update(cx, |_, window, _| window.remove_window());
+                    }
+                    tracing::warn!(event = "desktop.tool_settings.material.failed", correlation_id = %id,
+                        tool = key, reason, elapsed_ms = started.elapsed().as_millis() as u64);
+                    notifications.update(cx, |notifications, cx| notifications.show_error(
+                        format!("tool-settings-material-{id}"), "无法准备功能设置窗口",
+                        "Windows 外观组件未能完成窗口准备，请稍后重试。", cx,
+                    ));
+                }
+            }
+        };
+        if let Some(platform) = platform {
+            crate::ui::material::runtime::when_ready(
+                handle, platform, nxtools_protocol::window_material::MaterialSurface::Backdrop,
+                std::time::Duration::from_secs(8), completion, cx,
+            );
+        } else {
+            completion(Ok(()), cx);
+        }
+    });
+}
+
+#[cfg(test)]
+mod material_tests;

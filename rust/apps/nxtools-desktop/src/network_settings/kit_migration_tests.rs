@@ -2,7 +2,7 @@ use super::*;
 use gpui_kit::base::test_support;
 use gpui_kit::{AppContext, TestAppContext, VisualTestContext};
 
-fn fixture(
+pub(super) fn fixture(
     cx: &mut TestAppContext,
 ) -> (
     Entity<NetworkSettingsApplication>,
@@ -685,18 +685,10 @@ fn density_theme_visual_radios_fit_minimum_and_keep_disabled_draft_local(cx: &mu
             .iter()
             .filter(|node| node.label() == Some(preference.label()))
             .count();
-        if matches!(
-            preference,
-            nxtools_core::ThemePreference::CatppuccinLatte
-                | nxtools_core::ThemePreference::CatppuccinFrappe
-        ) {
-            assert_eq!(count, 0, "default aliases have no duplicate Radio");
-        } else {
-            assert_eq!(
-                count, 1,
-                "each effective palette is selectable: {preference:?}"
-            );
-        }
+        assert_eq!(
+            count, 1,
+            "each bundled palette is selectable once: {preference:?}"
+        );
     }
     assert!(footer.bottom() <= px(480.0));
     let original = std::fs::read(directory.join("config.json")).expect("saved config");
@@ -813,11 +805,12 @@ fn density_theme_last_option_scrolls_and_uses_official_keyboard_selection(cx: &m
         .expect("page content");
     surface.simulate_mouse_move(pointer, None, Default::default());
     for _ in 0..6 {
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: pointer,
             delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(-500.0))),
             modifiers: Default::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         surface.run_until_parked();
         surface.refresh().expect("theme scroll");
@@ -850,7 +843,7 @@ fn density_theme_last_option_scrolls_and_uses_official_keyboard_selection(cx: &m
         nxtools_core::ThemePreference::SolarizedDark
     );
     let mut reached = false;
-    for _ in 0..50 {
+    for _ in 0..80 {
         surface.update(|window, cx| window.focus_next(cx));
         surface.refresh().expect("official Tab frame");
         reached = surface
@@ -876,16 +869,24 @@ fn density_theme_last_option_scrolls_and_uses_official_keyboard_selection(cx: &m
 }
 
 #[gpui_kit::test]
-fn saved_theme_aliases_select_defaults_without_writing_on_open_or_cancel(cx: &mut TestAppContext) {
-    for (alias, selected) in [
-        (nxtools_core::ThemePreference::CatppuccinLatte, "默认浅色"),
-        (nxtools_core::ThemePreference::CatppuccinFrappe, "默认深色"),
+fn saved_catppuccin_themes_select_their_own_radio_without_writing_on_open_or_cancel(
+    cx: &mut TestAppContext,
+) {
+    for (saved, selected) in [
+        (
+            nxtools_core::ThemePreference::CatppuccinLatte,
+            "Catppuccin Latte",
+        ),
+        (
+            nxtools_core::ThemePreference::CatppuccinFrappe,
+            "Catppuccin Frappe",
+        ),
     ] {
         let (application, _, _, directory) = fixture(cx);
         cx.update(|cx| application.update(cx, |app, cx| app.close_window(cx)));
         let path = directory.join("config.json");
         let mut config = AppConfig::load_from(&path).expect("stored config");
-        config.system.theme = alias;
+        config.system.theme = saved;
         config.save_to(&path).expect("legacy preference fixture");
         let original = std::fs::read(&path).expect("original bytes");
         cx.update(|cx| application.update(cx, |app, cx| app.open_window(cx)));
@@ -893,14 +894,14 @@ fn saved_theme_aliases_select_defaults_without_writing_on_open_or_cancel(cx: &mu
         let handle = cx.read(|cx| application.read(cx).window.expect("window"));
         let mut surface = VisualTestContext::from_window(handle, cx);
         surface.simulate_resize(size(px(720.0), px(480.0)));
-        surface.refresh().expect("alias chooser");
+        surface.refresh().expect("saved theme chooser");
         select_page(&mut surface, 3);
         let nodes = surface.update(|window, _| test_support::snapshots(window));
         assert_eq!(
             nodes
                 .iter()
                 .find(|node| node.label() == Some(selected))
-                .expect("default radio")
+                .expect("saved theme radio")
                 .checked(),
             Some(true)
         );

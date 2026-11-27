@@ -572,7 +572,9 @@ impl WindowsWindow {
         register_drag_drop(&this)?;
         set_non_rude_hwnd(hwnd, true);
         configure_dwm_dark_mode(hwnd, appearance);
-        this.state.border_offset.update(hwnd)?;
+        this.state
+            .border_offset
+            .update(hwnd, this.state.is_fullscreen())?;
         let placement =
             retrieve_window_placement(hwnd, display, params.bounds, &this.state.border_offset)?;
         if params.show {
@@ -1384,12 +1386,27 @@ type Color = (u8, u8, u8, u8);
 
 #[derive(Debug, Default, Clone)]
 pub(crate) struct WindowBorderOffset {
-    pub(crate) width_offset: Cell<i32>,
-    pub(crate) height_offset: Cell<i32>,
+    left: Cell<i32>,
+    top: Cell<i32>,
+    right: Cell<i32>,
+    bottom: Cell<i32>,
 }
 
 impl WindowBorderOffset {
-    pub(crate) fn update(&self, hwnd: HWND) -> anyhow::Result<()> {
+    pub(crate) fn width(&self) -> i32 {
+        self.left.get() + self.right.get()
+    }
+
+    pub(crate) fn height(&self) -> i32 {
+        self.top.get() + self.bottom.get()
+    }
+
+    pub(crate) fn update(&self, hwnd: HWND, fullscreen: bool) -> anyhow::Result<()> {
+        // rcNormalPosition always describes the restored frame, even while maximized.
+        // Keep its measured margins until another real restored frame is available.
+        if fullscreen || unsafe { IsZoomed(hwnd).as_bool() || IsIconic(hwnd).as_bool() } {
+            return Ok(());
+        }
         let window_rect = unsafe {
             let mut rect = std::mem::zeroed();
             GetWindowRect(hwnd, &mut rect)?;
@@ -1400,10 +1417,14 @@ impl WindowBorderOffset {
             GetClientRect(hwnd, &mut rect)?;
             rect
         };
-        self.width_offset
-            .set((window_rect.right - window_rect.left) - (client_rect.right - client_rect.left));
-        self.height_offset
-            .set((window_rect.bottom - window_rect.top) - (client_rect.bottom - client_rect.top));
+        let mut client_origin = POINT::default();
+        unsafe { ClientToScreen(hwnd, &mut client_origin) }.ok()?;
+        self.left.set(client_origin.x - window_rect.left);
+        self.top.set(client_origin.y - window_rect.top);
+        self.right
+            .set(window_rect.right - client_origin.x - client_rect.right);
+        self.bottom
+            .set(window_rect.bottom - client_origin.y - client_rect.bottom);
         Ok(())
     }
 }
@@ -1541,14 +1562,10 @@ fn calculate_window_rect(bounds: Bounds<DevicePixels>, border_offset: &WindowBor
         right: bounds.right().0,
         bottom: bounds.bottom().0,
     };
-    let left_offset = border_offset.width_offset.get() / 2;
-    let top_offset = border_offset.height_offset.get() / 2;
-    let right_offset = border_offset.width_offset.get() - left_offset;
-    let bottom_offset = border_offset.height_offset.get() - top_offset;
-    rect.left -= left_offset;
-    rect.top -= top_offset;
-    rect.right += right_offset;
-    rect.bottom += bottom_offset;
+    rect.left -= border_offset.left.get();
+    rect.top -= border_offset.top.get();
+    rect.right += border_offset.right.get();
+    rect.bottom += border_offset.bottom.get();
     rect
 }
 
@@ -1557,14 +1574,10 @@ fn calculate_client_rect(
     border_offset: &WindowBorderOffset,
     scale_factor: f32,
 ) -> Bounds<Pixels> {
-    let left_offset = border_offset.width_offset.get() / 2;
-    let top_offset = border_offset.height_offset.get() / 2;
-    let right_offset = border_offset.width_offset.get() - left_offset;
-    let bottom_offset = border_offset.height_offset.get() - top_offset;
-    let left = rect.left + left_offset;
-    let top = rect.top + top_offset;
-    let right = rect.right - right_offset;
-    let bottom = rect.bottom - bottom_offset;
+    let left = rect.left + border_offset.left.get();
+    let top = rect.top + border_offset.top.get();
+    let right = rect.right - border_offset.right.get();
+    let bottom = rect.bottom - border_offset.bottom.get();
     let physical_size = size(DevicePixels(right - left), DevicePixels(bottom - top));
     Bounds {
         origin: logical_point(left as f32, top as f32, scale_factor),
@@ -1738,3 +1751,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/graphics/gpui-window-frame.rs"]
+mod gpui_window_frame;

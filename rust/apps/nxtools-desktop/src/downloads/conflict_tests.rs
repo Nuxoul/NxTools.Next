@@ -255,6 +255,9 @@ fn failed_task_window_routes_raw_error_to_existing_notification_only(cx: &mut Te
         app.publish_terminal_notifications(&[snapshot.clone()], cx);
         assert!(app.completion_feedback_scheduled);
         app.flush_completion_feedback(cx);
+    });
+    cx.run_until_parked();
+    application.update(cx, |app, cx| {
         {
             let notices = app.notifications.read(cx).items();
             assert_eq!(notices.len(), 1);
@@ -341,7 +344,7 @@ fn persisted_conflict_fixture(
     let copy = engine.clone();
     let app = cx.update(|cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            super::ordinary_presentation_fixture::confirmed_application(
                 copy,
                 Rc::new(platform),
                 notifications,

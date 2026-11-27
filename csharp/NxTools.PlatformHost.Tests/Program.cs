@@ -19,8 +19,21 @@ internal static class Program
     {
         var tests = new (string Name, Func<Task> Run)[]
         {
-            ("window bounds corners fixture strict optional wire", WindowBoundsCornerTests.StrictOptionalWire),
-            ("window bounds corners fixture owned region resize reset", WindowBoundsCornerTests.OwnedRegionResizeAndReset),
+            ("window material publication fixture actual command route", MaterialPublicationTests.ActualPipeRouteUsesBoundOwner),
+            ("window material fixture strict wire and receipt", WindowMaterialTests.StrictWireAndReceipt),
+            ("window material fixture preference and session facts", WindowMaterialTests.PreferenceAndSessionFacts),
+            ("window material fixture fallback matrix", WindowMaterialTests.OrderedFallbackAndExemptSurfaces),
+            ("window material fixture ownership and generations", WindowMaterialTests.RejectBeforeWritesAndRetireGenerations),
+            ("window material fixture native failure and reset", WindowMaterialTests.NativeFailureRequiresSuccessfulReset),
+            ("window material fixture serialized writes and retirement", WindowMaterialTests.SerializedWritesAndMidFlightRetirement),
+            ("window material fixture window retirement and diagnostics", WindowMaterialTests.BoundedWindowHistoryAndDiagnostics),
+            ("window material fixture native ABI", WindowMaterialTests.NativePolicyAbi),
+            ("window material fixture owned hidden native window", WindowMaterialTests.OwnedHiddenNativeWindow),
+            ("window material publication fixture latest session stop", MaterialPublicationTests.LatestOnlySessionAndStop),
+            ("window material publication fixture negotiated envelope", MaterialPublicationTests.NegotiatedEnvelopeAndSessionFilter),
+            ("window material publication fixture detached reader", MaterialPublicationTests.DetachedCommandKeepsReaderResponsive),
+            ("window bounds fixture strict wire", WindowBoundsTests.StrictWire),
+            ("window bounds fixture owned client bounds without region", WindowBoundsTests.OwnedClientBoundsWithoutRegion),
             ("process window pick fixture strict wire", ProcessWindowPickTests.StrictWire),
             ("process window pick fixture ownership startup failure", ProcessWindowPickTests.OwnershipAndStartupFailure),
             ("process window pick fixture viewport hover names", ProcessWindowPickTests.ViewportHoverAndNames),

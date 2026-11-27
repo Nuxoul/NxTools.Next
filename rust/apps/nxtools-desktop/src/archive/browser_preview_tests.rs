@@ -414,8 +414,13 @@ fn feedback_preview_original_decoder_to_actual_md_txt_image_pane(cx: &mut TestAp
     ] {
         let path = directory.path().join(name);
         std::fs::write(&path, bytes).expect("owned bounded input");
-        let payload = preview::prepare(&path, kind, Default::default(), &std::sync::atomic::AtomicBool::new(false))
-            .unwrap_or_else(|_| panic!("original decoder: {name}"));
+        let payload = preview::prepare(
+            &path,
+            kind,
+            Default::default(),
+            &std::sync::atomic::AtomicBool::new(false),
+        )
+        .unwrap_or_else(|_| panic!("original decoder: {name}"));
         let token = view.read_with(&surface, |view, _| view.preview.generation);
         surface.update(|window, cx| {
             view.update(cx, |view, cx| {
@@ -486,7 +491,7 @@ fn feedback_preview_long_markdown_real_wheel_reaches_content(cx: &mut TestAppCon
     let viewport = surface
         .debug_bounds("archive-preview-document-scroll")
         .expect("actual document scroll viewport");
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position: viewport.center(),
         delta: gpui_kit::ScrollDelta::Lines(point(0., -4.)),
         ..Default::default()

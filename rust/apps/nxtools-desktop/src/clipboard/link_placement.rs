@@ -1,4 +1,6 @@
 use super::*;
+use crate::ui::material::runtime as material_runtime;
+use nxtools_protocol::window_material::MaterialSurface;
 use nxtools_protocol::{CursorMonitorSnapshot, PlatformCommandResult};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8,11 +10,13 @@ enum Phase {
     NoActivate,
     Bounds,
     Topmost,
+    MaterialStage,
     Stage,
     Frame,
     HideAfterFrame,
     TargetMonitor,
     FinalBounds,
+    MaterialReveal,
     Reveal,
     ExpandedBounds,
 }
@@ -23,6 +27,7 @@ pub(super) struct PendingLinkPlacement {
     generation: u64,
     pause_generation: u64,
     started: Instant,
+    connection: Option<u64>,
     phase: Phase,
     links: Vec<crate::tools::link_panel::DetectedLinkRow>,
     monitor: Option<CursorMonitorSnapshot>,
@@ -48,6 +53,7 @@ impl ClipboardApplication {
             generation: self.link_panel.generation,
             pause_generation: self.capture_pause.generation,
             started: Instant::now(),
+            connection: self.platform.connection_generation(),
             phase: Phase::Monitor,
             links,
             monitor: None,
@@ -100,6 +106,7 @@ impl ClipboardApplication {
             generation: self.link_panel.generation,
             pause_generation: self.capture_pause.generation,
             started: Instant::now(),
+            connection: self.platform.connection_generation(),
             phase: Phase::ExpandedBounds,
             links: Vec::new(),
             monitor: self.link_panel.monitor,
@@ -120,7 +127,6 @@ impl ClipboardApplication {
                 y: bounds.origin.y.into(),
                 width: bounds.size.width.into(),
                 height: bounds.size.height.into(),
-                corner_radius: None,
             }),
             cx,
         );
@@ -149,6 +155,9 @@ impl ClipboardApplication {
             && !self.capture_pause.blocks(nxtools_ipc::unix_time_ms())
             && pending.pause_generation == self.capture_pause.generation
             && pending.generation == self.link_panel.generation
+            && pending.started.elapsed() < Duration::from_secs(3)
+            && pending.connection == self.platform.connection_generation()
+            && (pending.native == 0 || pending.native == self.link_panel.native_window_handle)
             && pending
                 .window
                 .is_none_or(|window| self.link_panel.window == Some(window))
@@ -243,7 +252,6 @@ impl ClipboardApplication {
                         y: PREVIEW_STAGING_COORDINATE,
                         width,
                         height,
-                        corner_radius: None,
                     }),
                     cx,
                 );
@@ -261,16 +269,10 @@ impl ClipboardApplication {
                 );
             }
             Phase::Topmost => {
-                pending.phase = Phase::Stage;
-                let native = pending.native;
+                pending.phase = Phase::MaterialStage;
+                pending.command = uuid::Uuid::nil();
                 self.pending_link_placement = Some(pending);
-                self.send_link_placement_command(
-                    PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
-                        window_handle: native,
-                        visible: true,
-                    }),
-                    cx,
-                );
+                self.wait_link_material(cx);
             }
             Phase::Stage => {
                 pending.phase = Phase::Frame;
@@ -322,28 +324,23 @@ impl ClipboardApplication {
                         y,
                         width,
                         height,
-                        corner_radius: None,
                     }),
                     cx,
                 );
             }
             Phase::FinalBounds => {
-                pending.phase = Phase::Reveal;
-                let native = pending.native;
+                pending.phase = Phase::MaterialReveal;
+                pending.command = uuid::Uuid::nil();
                 self.pending_link_placement = Some(pending);
-                self.send_link_placement_command(
-                    PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
-                        window_handle: native,
-                        visible: true,
-                    }),
-                    cx,
-                );
+                self.wait_link_material(cx);
             }
             Phase::Reveal | Phase::ExpandedBounds => {
                 info!(event = "tools.link_panel.presentation_completed", correlation_id = %pending.operation,
                     success = true, elapsed_ms = pending.started.elapsed().as_millis() as u64);
             }
-            Phase::Frame => self.pending_link_placement = Some(pending),
+            Phase::Frame | Phase::MaterialStage | Phase::MaterialReveal => {
+                self.pending_link_placement = Some(pending);
+            }
         }
         true
     }
@@ -395,6 +392,113 @@ impl ClipboardApplication {
         );
     }
 
+    fn wait_link_material(&mut self, cx: &mut Context<Self>) {
+        let Some(pending) = self.pending_link_placement.as_ref() else {
+            return;
+        };
+        let Some(window) = pending.window else {
+            self.retire_link_placement("window_closed", cx);
+            return;
+        };
+        if !self.link_placement_is_current(pending) || !cx.windows().contains(&window) {
+            self.retire_link_placement("retired_before_material", cx);
+            return;
+        }
+        let operation = pending.operation;
+        let phase = pending.phase;
+        let native = pending.native;
+        if material_runtime::receipt(window, cx)
+            .is_some_and(|receipt| receipt.window_handle == native)
+        {
+            self.finish_link_material(operation, window, native, phase, Ok(()), cx);
+            return;
+        }
+        let started = pending.started;
+        let platform = Rc::clone(&self.platform);
+        let owner = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            if !owner
+                .read_with(cx, |owner, cx| {
+                    owner
+                        .pending_link_placement
+                        .as_ref()
+                        .is_some_and(|pending| {
+                            pending.operation == operation
+                                && pending.phase == phase
+                                && pending.window == Some(window)
+                                && pending.native == native
+                                && owner.link_placement_is_current(pending)
+                                && cx.windows().contains(&window)
+                        })
+                })
+                .unwrap_or(false)
+            {
+                return;
+            }
+            let timeout = Duration::from_secs(3).saturating_sub(started.elapsed());
+            material_runtime::when_ready(
+                window,
+                platform,
+                MaterialSurface::Transient,
+                timeout,
+                move |result, cx| {
+                    let _ = owner.update(cx, |owner, cx| {
+                        owner.finish_link_material(operation, window, native, phase, result, cx);
+                    });
+                },
+                cx,
+            );
+        });
+    }
+
+    fn finish_link_material(
+        &mut self,
+        operation: uuid::Uuid,
+        window: AnyWindowHandle,
+        native: i64,
+        phase: Phase,
+        result: Result<(), &'static str>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(pending) = self.pending_link_placement.as_ref().filter(|pending| {
+            pending.operation == operation
+                && pending.window == Some(window)
+                && pending.native == native
+                && pending.phase == phase
+        }) else {
+            return;
+        };
+        if let Err(reason) = result {
+            self.retire_link_placement(reason, cx);
+            return;
+        }
+        if !self.link_placement_is_current(pending) || !cx.windows().contains(&window) {
+            self.retire_link_placement("retired_before_material_reveal", cx);
+            return;
+        }
+        if material_runtime::receipt(window, cx)
+            .is_none_or(|receipt| receipt.window_handle != native)
+        {
+            self.wait_link_material(cx);
+            return;
+        }
+        self.pending_link_placement
+            .as_mut()
+            .expect("qualified link placement")
+            .phase = match phase {
+            Phase::MaterialStage => Phase::Stage,
+            Phase::MaterialReveal => Phase::Reveal,
+            _ => return,
+        };
+        self.send_link_placement_command(
+            PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+                window_handle: native,
+                visible: true,
+            }),
+            cx,
+        );
+    }
+
     fn reveal_link_placement(&mut self, operation: uuid::Uuid, cx: &mut Context<Self>) {
         let Some(pending) = self.pending_link_placement.as_ref() else {
             return;
@@ -430,6 +534,9 @@ impl ClipboardApplication {
             .window
             .filter(|window| self.link_panel.window == Some(*window))
         {
+            if let Some(mut preparation) = material_runtime::take_preparation(window, cx) {
+                preparation.retire(&self.platform);
+            }
             self.link_panel.window = None;
             self.link_panel.native_window_handle = 0;
             self.link_panel.generation = self.link_panel.generation.wrapping_add(1);

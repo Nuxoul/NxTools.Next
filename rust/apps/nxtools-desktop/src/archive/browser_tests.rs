@@ -115,7 +115,7 @@ fn click(surface: &mut VisualTestContext, ordinal: usize, modifiers: Modifiers, 
     });
     draw(surface);
 }
-fn key(surface: &mut VisualTestContext, stroke: &str) {
+fn key(surface: &mut VisualTestContext, stroke: &'static str) {
     surface.simulate_event(KeyDownEvent {
         keystroke: Keystroke::parse(stroke).expect("key"),
         is_held: false,
@@ -823,7 +823,7 @@ fn ui_correction_vertical_wheel_never_moves_horizontal_offset(cx: &mut TestAppCo
     let vertical_before =
         view.read_with(&surface, |v, _| v.scroll.0.borrow().base_handle.offset().y);
     let horizontal_before = view.read_with(&surface, |v, _| v.horizontal.offset().x);
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position: point(viewport.left() + px(80.), viewport.top() + px(90.)),
         delta: gpui_kit::ScrollDelta::Lines(point(0., -3.)),
         ..Default::default()
@@ -848,7 +848,7 @@ fn ui_correction_vertical_wheel_never_moves_horizontal_offset(cx: &mut TestAppCo
         });
         draw(&mut surface);
         let before = view.read_with(&surface, |v, _| v.horizontal.offset().x);
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position,
             delta: gpui_kit::ScrollDelta::Lines(point(0., if at_end { -4. } else { 4. })),
             ..Default::default()
@@ -866,7 +866,7 @@ fn ui_correction_vertical_wheel_never_moves_horizontal_offset(cx: &mut TestAppCo
         point(viewport.center().x, viewport.bottom() - px(4.)),
     ] {
         let before = view.read_with(&surface, |v, _| v.horizontal.offset().x);
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position,
             delta: gpui_kit::ScrollDelta::Lines(point(0., -3.)),
             ..Default::default()
@@ -879,7 +879,7 @@ fn ui_correction_vertical_wheel_never_moves_horizontal_offset(cx: &mut TestAppCo
         );
     }
     let before = view.read_with(&surface, |v, _| v.horizontal.offset().x);
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position,
         delta: gpui_kit::ScrollDelta::Lines(point(-3., 0.)),
         ..Default::default()

@@ -201,8 +201,8 @@ class ApprovedIconRegression(unittest.TestCase):
         self.assertIn("tests\\architecture\\approved-icons.py", lifecycle)
 
     def test_07_existing_window_tray_and_release_owners_are_retained(self):
-        self.assertIn('PCWSTR(1 as _)', text('vendor/gpui-pre-windows-039/src/platform.rs'))
-        self.assertIn('hIcon: icon_handle', text('vendor/gpui-pre-windows-039/src/window.rs'))
+        self.assertIn('PCWSTR(1 as _)', text('vendor/gpui-pre-windows-0312/src/platform.rs'))
+        self.assertIn('hIcon: icon_handle', text('vendor/gpui-pre-windows-0312/src/window.rs'))
         self.assertIn('DesktopExecutableIcon.ExtractProductIcon(desktopExecutable)', text('csharp/NxTools.PlatformHost/Windows/WindowsPlatformAdapter.cs'))
         self.assertIn('Icon.ExtractAssociatedIcon(desktopExecutable)', text('csharp/NxTools.PlatformHost/Windows/DesktopExecutableIcon.cs'))
         self.assertIn("desktop-product-icon.ps1", text("scripts/package.ps1"))

@@ -373,8 +373,81 @@ impl NetworkSettingsApplication {
                 .view
                 .upgrade()
                 .is_none_or(|view| view.read(cx).process_window_pick != Some(id))
+            || self
+                .platform
+                .as_ref()
+                .and_then(|platform| platform.connection_generation())
+                != Some(pending.connection)
+            || !cx.windows().contains(&pending.overlay.window)
         {
             self.cancel_process_window_pick(id, "owner_retired", cx);
+            return;
+        }
+        let overlay = pending.overlay.window;
+        let hwnd = pending.overlay.native_window_handle;
+        if !crate::ui::material::runtime::receipt(overlay, cx).is_some_and(|receipt| {
+            receipt.window_handle == hwnd
+                && receipt.surface
+                    == nxtools_protocol::window_material::MaterialSurface::Transparent
+        }) {
+            let platform = self.platform.clone().expect("current picker connection");
+            let connection = pending.connection;
+            let owner = cx.entity().downgrade();
+            // Material admission may lease the overlay, so leave this owner callback first.
+            cx.defer(move |cx| {
+                let Some(owner) = owner.upgrade() else {
+                    return;
+                };
+                let current = {
+                    let app = owner.read(cx);
+                    app.pending_process_window_pick
+                        .as_ref()
+                        .is_some_and(|pending| {
+                            pending.id == id
+                                && pending.overlay.window == overlay
+                                && pending.overlay.native_window_handle == hwnd
+                                && pending.connection == connection
+                                && app.window == Some(pending.source)
+                                && platform.connection_generation() == Some(connection)
+                                && pending.view.upgrade().is_some_and(|view| {
+                                    view.read(cx).process_window_pick == Some(id)
+                                })
+                        })
+                };
+                if !current
+                    || !cx.windows().contains(&overlay)
+                    || crate::ui::material::runtime::is_waiting(overlay, cx)
+                {
+                    return;
+                }
+                crate::ui::material::runtime::when_ready(
+                    overlay,
+                    platform,
+                    nxtools_protocol::window_material::MaterialSurface::Transparent,
+                    std::time::Duration::from_secs(8),
+                    move |result, cx| {
+                        owner.update(cx, |app, cx| {
+                            if !app
+                                .pending_process_window_pick
+                                .as_ref()
+                                .is_some_and(|pending| {
+                                    pending.id == id
+                                        && pending.overlay.window == overlay
+                                        && pending.overlay.native_window_handle == hwnd
+                                        && pending.connection == connection
+                                })
+                            {
+                                return;
+                            }
+                            match result {
+                                Ok(()) => app.show_process_picker_overlay(id, cx),
+                                Err(_) => app.cancel_process_window_pick(id, "native_failed", cx),
+                            }
+                        });
+                    },
+                    cx,
+                );
+            });
             return;
         }
         let command_id = uuid::Uuid::new_v4();
@@ -471,3 +544,7 @@ impl NetworkSettingsApplication {
         });
     }
 }
+
+#[cfg(test)]
+#[path = "window_picker_material_tests.rs"]
+mod material_tests;

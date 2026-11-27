@@ -8,7 +8,7 @@ impl Render for MainFixture {
         div()
     }
 }
-fn fixture(
+pub(super) fn fixture_unprepared(
     cx: &mut TestAppContext,
 ) -> (
     Entity<FloatingAssistantApplication>,
@@ -44,19 +44,30 @@ fn fixture(
     owner.update(cx, |owner, _| owner.source_hwnd = -39);
     (owner, endpoint, directory)
 }
-fn next(endpoint: &nxtools_ipc::PlatformServerEndpoint) -> Envelope {
+fn fixture(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<FloatingAssistantApplication>,
+    nxtools_ipc::PlatformServerEndpoint,
+    tempfile::TempDir,
+) {
+    let (owner, endpoint, directory) = fixture_unprepared(cx);
+    super::material_tests::prepare_fixture(&owner, cx);
+    (owner, endpoint, directory)
+}
+pub(super) fn next(endpoint: &nxtools_ipc::PlatformServerEndpoint) -> Envelope {
     endpoint
         .try_receive_command_for_contract_test()
         .expect("native command")
 }
-fn operation(envelope: &Envelope) -> FloatingAssistantOperation {
+pub(super) fn operation(envelope: &Envelope) -> FloatingAssistantOperation {
     let Message::PlatformCommand(PlatformCommand::FloatingAssistant(command)) = &envelope.message
     else {
         panic!("floating command");
     };
     command.operation
 }
-fn reply(
+pub(super) fn reply(
     owner: &Entity<FloatingAssistantApplication>,
     id: Uuid,
     success: bool,

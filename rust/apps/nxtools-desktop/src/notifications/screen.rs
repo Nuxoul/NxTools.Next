@@ -376,14 +376,78 @@ impl ScreenHost {
         {
             return;
         }
-        self.pending = None;
         if self.dirty || self.snapshot(cx) != self.projection {
+            self.pending = None;
             self.sync(cx);
         } else if !self.visible {
+            let prepared = self.surface.as_ref().is_some_and(|surface| {
+                crate::ui::material::runtime::receipt(surface.window, cx).is_some_and(|receipt| {
+                    receipt.window_handle == surface.hwnd
+                        && receipt.surface
+                            == nxtools_protocol::window_material::MaterialSurface::Transparent
+                })
+            });
+            if !prepared {
+                self.wait_frame_material(id, cx);
+                return;
+            }
+            self.pending = None;
             self.send_visibility(true, cx);
-        } else if let Some(height) = self.queued_height.take() {
-            self.measured(height, cx);
+        } else {
+            self.pending = None;
+            if let Some(height) = self.queued_height.take() {
+                self.measured(height, cx);
+            }
         }
+    }
+
+    fn wait_frame_material(&self, id: Uuid, cx: &mut Context<Self>) {
+        let Some(surface) = self.surface.as_ref() else {
+            return;
+        };
+        let handle = surface.window;
+        let hwnd = surface.hwnd;
+        let platform = self.platform.clone();
+        let owner = cx.entity().downgrade();
+        cx.defer(move |cx| {
+            let current = owner.upgrade().is_some_and(|owner| {
+                let host = owner.read(cx);
+                host.pending
+                    .as_ref()
+                    .is_some_and(|pending| pending.id == id && pending.phase == Phase::Frame)
+                    && host
+                        .surface
+                        .as_ref()
+                        .is_some_and(|surface| surface.window == handle && surface.hwnd == hwnd)
+            });
+            if !current {
+                return;
+            }
+            crate::ui::material::runtime::when_ready(
+                handle,
+                platform,
+                nxtools_protocol::window_material::MaterialSurface::Transparent,
+                Duration::from_secs(5),
+                move |result, cx| {
+                    let _ =
+                        owner.update(cx, |host, cx| {
+                            if host.pending.as_ref().is_none_or(|pending| {
+                                pending.id != id || pending.phase != Phase::Frame
+                            }) || host.surface.as_ref().is_none_or(|surface| {
+                                surface.window != handle || surface.hwnd != hwnd
+                            }) {
+                                return;
+                            }
+                            if result.is_ok() {
+                                host.frame_ready(id, cx);
+                            } else {
+                                host.retire("material_failed", cx);
+                            }
+                        });
+                },
+                cx,
+            );
+        });
     }
     fn measured(&mut self, height: f32, cx: &mut Context<Self>) {
         let height = height.ceil().clamp(78.0, 400.0);

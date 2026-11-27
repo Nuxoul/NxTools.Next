@@ -136,11 +136,19 @@ pub(crate) mod detail_request_tests;
 mod directory_picker;
 #[cfg(test)]
 mod directory_picker_tests;
+#[cfg(test)]
+mod event_projection_tests;
 #[cfg(debug_assertions)]
 pub(crate) mod fixed_transition_preview;
 mod floating_assistant;
 #[cfg(test)]
 mod grouped_completion_tests;
+mod material;
+#[cfg(test)]
+mod material_tests;
+#[cfg(test)]
+pub(crate) mod ordinary_presentation_fixture;
+use self::material::DOWNLOAD_MATERIAL_TIMEOUT;
 mod new_download_view;
 mod paused_url;
 #[cfg(test)]
@@ -537,6 +545,8 @@ pub(crate) struct DownloadTaskWindow {
     view: Entity<DownloadTaskWindowView>,
     native_window_handle: i64,
     generation: uuid::Uuid,
+    material_ready: bool,
+    pending_material_activation: Option<TaskWindowActivation>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -660,6 +670,7 @@ struct DownloadShutdownWindow {
     window: AnyWindowHandle,
     view: Entity<DownloadShutdownCountdownView>,
     correlation_id: uuid::Uuid,
+    material_ready: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -722,6 +733,7 @@ pub(crate) struct DownloadApplication {
     settings_view: Option<Entity<DownloadSettingsView>>,
     taskbar_overlay_window: Option<AnyWindowHandle>,
     taskbar_overlay_native_window_handle: i64,
+    taskbar_overlay_material_ready: bool,
     taskbar_overlay_correlation_id: uuid::Uuid,
     taskbar_overlay_edit_draft: Option<DownloadTaskbarProgressOverlaySettings>,
     taskbar_overlay_edit_correlation_id: Option<uuid::Uuid>,
@@ -762,6 +774,12 @@ pub(crate) struct DownloadApplication {
 }
 
 impl EventEmitter<DownloadApplicationEvent> for DownloadApplication {}
+
+#[derive(Clone, Copy)]
+enum DownloadSnapshotRefresh {
+    Authoritative,
+    ContinuousEvent,
+}
 
 impl DownloadApplication {
     pub(crate) fn new(
@@ -948,6 +966,7 @@ impl DownloadApplication {
             settings_view: None,
             taskbar_overlay_window: None,
             taskbar_overlay_native_window_handle: 0,
+            taskbar_overlay_material_ready: false,
             taskbar_overlay_correlation_id: uuid::Uuid::new_v4(),
             taskbar_overlay_edit_draft: None,
             taskbar_overlay_edit_correlation_id: None,
@@ -1061,6 +1080,9 @@ impl DownloadApplication {
     }
 
     pub(crate) fn taskbar_overlay_model(&self) -> DownloadTaskbarOverlayModel {
+        if self.taskbar_overlay_window.is_some() && !self.taskbar_overlay_material_ready {
+            return DownloadTaskbarOverlayModel::Hidden;
+        }
         let editing = self.taskbar_overlay_edit_draft.is_some();
         let settings = self
             .taskbar_overlay_edit_draft
@@ -2350,20 +2372,17 @@ impl DownloadApplication {
 
     pub(crate) fn open_settings_window(&mut self, cx: &mut Context<Self>) {
         if let Some(window) = self.settings_window {
-            if window
-                .update(cx, |_, window, _| {
-                    window.activate_window();
-                    window.refresh();
-                })
-                .is_ok()
-            {
+            if cx.windows().contains(&window) {
+                self.prepare_settings_material(window, false, cx);
                 return;
             }
             self.handle_settings_window_closed(cx);
         }
         let application = cx.entity();
         let initial = self.settings_view_initial();
-        let window_options = download_settings_window_options(cx);
+        let mut window_options = download_settings_window_options(cx);
+        window_options.show = false;
+        window_options.focus = false;
         #[cfg(test)]
         let view_slot = Rc::new(RefCell::new(None));
         #[cfg(test)]
@@ -2390,6 +2409,7 @@ impl DownloadApplication {
         match opened {
             Ok(window) => {
                 self.settings_window = Some(window.into());
+                self.prepare_settings_material(window.into(), true, cx);
                 #[cfg(test)]
                 {
                     self.settings_view = view_slot.borrow().clone();
@@ -2415,8 +2435,8 @@ impl DownloadApplication {
         let application = cx.entity();
         let platform = Rc::clone(&self.platform);
         let placement = self.config.download.taskbar_progress_overlay.clone();
-        let initial_model = self.taskbar_overlay_model();
-        let visible = initial_model.is_visible();
+        let initial_model = DownloadTaskbarOverlayModel::Hidden;
+        let visible = false;
         let overlay_correlation_id = self.taskbar_overlay_diagnostic_correlation_id();
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
@@ -2512,6 +2532,8 @@ impl DownloadApplication {
             Ok(window) => {
                 self.taskbar_overlay_native_window_handle = *native_slot.borrow();
                 self.taskbar_overlay_window = Some(window.into());
+                self.taskbar_overlay_material_ready = false;
+                self.prepare_taskbar_material(window.into(), cx);
             }
             Err(error) => warn!(
                 event = "download.taskbar_overlay.open_failed",
@@ -2602,7 +2624,7 @@ impl DownloadApplication {
         self.taskbar_overlay_edit_gesture_active = false;
         self.pending_taskbar_overlay_gestures.clear();
         let window_handle = self.taskbar_overlay_native_window_handle;
-        if window_handle == 0 {
+        if window_handle == 0 || !self.taskbar_overlay_material_ready {
             self.taskbar_overlay_edit_draft = None;
             self.taskbar_overlay_edit_correlation_id = None;
             return Err("任务栏覆盖层窗口尚未就绪".into());
@@ -3174,6 +3196,7 @@ impl DownloadApplication {
             self.request_task_icons(cx);
             let correlation_id = uuid::Uuid::new_v4();
             self.request_browser_registration(correlation_id, cx);
+            self.taskbar_overlay_material_ready = false;
             match self.apply_taskbar_overlay_placement(correlation_id) {
                 Ok(command_id) => info!(
                     event = "download.taskbar_overlay.reconnect_restore_accepted",
@@ -3190,6 +3213,10 @@ impl DownloadApplication {
                     "saved taskbar overlay placement could not be restored after PlatformHost connected"
                 ),
             }
+            if let Some(window) = self.taskbar_overlay_window {
+                self.prepare_taskbar_material(window, cx);
+                cx.notify();
+            }
             return;
         }
         if let PlatformNotification::Disconnected {
@@ -3197,6 +3224,8 @@ impl DownloadApplication {
             pending_command_ids,
         } = &notification
         {
+            self.taskbar_overlay_material_ready = false;
+            cx.notify();
             self.foreground_process_id = None;
             let _ = self.apply_background_speed_policy(uuid::Uuid::new_v4());
             self.defer_effective_limit_display(cx);
@@ -3707,6 +3736,19 @@ impl DownloadApplication {
     }
 
     fn refresh_snapshot(&mut self, refresh_task_detail: bool, cx: &mut Context<Self>) {
+        self.refresh_snapshot_from(
+            refresh_task_detail,
+            DownloadSnapshotRefresh::Authoritative,
+            cx,
+        );
+    }
+
+    fn refresh_snapshot_from(
+        &mut self,
+        refresh_task_detail: bool,
+        source: DownloadSnapshotRefresh,
+        cx: &mut Context<Self>,
+    ) {
         let snapshot = match load_download_snapshot(&self.engine) {
             Ok(snapshot) => snapshot,
             Err(error) => {
@@ -3722,6 +3764,8 @@ impl DownloadApplication {
                 return;
             }
         };
+        let continuous = matches!(source, DownloadSnapshotRefresh::ContinuousEvent)
+            && self.event_generation == snapshot.generation;
         if self.event_generation != 0 && self.event_generation != snapshot.generation {
             info!(
                 previous_generation = self.event_generation,
@@ -3741,8 +3785,19 @@ impl DownloadApplication {
                 return;
             }
         };
-        self.latest_progress.clear();
-        self.last_event_sequence = snapshot.sequence;
+        if continuous {
+            self.latest_progress.retain(|task_id, progress| {
+                tasks.iter().any(|task| {
+                    task.task.id() == *task_id
+                        && !matches!(task.task.status(), DownloadStatus::Completed | DownloadStatus::Failed | DownloadStatus::Cancelled)
+                        && progress.downloaded_bytes <= task.downloaded_bytes
+                        && !matches!((progress.total_bytes, task.total_bytes), (Some(previous), Some(current)) if previous != current)
+                })
+            });
+        } else {
+            self.latest_progress.clear();
+            self.last_event_sequence = snapshot.sequence;
+        }
         self.observe_destination_conflicts(&tasks);
         self.publish_terminal_notifications(&tasks, cx);
         self.tasks = Rc::new(tasks);
@@ -3844,6 +3899,8 @@ impl DownloadApplication {
             return;
         }
         let progress_event = matches!(&envelope.event, DownloadEvent::TaskProgress { .. });
+        let continuous_state =
+            !sequence_gap && !matches!(&envelope.event, DownloadEvent::SnapshotRequired { .. });
         if sequence_gap && progress_event {
             self.refresh_snapshot(true, cx);
             return;
@@ -3904,7 +3961,11 @@ impl DownloadApplication {
             cx.notify();
             return;
         }
-        self.refresh_snapshot(true, cx);
+        if continuous_state {
+            self.refresh_snapshot_from(true, DownloadSnapshotRefresh::ContinuousEvent, cx);
+        } else {
+            self.refresh_snapshot(true, cx);
+        }
         if let Some((task_id, origin, status)) = task_event_diagnostic {
             info!(
                 event = "download.desktop.task_event_applied",

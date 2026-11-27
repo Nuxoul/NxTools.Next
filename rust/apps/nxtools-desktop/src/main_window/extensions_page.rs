@@ -232,6 +232,7 @@ impl ExtensionManagerView {
                 return;
             }
             window.open_sheet(cx, move |sheet, window, cx| {
+                let sheet = sheet.bg(crate::theme::overlay_background(cx));
                 let Some(view_state) = view.upgrade() else {
                     return sheet;
                 };

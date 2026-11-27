@@ -59,6 +59,7 @@ impl ExtensionManagerView {
                 let submitted = Rc::new(Cell::new(false));
                 let details = Rc::new(Cell::new(false));
                 window.open_dialog(cx, move |dialog, _, cx| {
+                    let dialog = dialog.bg(crate::theme::overlay_background(cx));
                     let app = owner.upgrade();
                     let state = app.as_ref().map(|app| app.read(cx));
                     let busy = state.is_some_and(|app| app.busy);
@@ -742,7 +743,7 @@ mod detail_tests {
                 found = true;
                 break;
             }
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(px(500.0), px(220.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
                 ..Default::default()

@@ -85,6 +85,7 @@ impl ArchiveBrowser {
         let close_browser = browser.clone();
         let source = window.window_handle();
         window.open_dialog(cx, move |dialog, _, cx| {
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let browser = close_browser.clone();
             let confirm_find = find.downgrade();
             let valid = {

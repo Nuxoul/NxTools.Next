@@ -259,7 +259,8 @@ impl Reader {
             return;
         }
         let owner = cx.weak_entity();
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let owner = owner.clone();
             dialog
                 .title("放弃未保存的更改？")

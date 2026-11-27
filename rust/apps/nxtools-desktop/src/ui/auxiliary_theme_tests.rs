@@ -124,8 +124,7 @@ fn taskbar_production_root_does_not_paint_an_opaque_external_client(cx: &mut Tes
         quads.iter().any(|quad| {
             !quad.background.is_transparent()
                 && quad.bounds.size.width.as_f32() / scale == 120.0
-                && quad.bounds.size.height.as_f32() / scale
-                    == crate::download_taskbar_overlay::TASKBAR_OVERLAY_LANE_HEIGHT
+                && quad.bounds.size.height.as_f32() / scale == 2.0
         }),
         "real determinate indicator remains painted; no blanket appearance suppression"
     );

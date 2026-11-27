@@ -1,5 +1,7 @@
 # Archive HZ3 batch projection
 
+Current framework source lookup follows [Kit0.10.0/defaultpre0.3.12](../../../../docs/reference-code/gpui-kit-0100.md). Earlier versioned evidence below remains historical; the original layout/variants, lifecycle/native and deferred-owner contracts are unchanged.
+
 ## 1. Scope / Trigger
 Step5 HZ3 summary around original `ArchiveApplication` logical jobs. Evidence: `repo:rust/apps/nxtools-desktop/src/archive/batch.rs`, `repo:rust/apps/nxtools-desktop/src/archive/batch_jobs.rs`, `repo:rust/apps/nxtools-desktop/src/archive/jobs.rs`, `repo:rust/apps/nxtools-desktop/src/archive/launch_entry.rs`. HatchZip reference is [batch-summary](../../../../docs/reference-code/hatchzip/batch-summary.md), not a scheduler to import. No HZ4/HZ5, persistent history or stop-on-error policy.
 

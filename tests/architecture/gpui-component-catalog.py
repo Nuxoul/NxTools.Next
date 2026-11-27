@@ -39,8 +39,8 @@ def check(root: Path = ROOT) -> tuple[list[str], int]:
     if not isinstance(entries, list):
         return ["entries is not a list"], 0
     if len(entries) != EXPECTED_COUNT or data.get("component_count") != EXPECTED_COUNT:
-        failures.append("current Component inventory must contain79 entries; re-audit names/URLs before changing this gate")
-    # These hashes/pages remain the original2026-10-15 audit, not a fabricated0.8.0 re-audit.
+        failures.append("historical Component inventory must contain79 entries; re-audit names/URLs before changing this gate")
+    # These hashes/pages remain the original2026-10-15 audit, not a new release audit.
     if (data.get("website_version"), data.get("locked_version")) != ("0.7.3", "0.7.1"):
         failures.append("historical website/release evidence distinction missing")
     if data.get("page_fetch_success") != EXPECTED_COUNT or data.get("source_entry_count") != 78:
@@ -101,14 +101,14 @@ def check(root: Path = ROOT) -> tuple[list[str], int]:
     for token in ("prepare_for_toolbar", "ghost().compact()", "Toolbar.content", "Other Tools", "DataTable", "not yet implemented"):
         if token not in texts["rules"]:
             failures.append(f"missing executable selection caution: {token}")
-    if 'gpui-kit = "=0.8.0"' not in (root / "Cargo.toml").read_text("utf-8-sig"):
-        failures.append("current product must pin reviewed0.8.0")
-    current_release = docs / "gpui-kit-080.md"
-    if not current_release.is_file() or not all(token in current_release.read_text("utf-8") for token in ("0.8.0", "0.3.9", "editor_host", "WM_MOUSEACTIVATE", "notification", "historical")):
+    if 'gpui-kit = "=0.10.0"' not in (root / "Cargo.toml").read_text("utf-8-sig"):
+        failures.append("current product must pin reviewed0.10.0")
+    current_release = docs / "gpui-kit-0100.md"
+    if not current_release.is_file() or not all(token in current_release.read_text("utf-8") for token in ("0.10.0", "0.3.12", "editor_host", "WM_MOUSEACTIVATE", "notification", "historical")):
         failures.append("missing current release/source/patch review")
-    for key in ("table", "viewer", "rules", "index"):
-        if "gpui-kit-080.md" not in texts[key]:
-            failures.append(f"{key} does not route current0.8.0 before historical catalog")
+    for key in ("agents", "spec_index", "desktop_index", "table", "viewer", "rules", "index"):
+        if "gpui-kit-0100.md" not in texts[key]:
+            failures.append(f"{key} does not route current0.10.0 before historical catalog")
     return failures, len(entries)
 
 
@@ -118,5 +118,5 @@ if __name__ == "__main__":
         print(f"FAIL {error}")
     if errors:
         raise SystemExit(1)
-    print(f"PASS GPUI catalog: {count} historical pages/rows;78 historical0.7.1 entries; current0.8.0 release authority and selection cautions")
+    print(f"PASS GPUI catalog: {count} historical pages/rows;78 historical0.7.1 entries; current0.10.0 release authority and selection cautions")
     print("Scope: local documentation consistency only; not live website, Rust API compilation, product visuals/interaction or native acceptance.")

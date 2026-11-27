@@ -3,7 +3,7 @@ using System.Text.Json;
 
 namespace NxTools.PlatformHost.Tests;
 
-// Only a byte-identical copy of the current test apphost can select this negative fixture.
+// Only a byte-identical copy of the current test apphost can select these protocol fixtures.
 internal static class ArchiveProductWorkerFixture
 {
     internal static async Task<int> RunAsync()
@@ -21,6 +21,7 @@ internal static class ArchiveProductWorkerFixture
         if (mode=="legacy-strict" && (contract!=1 || root.TryGetProperty("read_transport",out _))) return 2;
         var caps = new List<string> { "source_lease_v1", "budget_reservations_v1" };
         caps.AddRange(NxTools.PlatformHost.Protocol.ArchiveReadWire.Capabilities((uint)contract));
+        if (mode == "transport-boundary") caps.AddRange(NxTools.PlatformHost.Protocol.ArchiveReadWire.LargeCapabilities.Except(caps));
         if (mode == "missing-capability") caps.Remove("metadata_credit_v1");
         if (mode == "crash") return 17;
         object accepted = mode == "old-version"
@@ -28,13 +29,18 @@ internal static class ArchiveProductWorkerFixture
             : new { schema = 1, operation_id = id, op = "accepted", read_contract = mode == "wrong-version" ? (contract == 1 ? 2 : 1) : contract, capabilities = caps };
         await Send(output, accepted);
         if (mode is "old-version" or "wrong-version" or "missing-capability") { await Task.Delay(3000); return 0; }
-        // A hanging negotiated worker is a negative cancellation/EOF fixture, never a success oracle.
+        // Other negotiated modes hang to exercise cancellation/EOF, not archive success.
         while (true) {
             var count = await input.ReadAsync(header); if (count == 0) return 0;
             if (count < 4) await input.ReadExactlyAsync(header.AsMemory(count));
             length = BinaryPrimitives.ReadUInt32LittleEndian(header); if (length is 0 or > 1048576) return 2;
             body = new byte[length]; await input.ReadExactlyAsync(body);
             using var control = JsonDocument.Parse(body);
+            if (mode == "transport-boundary" && control.RootElement.GetProperty("op").GetString() == "read_upgrade") {
+                await Send(output, new { schema = 1, operation_id = id, op = "complete", files_verified = 0, bytes_verified = 0,
+                    entry_count = 0, batch_count = 0 });
+                return 0;
+            }
             if (control.RootElement.GetProperty("op").GetString() == "cancel") {
                 if (mode == "timeout-cancel") await Send(output, new { schema = 1, operation_id = id, op = "failure", error_code = "Cancelled" });
                 return 0;

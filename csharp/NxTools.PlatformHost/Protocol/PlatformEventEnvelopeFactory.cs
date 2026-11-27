@@ -22,6 +22,11 @@ internal static class PlatformEventEnvelopeFactory
                 Event = "system_theme_preference_changed",
                 Data = new { theme.CorrelationId, theme.Dark, theme.NativeErrorCode }
             }, theme.CorrelationId),
+            SystemMaterialCapabilitiesChangedEvent material => ProtocolEnvelope.Create("platform_event", new
+            {
+                Event = "system_material_capabilities_changed",
+                Data = material
+            }, material.CorrelationId),
             QuickLaunchKeyboardHealthChangedEvent health => ProtocolEnvelope.Create("platform_event", new
             {
                 Event = "quick_launch_keyboard_health_changed",

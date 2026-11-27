@@ -33,14 +33,20 @@ foreach ($required in @('DownloadEngine::open_in_memory()', 'drop(endpoint)', 'N
 }
 $handoff = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads\browser_handoff_impl.rs') -Raw
 $newView = Get-Content (Join-Path $root 'rust\apps\nxtools-desktop\src\downloads\new_download_view.rs') -Raw
-$urlHelperStart = $newView.IndexOf('fn new_download_url_control(')
+$urlHelperStart = $newView.IndexOf('fn new_download_url_control_layout(')
 $urlHelperEnd = $newView.IndexOf('fn new_download_media_radio(', $urlHelperStart)
 if ($urlHelperStart -lt 0 -or $urlHelperEnd -le $urlHelperStart) { throw 'New-download URL/paste helper boundary missing.' }
 $urlHelper = $newView.Substring($urlHelperStart, $urlHelperEnd - $urlHelperStart)
+$compactUrlStart = $newView.IndexOf('fn new_download_compact_url_control(')
+if ($compactUrlStart -lt 0) { throw 'New-download compact URL/paste helper boundary missing.' }
+$compactUrlHelper = $newView.Substring($compactUrlStart)
 if (-not $handoff.Contains('options.display_id = display_id') -or
-    -not $newView.Contains('new_download_url_control(&self.url, self.handoff_pending)') -or
+    -not [regex]::IsMatch($newView, '(?s)new_download_compact_url_control\(\s*&self\.url,\s*self\.handoff_pending,?\s*\)') -or
     [regex]::Matches($urlHelper, '\.disabled\(disabled\)').Count -lt 2 -or
-    -not $urlHelper.Contains('Input::new(input)') -or -not $urlHelper.Contains('Button::new("download-paste-url")')) {
+    -not $urlHelper.Contains('Input::new(input)') -or -not $urlHelper.Contains('Button::new("download-paste-url")') -or
+    [regex]::Matches($compactUrlHelper, '\.disabled\(disabled\)').Count -lt 2 -or
+    -not $compactUrlHelper.Contains('InputGroup::new("download-new-url-group")') -or
+    -not $compactUrlHelper.Contains('InputGroupButton::new("download-paste-url")')) {
     throw 'Fixed handoff must bind predecessor display and freeze the actual URL Input/paste Button through one helper.'
 }
 
@@ -85,8 +91,8 @@ foreach ($required in @('QuickLaunchPreview::new','ClipboardPreview::new','WeakE
 }
 
 $manifest = Get-Content -Raw (Join-Path $root 'Cargo.toml')
-$backend = Get-Content -Raw (Join-Path $root 'vendor\gpui-pre-windows-039\src\events.rs')
-if (-not $manifest.Contains('gpui-pre-windows = { path = "vendor/gpui-pre-windows-039" }') -or
+$backend = Get-Content -Raw (Join-Path $root 'vendor\gpui-pre-windows-0312\src\events.rs')
+if (-not $manifest.Contains('gpui-pre-windows = { path = "vendor/gpui-pre-windows-0312" }') -or
     -not $backend.Contains('GetWindowLongPtrW(handle, GWL_EXSTYLE)') -or
     -not $backend.Contains('WS_EX_NOACTIVATE') -or -not $backend.Contains('MA_NOACTIVATE')) {
     throw 'Approved Kit Windows passive-message boundary patch is missing.'

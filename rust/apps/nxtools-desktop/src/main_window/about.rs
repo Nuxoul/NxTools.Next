@@ -5,14 +5,14 @@ use std::{
 
 use gpui_kit::base::Root;
 use gpui_kit::component::{
-    ActiveTheme, Sizable, Size, TitleBar,
+    Sizable, Size, TitleBar,
     button::{Button, ButtonCustomVariant, ButtonVariants},
     description_list::DescriptionList,
 };
 use gpui_kit::{
     Animation, AnimationExt, AnyElement, ClipboardItem, Context, Entity, FontWeight, Hsla,
     IntoElement, Render, Task, Window, WindowBounds, WindowKind, WindowOptions, div, prelude::*,
-    px, relative, rgb, rgba, size,
+    px, relative, size,
 };
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -51,22 +51,29 @@ fn about_window_options(cx: &gpui_kit::App) -> WindowOptions {
     }
 }
 
+fn about_material_window_options(prepare_material: bool, cx: &gpui_kit::App) -> WindowOptions {
+    let options = about_window_options(cx);
+    WindowOptions {
+        show: !prepare_material,
+        focus: !prepare_material,
+        ..options
+    }
+}
+
 impl MainWindow {
     pub(super) fn open_about(&mut self, cx: &mut Context<Self>) {
         let id = Uuid::new_v4();
         let start = Instant::now();
         info!(event = "desktop.about.open.start", correlation_id = %id);
         if let Some(handle) = self.about_window
-            && handle
-                .update(cx, |_, window, _| window.activate_window())
-                .is_ok()
+            && cx.windows().contains(&handle)
         {
-            info!(event = "desktop.about.open.reused", correlation_id = %id, elapsed_ms = start.elapsed().as_millis() as u64);
+            self.prepare_about(handle, id, start, false, cx);
             return;
         }
 
         let downloads = self.downloads.clone();
-        let options = about_window_options(cx);
+        let options = about_material_window_options(self.platform.is_some(), cx);
         let result = cx.open_window(options, move |window, cx| {
             let view = cx.new(|cx| {
                 let mut view = About::new(id, cx);
@@ -78,8 +85,9 @@ impl MainWindow {
         });
         match result {
             Ok(window) => {
-                self.about_window = Some(window.into());
-                info!(event = "desktop.about.open.ready", correlation_id = %id, elapsed_ms = start.elapsed().as_millis() as u64);
+                let handle = window.into();
+                self.about_window = Some(handle);
+                self.prepare_about(handle, id, start, true, cx);
             }
             Err(error) => {
                 self.about_window = None;
@@ -89,6 +97,51 @@ impl MainWindow {
                 warn!(event = "desktop.about.open.failed", correlation_id = %id, elapsed_ms = start.elapsed().as_millis() as u64, ?native_code);
             }
         }
+    }
+
+    fn prepare_about(
+        &self,
+        handle: gpui_kit::AnyWindowHandle,
+        id: Uuid,
+        started: Instant,
+        first_show: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let owner = cx.entity().downgrade();
+        let platform = self.platform.clone();
+        cx.defer(move |cx| {
+            if !first_show && crate::ui::material::runtime::is_waiting(handle, cx) {
+                return;
+            }
+            let completion = move |result: Result<(), &'static str>, cx: &mut gpui_kit::App| {
+                let Some(owner) = owner.upgrade() else { return; };
+                if owner.read(cx).about_window != Some(handle) || !cx.windows().contains(&handle) {
+                    return;
+                }
+                match result {
+                    Ok(()) => {
+                        let _ = handle.update(cx, |_, window, _| window.activate_window());
+                        info!(event = "desktop.about.open.ready", correlation_id = %id, elapsed_ms = started.elapsed().as_millis() as u64);
+                    }
+                    Err(reason) => {
+                        if first_show {
+                            owner.update(cx, |owner, _| owner.about_window = None);
+                            let _ = handle.update(cx, |_, window, _| window.remove_window());
+                        }
+                        warn!(event = "desktop.about.open.failed", correlation_id = %id, reason, elapsed_ms = started.elapsed().as_millis() as u64);
+                    }
+                }
+            };
+            if let Some(platform) = platform {
+                crate::ui::material::runtime::when_ready(
+                    handle, platform,
+                    nxtools_protocol::window_material::MaterialSurface::Backdrop,
+                    Duration::from_secs(8), completion, cx,
+                );
+            } else {
+                completion(Ok(()), cx);
+            }
+        });
     }
 }
 
@@ -518,7 +571,7 @@ impl Drop for About {
 
 impl Render for About {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let palette = Palette::new(cx.theme().mode.is_dark());
+        let palette = Palette::new(cx);
         let compact = window.viewport_size().height < px(464.);
         let page = if self.licenses {
             self.license_view(palette, cx)
@@ -647,41 +700,23 @@ struct Palette {
 }
 
 impl Palette {
-    fn new(dark: bool) -> Self {
-        if dark {
-            Self {
-                canvas: rgb(0x0D0E12).into(),
-                card: rgba(0x161821CC).into(),
-                card_hover: rgb(0x242836).into(),
-                border: rgba(0xFFFFFF14).into(),
-                text: rgb(0xF3F4F6).into(),
-                secondary: rgb(0x9CA3AF).into(),
-                muted: rgb(0x818A99).into(),
-                success: rgb(0x34D399).into(),
-                button: rgba(0xFFFFFF08).into(),
-                button_text: rgb(0xD1D5DB).into(),
-                accent_fill: rgba(0x3B82F626).into(),
-                accent_text: rgb(0x93C5FD).into(),
-                accent_border: rgba(0x60A5FA40).into(),
-                accent_hover: rgba(0x3B82F644).into(),
-            }
-        } else {
-            Self {
-                canvas: rgb(0xF8FAFC).into(),
-                card: rgba(0xFFFFFFD9).into(),
-                card_hover: rgb(0xEDF2F8).into(),
-                border: rgba(0x0F172A14).into(),
-                text: rgb(0x0F172A).into(),
-                secondary: rgb(0x475569).into(),
-                muted: rgb(0x64748B).into(),
-                success: rgb(0x087451).into(),
-                button: rgba(0x0F172A06).into(),
-                button_text: rgb(0x334155).into(),
-                accent_fill: rgba(0x3B82F61C).into(),
-                accent_text: rgb(0x174BA0).into(),
-                accent_border: rgba(0x2563EB40).into(),
-                accent_hover: rgba(0x3B82F633).into(),
-            }
+    fn new(cx: &gpui_kit::App) -> Self {
+        let colors = &gpui_kit::component::Theme::global(cx).colors;
+        Self {
+            canvas: colors.background,
+            card: colors.group_box,
+            card_hover: colors.list_hover,
+            border: colors.border,
+            text: colors.foreground,
+            secondary: colors.tab_foreground,
+            muted: colors.muted_foreground,
+            success: colors.green,
+            button: colors.button,
+            button_text: colors.button_foreground,
+            accent_fill: colors.accent,
+            accent_text: colors.accent_foreground,
+            accent_border: colors.primary.opacity(0.25),
+            accent_hover: colors.primary.opacity(0.18),
         }
     }
 }

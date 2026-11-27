@@ -3,6 +3,8 @@ use super::*;
 use gpui_kit::TestAppContext;
 use gpui_kit::component::WindowExt as _;
 use nxtools_protocol::{Envelope, Message, PlatformCommand, PlatformCommandResult};
+#[path = "ordinary_presentation_fixture.rs"]
+mod ordinary_presentation_fixture;
 struct PickerHost;
 impl gpui_kit::Render for PickerHost {
     fn render(
@@ -14,6 +16,20 @@ impl gpui_kit::Render for PickerHost {
     }
 }
 pub(super) fn setup(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<ArchiveApplication>,
+    nxtools_ipc::PlatformServerEndpoint,
+) {
+    let (owner, endpoint) = setup_unprepared(cx);
+    prepare_presentations(&owner, cx);
+    (owner, endpoint)
+}
+pub(super) fn prepare_presentations(owner: &Entity<ArchiveApplication>, cx: &mut TestAppContext) {
+    let platform = owner.read_with(cx, |app, _| app.platform.clone());
+    cx.update(|cx| ordinary_presentation_fixture::install(platform, cx));
+}
+pub(super) fn setup_unprepared(
     cx: &mut TestAppContext,
 ) -> (
     Entity<ArchiveApplication>,
@@ -413,6 +429,7 @@ fn failed_read_admission_stops_loading_on_the_new_generation(cx: &mut TestAppCon
     cx.executor().allow_parking();
     let (bridge, _) = nxtools_ipc::platform_bridge(8);
     let owner = cx.new(|cx| ArchiveApplication::new(Rc::new(bridge), None, cx));
+    prepare_presentations(&owner, cx);
     owner.update(cx, |app, cx| {
         app.open_canonical(PathBuf::from(r"C:\owned\unavailable.zip"), 0, vec![], cx)
     });
@@ -687,29 +704,34 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         pressed_button: Some(gpui_kit::MouseButton::Left),
         ..Default::default()
     });
+    let assert_no_content_command = |wire: &Envelope| match &wire.message {
+        Message::PlatformCommand(PlatformCommand::ArchiveJob(_)) => {
+            panic!("no extraction before the locate receipt")
+        }
+        Message::PlatformCommand(PlatformCommand::ArchiveEntry(command)) => {
+            assert_ne!(command.action, ArchiveEntryAction::Materialize);
+        }
+        _ => {}
+    };
     let (wire, drag) = loop {
         let wire = endpoint
             .try_receive_business_command()
             .expect("formal row command");
+        assert_no_content_command(&wire);
         if let Message::PlatformCommand(PlatformCommand::ArchiveVirtualDrag(drag)) = &wire.message {
             break (wire.clone(), drag.clone());
         }
     };
     assert_eq!(drag.action, "locate");
-    assert_eq!(
-        drag.items.as_ref().expect("receiver folder")[0]
-            .entry
-            .browser,
-        Some(browser.clone())
-    );
-    assert!(
-        drag.items.as_ref().expect("receiver folder")[0]
-            .entry
-            .ordinal
-            .is_none()
-    );
+    let items = drag.items.as_ref().expect("direct-drop marker");
+    assert_eq!(items.len(), 1, "one marker to locate the receiver parent");
+    let marker = &items[0];
+    assert_eq!(marker.entry.browser, Some(browser.clone()));
+    assert!(!marker.directory);
+    assert_eq!(marker.name, "selected-files");
+    assert_eq!(marker.size, Some(0));
+    assert_eq!(marker.entry.ordinal, Some(0), "first frozen file ordinal");
     assert_eq!(drag.source_window_handle, 311);
-    assert_eq!(drag.items.as_ref().expect("receiver folder").len(), 1);
     let drag_progress = nxtools_protocol::archive_virtual_drag::ArchiveVirtualDragProgress {
         version: 1,
         operation_id: drag.operation_id,
@@ -722,7 +744,7 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         files_total: 2,
         current_index: Some(0),
         current_member: Some("drag.txt".into()),
-        current_request_id: Some(drag.items.as_ref().expect("items")[0].entry.operation_id),
+        current_request_id: Some(marker.entry.operation_id),
         current_bytes_done: Some(1),
         current_bytes_total: Some(3),
         bytes_processed: Some(1),
@@ -731,23 +753,37 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
         code: None,
         native_error_code: None,
     };
+    drag_progress
+        .validate()
+        .expect("well-formed content progress for the marker identity");
     let before_progress = surface.update(|_, cx| cx.windows());
-    r45_deliver_drag_progress(&owner, drag_progress.clone(), &mut surface);
+    r45_deliver_drag_progress(&owner, drag_progress, &mut surface);
     assert!(
-        owner.read_with(&surface, |app, _| app.jobs.drag_progress.is_none()),
+        owner.read_with(&surface, |app, _| app.jobs.drag_progress.is_none()
+            && app.jobs.records.is_empty()),
         "locate has no virtual content progress"
     );
     assert_eq!(surface.update(|_, cx| cx.windows()), before_progress);
+    while let Ok(wire) = endpoint.try_receive_business_command() {
+        assert_no_content_command(&wire);
+    }
+    let result = PlatformCommandResult {
+        success: true,
+        error: None,
+        native_error_code: None,
+        data: Some(
+            serde_json::json!({"status":"located","destination":r"D:\out","drop_effect":1})
+                .to_string(),
+        ),
+    };
+    endpoint
+        .route_command_result_for_contract_test(wire.id, result.clone())
+        .expect("original locate router receipt");
     owner.update(&mut surface, |app, cx| {
         app.notification(
             PlatformNotification::CommandResult {
                 correlation_id: wire.id,
-                result: PlatformCommandResult {
-                    success: true,
-                    error: None,
-                    native_error_code: None,
-                    data: Some(serde_json::json!({"status":"located","destination":r"D:\out\drag (2)","drop_effect":1}).to_string()),
-                },
+                result,
             },
             cx,
         );
@@ -774,7 +810,7 @@ fn production_row_drag_read_hydration_and_result_route_share_original_snapshot(
             .request
             .as_ref()
             .expect("extract request");
-        assert_eq!(request.destination.as_deref(), Some(r"D:\out\drag (2)"));
+        assert_eq!(request.destination.as_deref(), Some(r"D:\out"));
         let options = request.extract.as_ref().expect("options");
         assert_eq!(
             options.strategy,
@@ -3389,7 +3425,7 @@ fn opt07_assert_find_warning_refusal(cx: &mut TestAppContext, action: &str) {
         });
         draw(surface);
     }
-    fn key(surface: &mut VisualTestContext, stroke: &str) {
+    fn key(surface: &mut VisualTestContext, stroke: &'static str) {
         surface.simulate_event(gpui_kit::KeyDownEvent {
             keystroke: gpui_kit::Keystroke::parse(stroke).expect("key"),
             is_held: false,
@@ -3665,7 +3701,7 @@ fn ref17_b3_e2_actual_create_submit_freezes_volume_in_job_and_wire(cx: &mut Test
             } else {
                 -2.
             };
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
                 ..Default::default()

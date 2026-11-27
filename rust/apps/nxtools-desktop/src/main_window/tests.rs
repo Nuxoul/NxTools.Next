@@ -302,7 +302,11 @@ fn titlebar_global_settings_click_keeps_its_controller_alive(cx: &mut TestAppCon
     let settings = window
         .debug_bounds("global-network-settings")
         .expect("global settings trigger");
-    assert!(window.debug_bounds("global-integration-setup-button").is_none());
+    assert!(
+        window
+            .debug_bounds("global-integration-setup-button")
+            .is_none()
+    );
     let about = window
         .debug_bounds("global-about-entry")
         .expect("About replaces the integration setup entry");
@@ -642,17 +646,40 @@ fn markdown_reader_tool_configures_without_opening_preview(cx: &mut TestAppConte
     });
     surface.simulate_resize(size(px(1060.0), px(540.0)));
     surface.refresh().expect("Other Tools workspace");
-    assert!(surface.debug_bounds("tool-markdown-reader-status-dot").is_some());
+    assert!(
+        surface
+            .debug_bounds("tool-markdown-reader-status-dot")
+            .is_some()
+    );
     assert!(surface.debug_bounds("tool-markdown-reader-open").is_none());
-    let configure = surface.debug_bounds("tool-markdown-reader-configure").expect("Configure Markdown reader").center();
+    let configure = surface
+        .debug_bounds("tool-markdown-reader-configure")
+        .expect("Configure Markdown reader")
+        .center();
     let initial = surface.windows();
     surface.simulate_click(configure, Modifiers::default());
     surface.run_until_parked();
-    let settings = surface.windows().into_iter().find(|id| !initial.contains(id)).expect("configuration window");
-    surface.update(|_, cx| settings.update(cx, |root, _, cx| {
-        let root = root.downcast::<gpui_kit::base::Root>().expect("feature window root");
-        assert!(root.read(cx).view().clone().downcast::<crate::tools::markdown_reader::SettingsView>().is_ok());
-    }).unwrap());
+    let settings = surface
+        .windows()
+        .into_iter()
+        .find(|id| !initial.contains(id))
+        .expect("configuration window");
+    surface.update(|_, cx| {
+        settings
+            .update(cx, |root, _, cx| {
+                let root = root
+                    .downcast::<gpui_kit::base::Root>()
+                    .expect("feature window root");
+                assert!(
+                    root.read(cx)
+                        .view()
+                        .clone()
+                        .downcast::<crate::tools::markdown_reader::SettingsView>()
+                        .is_ok()
+                );
+            })
+            .expect("live reader configuration window")
+    });
     surface.simulate_click(configure, Modifiers::default());
     surface.run_until_parked();
     assert_eq!(surface.windows().len(), initial.len() + 1);
@@ -826,8 +853,8 @@ fn feature_total_switches_persist_one_requested_value_per_pointer_and_key(cx: &m
     config.quick_launch.auto_quick_switch = false;
     config.clipboard.link_detector_enabled = false;
     config.save_to(&path).expect("seed settings");
-    let catalog = FinderCatalog::open(temp.path().join("history.db"), &[])
-        .expect("feature switch catalog");
+    let catalog =
+        FinderCatalog::open(temp.path().join("history.db"), &[]).expect("feature switch catalog");
     let worker = crate::clipboard_worker::ClipboardCaptureWorkerHandle::spawn(
         temp.path().join("clipboard.db"),
         temp.path().join("images"),
@@ -1124,7 +1151,7 @@ fn quick_launch_settings_navigation_mounts_only_the_selected_page(cx: &mut TestA
         .debug_bounds("quick-launch-kit-settings")
         .expect("bounded Settings viewport");
     for _ in 0..5 {
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: viewport.center(),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -20.0)),
             ..Default::default()
@@ -1984,7 +2011,7 @@ fn quick_launch_custom_commands_use_one_master_detail_editor_with_separated_acti
         .debug_bounds("quick-launch-command-form-scroll")
         .expect("actual command scroll hit area");
     for _ in 0..5 {
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(
                 form_viewport.center().x,
                 (form_viewport.top() + px(80.0)).min(viewport.bottom() - px(8.0)),
@@ -3729,6 +3756,8 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
         start_on_login_silently: false,
         close_to_tray: true,
         theme: nxtools_core::ThemePreference::Dark,
+        material_style: nxtools_core::MaterialStyle::Solid,
+        material_tuning: Default::default(),
         ui_font_family: nxtools_core::default_ui_font_family(),
         notification_position: Default::default(),
         notification_duration_seconds: nxtools_core::default_notification_duration(),
@@ -3854,7 +3883,11 @@ fn titlebar_move_and_close_reach_transport_without_destroying_the_main_entity(
     }
     assert_eq!(minimize.right(), maximize.left());
     assert_eq!(maximize.right(), close.left());
-    assert_eq!(minimize.left() - global_settings.right(), px(SPACING_4));
+    let about = window
+        .debug_bounds("global-about-entry")
+        .expect("About utility between settings and window controls");
+    assert_eq!(about.left() - global_settings.right(), px(SPACING_4));
+    assert_eq!(minimize.left() - about.right(), px(SPACING_4));
     for selector in [
         "window-control-minimize-icon",
         "window-control-maximize-icon",
@@ -4534,8 +4567,10 @@ fn download_context_menu_omits_actions_that_cannot_run_for_the_selection() {
         .and_then(|body| body.split("fn download_task_detail(").next())
         .expect("download task context menu");
     assert!(
-        !menu.contains(".disabled("),
-        "unavailable download actions must be omitted instead of rendered disabled"
+        menu.lines()
+            .filter(|line| line.contains(".disabled("))
+            .all(|line| line.trim() == ".disabled(batch_busy)"),
+        "capability-ineligible actions are omitted; only the original busy guard disables visible actions"
     );
 }
 
@@ -6007,7 +6042,7 @@ fn double_clicking_a_download_row_reuses_one_deferred_task_window(cx: &mut TestA
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let downloads = cx.update(|cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            crate::downloads::ordinary_presentation_fixture::confirmed_application(
                 engine,
                 std::rc::Rc::new(platform),
                 notifications.clone(),
@@ -7272,7 +7307,7 @@ fn u4_index_settings_renders_per_volume_maintenance_within_minimum_width(cx: &mu
         {
             break;
         }
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(viewport.right() - px(32.0), px(350.0)),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
             ..Default::default()

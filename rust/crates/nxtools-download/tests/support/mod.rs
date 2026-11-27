@@ -171,6 +171,7 @@ pub struct DeterministicHttpServer {
     validator_range_attempts: Arc<AtomicU64>,
     varying_validator_full_stream_attempts: Arc<AtomicU64>,
     dynamic_range_attempts: Arc<AtomicU64>,
+    hold_imbalanced_response: Arc<AtomicBool>,
     network_available: Arc<AtomicBool>,
     shutdown: Arc<AtomicBool>,
     listener_thread: Option<JoinHandle<()>>,
@@ -209,6 +210,7 @@ impl DeterministicHttpServer {
         let validator_range_attempts = Arc::new(AtomicU64::new(0));
         let varying_validator_full_stream_attempts = Arc::new(AtomicU64::new(0));
         let dynamic_range_attempts = Arc::new(AtomicU64::new(0));
+        let hold_imbalanced_response = Arc::new(AtomicBool::new(false));
         let network_available = Arc::new(AtomicBool::new(true));
         let shutdown = Arc::new(AtomicBool::new(false));
         let listener_revision = Arc::clone(&revision);
@@ -233,6 +235,7 @@ impl DeterministicHttpServer {
         let listener_varying_validator_full_stream_attempts =
             Arc::clone(&varying_validator_full_stream_attempts);
         let listener_dynamic_range_attempts = Arc::clone(&dynamic_range_attempts);
+        let listener_hold_imbalanced_response = Arc::clone(&hold_imbalanced_response);
         let listener_network_available = Arc::clone(&network_available);
         let listener_shutdown = Arc::clone(&shutdown);
 
@@ -271,6 +274,8 @@ impl DeterministicHttpServer {
                         let varying_validator_full_stream_attempts =
                             Arc::clone(&listener_varying_validator_full_stream_attempts);
                         let dynamic_range_attempts = Arc::clone(&listener_dynamic_range_attempts);
+                        let hold_imbalanced_response =
+                            Arc::clone(&listener_hold_imbalanced_response);
                         let network_available = Arc::clone(&listener_network_available);
                         let serve = move || {
                             serve_connection(
@@ -293,6 +298,7 @@ impl DeterministicHttpServer {
                                 &validator_range_attempts,
                                 &varying_validator_full_stream_attempts,
                                 &dynamic_range_attempts,
+                                &hold_imbalanced_response,
                                 &network_available,
                             );
                         };
@@ -343,6 +349,7 @@ impl DeterministicHttpServer {
             validator_range_attempts,
             varying_validator_full_stream_attempts,
             dynamic_range_attempts,
+            hold_imbalanced_response,
             network_available,
             shutdown,
             listener_thread: Some(listener_thread),
@@ -450,6 +457,10 @@ impl DeterministicHttpServer {
         self.dynamic_range_attempts.load(Ordering::Acquire)
     }
 
+    pub fn hold_imbalanced_response(&self, hold: bool) {
+        self.hold_imbalanced_response.store(hold, Ordering::Release);
+    }
+
     pub fn active_connection_workers(&self) -> usize {
         // The fixture and listener own two clones; each connection owns one.
         Arc::strong_count(&self.dynamic_range_attempts).saturating_sub(2)
@@ -488,6 +499,8 @@ impl DeterministicHttpServer {
 
 impl Drop for DeterministicHttpServer {
     fn drop(&mut self) {
+        self.hold_imbalanced_response
+            .store(false, Ordering::Release);
         self.shutdown.store(true, Ordering::Release);
         let _ = TcpStream::connect(self.address);
         if let Some(listener_thread) = self.listener_thread.take() {
@@ -556,6 +569,7 @@ fn serve_connection(
     validator_range_attempts: &AtomicU64,
     varying_validator_full_stream_attempts: &AtomicU64,
     dynamic_range_attempts: &AtomicU64,
+    hold_imbalanced_response: &AtomicBool,
     network_available: &AtomicBool,
 ) {
     // Winsock accepted sockets inherit the listener's nonblocking mode.
@@ -1168,6 +1182,7 @@ fn serve_connection(
             method,
             headers.get("range"),
             dynamic_range_attempts,
+            hold_imbalanced_response,
         ),
         "/range-transient" => serve_transient_range(
             &mut stream,
@@ -1917,6 +1932,7 @@ fn serve_imbalanced_range(
     method: &str,
     range: Option<&String>,
     attempts: &AtomicU64,
+    hold: &AtomicBool,
 ) {
     let common = [
         ("Accept-Ranges", "bytes"),
@@ -1947,6 +1963,13 @@ fn serve_imbalanced_range(
             return;
         }
         attempts.fetch_add(1, Ordering::AcqRel);
+        let hold_deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while hold.load(Ordering::Acquire) {
+            if std::time::Instant::now() >= hold_deadline {
+                return;
+            }
+            thread::sleep(Duration::from_millis(2));
+        }
         if end < body.len() / 2 {
             write_response(
                 stream,

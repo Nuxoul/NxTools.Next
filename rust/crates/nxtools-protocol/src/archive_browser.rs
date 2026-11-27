@@ -563,7 +563,7 @@ mod preview_options_tests {
         });
         let parse = |value: serde_json::Value| {
             serde_json::from_value::<ArchiveEntryCommand>(value)
-                .map_or(false, |command| command.validate().is_ok())
+                .is_ok_and(|command| command.validate().is_ok())
         };
         assert!(parse(value.clone()), "legacy request");
         let legacy: ArchiveEntryCommand = serde_json::from_value(value.clone()).expect("legacy");

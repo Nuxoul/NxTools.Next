@@ -678,6 +678,23 @@ impl Render for IntegrationSetupView {
     }
 }
 
+fn integration_setup_window_options(prepare_material: bool, cx: &gpui_kit::App) -> WindowOptions {
+    let window_size = size(px(INTEGRATION_SETUP_WIDTH), px(INTEGRATION_SETUP_HEIGHT));
+    WindowOptions {
+        window_bounds: Some(WindowBounds::centered(window_size, cx)),
+        focus: !prepare_material,
+        show: !prepare_material,
+        kind: WindowKind::Normal,
+        is_movable: true,
+        is_resizable: false,
+        is_minimizable: true,
+        display_id: None,
+        app_id: Some("NxTools.IntegrationSetup".into()),
+        window_min_size: Some(window_size),
+        ..crate::ui::components::titlebar::caption_window_options()
+    }
+}
+
 impl MainWindow {
     pub(crate) fn maybe_show_integration_setup(
         &mut self,
@@ -685,13 +702,8 @@ impl MainWindow {
         cx: &mut Context<Self>,
     ) {
         if let Some(existing) = self.integration_setup_window {
-            if existing
-                .update(cx, |_, window, _| {
-                    window.activate_window();
-                    window.refresh();
-                })
-                .is_ok()
-            {
+            if cx.windows().contains(&existing) {
+                self.prepare_integration_setup(existing, false, cx);
                 return;
             }
             self.integration_setup_window = None;
@@ -717,58 +729,100 @@ impl MainWindow {
         let main_window = _window.window_handle();
         let downloads = self.downloads.clone();
         let archive_settings = self.archive_settings.clone();
-        let window_size = size(px(INTEGRATION_SETUP_WIDTH), px(INTEGRATION_SETUP_HEIGHT));
-        let window_bounds = WindowBounds::centered(window_size, cx);
-        let opened = cx.open_window(
-            WindowOptions {
-                window_bounds: Some(window_bounds),
-                focus: true,
-                show: true,
-                kind: WindowKind::Normal,
-                is_movable: true,
-                is_resizable: false,
-                is_minimizable: true,
-                display_id: None,
-                app_id: Some("NxTools.IntegrationSetup".into()),
-                window_min_size: Some(window_size),
-                ..crate::ui::components::titlebar::caption_window_options()
-            },
-            move |window, cx| {
-                let close_owner = owner.clone();
-                window.on_window_should_close(cx, move |_, cx| {
-                    let close_owner = close_owner.clone();
-                    cx.defer(move |cx| {
-                        let _ = close_owner.update(cx, |main, _| main.dismiss_integration_setup());
-                        let _ = main_window.update(cx, |_, window, _| window.activate_window());
-                    });
-                    true
+        let options = integration_setup_window_options(self.platform.is_some(), cx);
+        let opened = cx.open_window(options, move |window, cx| {
+            let close_owner = owner.clone();
+            window.on_window_should_close(cx, move |_, cx| {
+                let close_owner = close_owner.clone();
+                cx.defer(move |cx| {
+                    let _ = close_owner.update(cx, |main, _| main.dismiss_integration_setup());
+                    let _ = main_window.update(cx, |_, window, _| window.activate_window());
                 });
-                let view = cx.new(|cx| {
-                    IntegrationSetupView::new(
-                        owner.clone(),
-                        main_window,
-                        downloads.clone(),
-                        archive_settings.clone(),
-                        0,
-                        cx,
-                    )
-                });
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        );
+                true
+            });
+            let view = cx.new(|cx| {
+                IntegrationSetupView::new(
+                    owner.clone(),
+                    main_window,
+                    downloads.clone(),
+                    archive_settings.clone(),
+                    0,
+                    cx,
+                )
+            });
+            cx.new(|cx| Root::new(view, window, cx))
+        });
         match opened {
             Ok(window) => {
-                info!(
-                    event = "desktop.integration_setup.opened",
-                    "integration setup opened"
-                );
-                self.integration_setup_window = Some(window.into());
+                let handle = window.into();
+                self.integration_setup_window = Some(handle);
+                self.prepare_integration_setup(handle, true, cx);
             }
             Err(error) => warn!(
                 event = "desktop.integration_setup.open_failed",
                 "integration setup window could not be opened: {error:#}"
             ),
         }
+    }
+
+    fn prepare_integration_setup(
+        &self,
+        handle: gpui_kit::AnyWindowHandle,
+        first_show: bool,
+        cx: &mut Context<Self>,
+    ) {
+        let owner = cx.entity().downgrade();
+        let platform = self.platform.clone();
+        let id = uuid::Uuid::new_v4();
+        let started = std::time::Instant::now();
+        cx.defer(move |cx| {
+            if !first_show && crate::ui::material::runtime::is_waiting(handle, cx) {
+                return;
+            }
+            let completion = move |result: Result<(), &'static str>, cx: &mut gpui_kit::App| {
+                let Some(owner) = owner.upgrade() else {
+                    return;
+                };
+                if owner.read(cx).integration_setup_window != Some(handle)
+                    || !cx.windows().contains(&handle)
+                {
+                    return;
+                }
+                match result {
+                    Ok(()) => {
+                        let _ = handle.update(cx, |_, window, _| {
+                            window.activate_window();
+                            window.refresh();
+                        });
+                        info!(event = "desktop.integration_setup.opened", correlation_id = %id,
+                            elapsed_ms = started.elapsed().as_millis() as u64);
+                    }
+                    Err(reason) => {
+                        if first_show {
+                            owner.update(cx, |owner, _| {
+                                owner.integration_setup_window = None;
+                                owner.integration_setup_offered = false;
+                            });
+                            let _ = handle.update(cx, |_, window, _| window.remove_window());
+                        }
+                        warn!(event = "desktop.integration_setup.open_failed", correlation_id = %id,
+                            reason, elapsed_ms = started.elapsed().as_millis() as u64);
+                    }
+                }
+            };
+            if let Some(platform) = platform {
+                crate::ui::material::runtime::when_ready(
+                    handle,
+                    platform,
+                    nxtools_protocol::window_material::MaterialSurface::Backdrop,
+                    std::time::Duration::from_secs(8),
+                    completion,
+                    cx,
+                );
+            } else {
+                completion(Ok(()), cx);
+            }
+        });
     }
 
     fn dismiss_integration_setup(&mut self) {
@@ -941,14 +995,19 @@ mod tests {
         assert_eq!(view.read_with(window, |view, _| view.page), ARCHIVE_PAGE);
         view.update(window, |view, cx| view.back(cx));
         assert_eq!(view.read_with(window, |view, _| view.page), 1);
-        view.update(window, |view, cx| view.go_to(INTEGRATION_SETUP_PAGE_COUNT, cx));
+        view.update(window, |view, cx| {
+            view.go_to(INTEGRATION_SETUP_PAGE_COUNT, cx)
+        });
         assert_eq!(
             view.read_with(window, |view, _| view.page),
             1,
             "out-of-range steps are ignored"
         );
         window.refresh().expect("render browser step");
-        for selector in ["integration-setup-stepper", "integration-setup-content-scroll"] {
+        for selector in [
+            "integration-setup-stepper",
+            "integration-setup-content-scroll",
+        ] {
             assert!(window.debug_bounds(selector).is_some(), "{selector}");
         }
         let _ = std::fs::remove_file(config_path);
@@ -972,5 +1031,83 @@ mod tests {
         );
         assert!(finish.contains("main_window.update"));
         assert!(finish.contains("window.activate_window()"));
+    }
+
+    #[gpui_kit::test]
+    fn material_integration_setup_hidden_creation_preserves_modeless_geometry(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        let options = cx.update(|cx| integration_setup_window_options(true, cx));
+        assert!(!options.show && !options.focus);
+        assert!(matches!(options.kind, WindowKind::Normal));
+        assert!(matches!(
+            options.window_background,
+            gpui_kit::WindowBackgroundAppearance::Transparent
+        ));
+        assert_eq!(
+            options.window_min_size,
+            Some(size(
+                px(INTEGRATION_SETUP_WIDTH),
+                px(INTEGRATION_SETUP_HEIGHT)
+            ))
+        );
+        assert!(!options.is_resizable && options.is_minimizable);
+        let isolated = cx.update(|cx| integration_setup_window_options(false, cx));
+        assert!(isolated.show && isolated.focus);
+    }
+
+    #[gpui_kit::test]
+    fn material_integration_setup_failed_first_prepare_reopens_offer_without_dismissal(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use std::{cell::RefCell, rc::Rc};
+        cx.update(gpui_kit::init);
+        cx.executor().allow_parking();
+        let (bridge, endpoint) = nxtools_ipc::platform_bridge(16);
+        endpoint.set_connected_for_contract_test(true);
+        let platform = Rc::new(bridge);
+        let notifications = cx.new(|_| crate::notifications::NotificationCenter::default());
+        let (owner, source) = cx.add_window_view(move |window, cx| {
+            MainWindow::new(
+                gpui_kit::WeakEntity::new_invalid(),
+                gpui_kit::WeakEntity::new_invalid(),
+                gpui_kit::WeakEntity::new_invalid(),
+                crate::main_window::MainWindowShellContext {
+                    settings: None,
+                    platform: Some(platform),
+                    system_settings: Rc::new(RefCell::new(nxtools_core::SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            )
+        });
+        let source = source.update(|window, _| window.window_handle());
+        let weak = owner.downgrade();
+        let (_, guide) = cx.add_window_view(move |window, cx| {
+            let view = cx.new(|cx| {
+                IntegrationSetupView::new(
+                    weak,
+                    source,
+                    gpui_kit::WeakEntity::new_invalid(),
+                    None,
+                    0,
+                    cx,
+                )
+            });
+            Root::new(view, window, cx)
+        });
+        let handle = guide.update(|window, _| window.window_handle());
+        owner.update(cx, |owner, cx| {
+            owner.integration_setup_offered = true;
+            owner.integration_setup_window = Some(handle);
+            owner.prepare_integration_setup(handle, true, cx);
+        });
+        cx.run_until_parked();
+        assert!(owner.read_with(cx, |owner, _| owner.integration_setup_window.is_none()));
+        assert!(!owner.read_with(cx, |owner, _| owner.integration_setup_offered));
+        assert!(cx.read(|cx| cx.windows().contains(&source)));
+        assert!(!cx.read(|cx| cx.windows().contains(&handle)));
+        assert!(endpoint.try_receive_command_for_contract_test().is_err());
     }
 }

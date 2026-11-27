@@ -446,7 +446,7 @@ impl DownloadApplication {
                 is_resizable: false,
                 is_minimizable: true,
                 display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some(format!("NxTools.Download.{}", task_id.as_uuid())),
                 window_min_size: Some(task_window_minimum_size()),
                 window_decorations: Some(WindowDecorations::Client),
@@ -513,56 +513,61 @@ impl DownloadApplication {
                         view,
                         native_window_handle: *native_slot.borrow(),
                         generation: window_generation,
+                        material_ready: false,
+                        pending_material_activation: activation,
                     },
                 );
-                // Keep the existing serial placement/show order. Native command
-                // results report the actual placement and visibility outcomes.
-                let send_presentation = |stage, command| {
-                    if let Some((_, correlation_id)) = source_anchor {
-                        if let Err(error) = self
-                            .platform
-                            .send_command_correlated(command, correlation_id)
-                        {
-                            warn!(event = "download.controlled_progress.presentation_rejected",
-                                %correlation_id, task_id = %task_id.as_uuid(), %window_generation,
-                                stage, %error, "progress presentation command was not queued");
-                        }
-                    } else {
-                        let _ = self.platform.send_command(command);
-                    }
-                };
+                let window: AnyWindowHandle = window.into();
                 let native_handle = *native_slot.borrow();
-                if native_handle != 0 {
-                    let scale = *scale_slot.borrow();
-                    let key = source_anchor.map_or(*task_id.as_uuid(), |(key, _)| key);
-                    send_presentation(
-                        "placement",
-                        PlatformCommand::MoveWindowCenteredOverKey(
-                            MoveWindowCenteredOverKeyCommand {
-                                window_handle: native_handle,
-                                key: key.to_string(),
+                let scale = *scale_slot.borrow();
+                self.after_download_material(
+                    window, nxtools_protocol::window_material::MaterialSurface::Backdrop,
+                    DOWNLOAD_MATERIAL_TIMEOUT,
+                    move |app, result, cx| {
+                        if !cx.windows().contains(&window) { return; }
+                        let Some(entry) = app.task_windows.get_mut(&task_id).filter(|entry| {
+                            entry.window == window && entry.generation == window_generation
+                                && entry.native_window_handle == native_handle
+                        }) else { return; };
+                        if let Err(reason) = result {
+                            app.close_task_window(task_id, cx);
+                            app.download_material_failed("task", reason, cx);
+                            return;
+                        }
+                        entry.material_ready = true;
+                        let activation = entry.pending_material_activation.take();
+                        let view = entry.view.read(cx);
+                        let phase = view.snapshot.as_ref().map_or(phase, |task| download_window_phase(task.task.status()));
+                        let window_size = download_task_window_size_for_details(phase, view.details_expanded);
+                        // The original native placement -> show -> activation order remains authoritative.
+                        let send_presentation = |stage, command| {
+                            if let Some((_, correlation_id)) = source_anchor {
+                                if let Err(error) = app.platform.send_command_correlated(command, correlation_id) {
+                                    warn!(event = "download.controlled_progress.presentation_rejected",
+                                        %correlation_id, task_id = %task_id.as_uuid(), %window_generation,
+                                        stage, %error, "progress presentation command was not queued");
+                                }
+                            } else {
+                                let _ = app.platform.send_command(command);
+                            }
+                        };
+                        if native_handle != 0 {
+                            let key = source_anchor.map_or(*task_id.as_uuid(), |(key, _)| key);
+                            send_presentation("placement", PlatformCommand::MoveWindowCenteredOverKey(MoveWindowCenteredOverKeyCommand {
+                                window_handle: native_handle, key: key.to_string(),
                                 width: (window_size.width.as_f32() * scale).round() as i32,
                                 height: (window_size.height.as_f32() * scale).round() as i32,
-                            },
-                        ),
-                    );
-                }
-                send_presentation(
-                    "visibility",
-                    PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
-                        window_handle: native_handle,
-                        visible: true,
-                    }),
+                            }));
+                        }
+                        send_presentation("visibility", PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+                            window_handle: native_handle, visible: true,
+                        }));
+                        if activation.is_none() && matches!(phase, DownloadWindowPhase::Completed | DownloadWindowPhase::Failed) {
+                            raise_terminal_window_without_activation(&app.platform, native_handle);
+                        }
+                        let _ = app.update_task_window(task_id, activation, None, cx);
+                    }, cx,
                 );
-                if activation.is_none()
-                    && matches!(
-                        phase,
-                        DownloadWindowPhase::Completed | DownloadWindowPhase::Failed
-                    )
-                {
-                    raise_terminal_window_without_activation(&self.platform, *native_slot.borrow());
-                }
-                let _ = self.update_task_window(task_id, activation, None, cx);
             }
             Err(error) => {
                 self.task_window_lifecycle.window_closed(task_id);
@@ -584,6 +589,12 @@ impl DownloadApplication {
         resize_for: Option<DownloadWindowPhase>,
         cx: &mut Context<Self>,
     ) -> bool {
+        if let Some(entry) = self.task_windows.get_mut(&task_id)
+            && !entry.material_ready
+            && activation.is_some()
+        {
+            entry.pending_material_activation = activation;
+        }
         let Some(entry) = self.task_windows.get(&task_id) else {
             return false;
         };
@@ -613,6 +624,7 @@ impl DownloadApplication {
         };
         let window_handle = entry.window;
         let view = entry.view.clone();
+        let activation = activation.filter(|_| entry.material_ready);
         let changed_status = view
             .read(cx)
             .snapshot

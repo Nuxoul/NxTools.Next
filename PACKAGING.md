@@ -26,6 +26,9 @@
 # 只检查路径、工具链、内存、构建占用和下一序号；不读取私钥内容、不占号、不构建
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-local.ps1 -CheckOnly
 
+# 完整验证使用已有独立7-Zip生成/校验隔离TAR/流样本；本机自定义安装路径
+$env:NXTOOLS_TAR_STREAM_ORACLE = 'D:\Tool\Directory Opus\Directory Opus\_Green\7z极限压缩\bin\x64\7z.exe'
+
 # 正常 Release 打包：自动定位现有 PEM，计算新序号，运行原验证与打包流程
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\package-local.ps1
 
@@ -102,6 +105,7 @@ $env:NXTOOLS_RELEASE_SIGNING_KEY = 'E:\secure\nxtools-next-release.pem'
 - Windows 10/11、项目要求的 Rust 1.96/MSVC 与 .NET 8 SDK、Git。
 - Windows SDK x64 `fxc.exe`；可用 `GPUI_FXC_PATH` 覆盖，否则走原工具查找。
 - Inno Setup 6 `ISCC.exe`，标准 Program Files 安装位置；缺失时统一入口拒绝，不能把只有散装目录称为安装包。
+- 完整验证需要已有7-Zip Zstandard解码器：优先 `NXTOOLS_TAR_STREAM_ORACLE`，否则查找PATH中的7z/7zz和标准Program Files安装。不下载或安装；本机当前路径见第1节。隔离Debug worker、测试apphost、TAR/流样本和AC/OPT03原生导出由 `build.ps1` 在完整Rust测试前准备，调用者环境在退出时恢复。明确复用验证的 `-SkipVerification` 不运行这些样本准备。
 - 提交内存余量至少6GiB（不是仅物理空闲内存），不擅自降低门槛。
 - 每个直接／后台 Rust 命令都需要：
 
@@ -118,11 +122,11 @@ $env:RUSTFLAGS='-C codegen-units=256'
 
 ## 5. 输出、日志、核验
 
-- 安装包：`artifacts/installer/NxTools.Next-setup-0.7.4.exe`
+- 安装包：`artifacts/installer/NxTools.Next-setup-0.7.5.exe`
 - 散装包：`artifacts/win-x64/`
 - 签名清单：`NxTools.release.json` / `NxTools.release.sig`
 - 对应源码材料：`artifacts/installer/third_party/archive-worker/` 下的 LGPL 许可证、对应源码及离线重构建说明，仍由原入口生成；不改变受信任安装清单或生产身份校验。Python 要求 3.11+；材料生成失败不得交付缺材料的包。
-- 外层完整分发 ZIP 默认不生成。仅显式传入 `-CreateDistributionArchive` 时生成 `artifacts/installer/NxTools.Next-release-0.7.4.zip`，包含正常安装器与上述材料；对外再分发时同时提供对应源码和许可证。普通重新打包只交付安装器，不把历史 ZIP 当成本次产物。
+- 外层完整分发 ZIP 默认不生成。仅显式传入 `-CreateDistributionArchive` 时生成 `artifacts/installer/NxTools.Next-release-0.7.5.zip`，包含正常安装器与上述材料；对外再分发时同时提供对应源码和许可证。普通重新打包只交付安装器，不把历史 ZIP 当成本次产物。
 - SHA256：安装包旁 `.sha256`
 - 统一入口的本地 `status.json`：序号、实际成功／失败、安装包哈希、大小、文件核验计数及 Authenticode。
 - 同目录 `package.log`（stdout）、`package.stderr.log`（原生 stderr）和 `previous-package` / `previous-installer` 保留原始过程和旧包。
@@ -131,7 +135,7 @@ $env:RUSTFLAGS='-C codegen-units=256'
 原签名器在打包时使用生产验证器验证签名；统一入口额外逐项核对清单文件大小／SHA256，
 并写安装包 SHA256。不能把 Authenticode `NotSigned` 与内部发布签名混为一谈。
 
-产品发布版本0.7.4统一记录在Rust工作区、C#程序集、正常/维护安装器与浏览器扩展清单；
+产品发布版本0.7.5统一记录在Rust工作区、C#程序集、正常/维护安装器与浏览器扩展清单；
 桌面EXE文件版本由Cargo版本派生。`python tests/architecture/product-version.tests.py` 检查这些当前定义、
 第一方锁文件版本和发布文件名的一致性；构建后仍需读回实际EXE与包内扩展版本。扩展ID/公钥和协议版本不随此更新改变。
 包装器失败后可能留下不完整输出：不要安装，读本次日志；备份只用于恢复与证据，不能绕过防降级。

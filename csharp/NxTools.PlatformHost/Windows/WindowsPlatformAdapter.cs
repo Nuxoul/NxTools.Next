@@ -81,6 +81,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
     private readonly NativeFileDragCoordinator _fileDragCoordinator;
     private readonly NativeContextMenuCoordinator _contextMenus;
     private readonly ProcessWindowPickCoordinator _processWindowPick;
+    private readonly WindowMaterialOwner _windowMaterials;
     private readonly TaskbarProgressLogGate _taskbarProgressLogGate = new();
     private readonly ClipboardCaptureDropDiagnosticGate _clipboardCaptureDropDiagnosticGate = new();
     private readonly ICompletionSystemActions _completionSystemActions;
@@ -102,6 +103,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             flushPointerObservation: () => _window?.FlushContextMenuPointerPress());
         _extensionRuntimeInspector = new ExtensionRuntimeInspector(_log);
         _processWindowPick = new ProcessWindowPickCoordinator(e => _events.Writer.TryWrite(e), _log);
+        _windowMaterials = new WindowMaterialOwner(_log);
         _directoryLifetime = ThirdPartyFileManagerAdapter.BeginLifetime(_log, "ordinary");
         _elevatedDirectoryNavigation = new ElevatedDirectoryNavigationClient(
             platformEvent => _events.Writer.TryWrite(platformEvent),
@@ -558,7 +560,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                     ["elapsed_ms"] = Stopwatch.GetElapsedTime(replay.StartedAtTimestamp).TotalMilliseconds }); }
             catch { }
         }
-        _ = _window?.RequestCenteredResizeRecovery(rootWindow);
+        _window?.CompleteWindowGeometry(rootWindow, replay);
     });
     internal static WindowsCommandResult ParkNativeWindowBoundsCenteredForTest(
         long windowHandle,
@@ -588,8 +590,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             command.X,
             command.Y,
             command.Width,
-            command.Height,
-            command.CornerRadius);
+            command.Height);
 
 
 
@@ -1626,7 +1627,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
                 elevatedDirectoryNavigation,
                 _log,
                 _clipboardCaptureDropDiagnosticGate,
-                _contextMenus, clipboardConsumerProcessId);
+                _contextMenus, clipboardConsumerProcessId, _windowMaterials, queueWindowGeometry: QueueCenteredResize);
             _started.Set();
             Application.Run();
         }
@@ -1649,6 +1650,7 @@ internal sealed partial class WindowsPlatformAdapter : IDisposable
             return;
         }
         _disposed = true;
+        _windowMaterials.BindPeer(0);
         _window?.CancelClipboardPauseRequests();
         _shellActions.Dispose();
         _contextMenus.Dispose();

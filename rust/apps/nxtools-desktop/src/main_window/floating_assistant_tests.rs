@@ -162,11 +162,12 @@ fn floating_assistant_tile_configure_persistence_and_last_control_scroll(cx: &mu
         96
     );
     for _ in 0..12 {
-        settings.simulate_event(gpui_kit::ScrollWheelEvent {
+        settings.simulate_event(gpui_kit::ScrollEvent {
             position: point(px(220.0), px(240.0)),
             delta: gpui_kit::ScrollDelta::Pixels(point(px(0.0), px(-160.0))),
             modifiers: Default::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         settings.run_until_parked();
         settings.refresh().expect("scroll");

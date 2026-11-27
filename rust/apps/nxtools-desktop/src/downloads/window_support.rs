@@ -26,7 +26,7 @@ pub(crate) fn download_settings_window_options(cx: &App) -> WindowOptions {
         is_resizable: false,
         is_minimizable: false,
         display_id: None,
-        window_background: WindowBackgroundAppearance::Opaque,
+        window_background: WindowBackgroundAppearance::Transparent,
         app_id: Some("NxTools.DownloadSettings".into()),
         window_min_size: Some(window_size),
         window_decorations: Some(WindowDecorations::Client),

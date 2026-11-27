@@ -3,8 +3,8 @@
 use super::*;
 use gpui_kit::component::{Theme, ThemeMode};
 use gpui_kit::{
-    Bounds, MouseDownEvent, MouseUpEvent, Pixels, Role, ScrollDelta, ScrollWheelEvent,
-    TestAppContext, TouchPhase, VisualTestContext, point, size,
+    Bounds, MouseDownEvent, MouseUpEvent, Pixels, Role, ScrollDelta, ScrollEvent, TestAppContext,
+    TouchPhase, VisualTestContext, point, size,
 };
 use std::path::PathBuf;
 use std::{collections::BTreeMap, sync::Arc};
@@ -133,6 +133,31 @@ fn narrow_tree_folder_name_stays_on_one_line_inside_fixed_row(cx: &mut TestAppCo
     assert!(
         label.size.height <= px(24.),
         "folder label must not wrap under the 32DIP tree row: {label:?}"
+    );
+    let (narrow_text, short_text) = surface.update(|window, _| {
+        let texts = gpui_kit::base::test_support::texts(window);
+        let text_bounds = |name| {
+            texts
+                .iter()
+                .find(|text| {
+                    text.text() == name
+                        && text.path().last()
+                            == Some(&gpui_kit::ElementId::from("archive-tree-folder-name"))
+                        && text.visible()
+                })
+                .expect("painted official tree label")
+                .bounds()
+        };
+        (text_bounds("flutter_assets"), text_bounds("data"))
+    });
+    assert_eq!(
+        narrow_text, label,
+        "measure the painted label, not a fixed row slot"
+    );
+    assert!(narrow_text.size.width < short_text.size.width);
+    assert_eq!(
+        narrow_text.size.height, short_text.size.height,
+        "the constrained name uses the same one line as its short parent"
     );
     assert_eq!(icon.center().y, label.center().y);
     close(&owner, &mut surface);
@@ -358,7 +383,7 @@ fn icon_layout_same_basename_wheel_menu_pointer_and_keyboard_close_keep_owners(
             .expect("host")
     });
     let before = host.read_with(&surface, |host, _| host.scroll.offset());
-    surface.simulate_event(ScrollWheelEvent {
+    surface.simulate_event(ScrollEvent {
         position: point(px(300.), px(50.)),
         delta: ScrollDelta::Lines(point(0., -100.)),
         touch_phase: TouchPhase::Moved,

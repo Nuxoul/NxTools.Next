@@ -7,7 +7,12 @@
   "modified_files": [
     "src/element.rs",
     "src/cull.rs",
-    "src/serialize.rs"
+    "src/serialize.rs",
+    "Cargo.toml",
+    "src/state.rs",
+    "src/direct.rs",
+    "src/tests/view.rs",
+    "src/frame.rs"
   ],
   "files": {
     ".github/workflows/ci.yml": "0dd867b7ae9e02fa336473cc090c19a63f74941d2074bcf3052f40f876e0019a",

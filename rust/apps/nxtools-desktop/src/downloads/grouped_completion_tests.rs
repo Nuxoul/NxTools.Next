@@ -310,7 +310,7 @@ fn browser_batch_http_terminals_publish_one_production_notification(cx: &mut Tes
     config.download.show_completion_window = true;
     let application = surface.update(|_, cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            super::ordinary_presentation_fixture::confirmed_application(
                 engine.clone(),
                 Rc::new(platform),
                 notifications.clone(),

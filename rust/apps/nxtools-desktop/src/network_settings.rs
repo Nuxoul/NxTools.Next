@@ -40,6 +40,11 @@ mod font_settings;
 #[cfg(test)]
 #[path = "network_settings/kit_migration_tests.rs"]
 mod kit_migration_tests;
+mod material_presentation;
+#[cfg(test)]
+mod material_presentation_tests;
+#[path = "network_settings/material_settings.rs"]
+mod material_settings;
 #[cfg(test)]
 #[path = "network_settings/notification_tests.rs"]
 mod notification_tests;
@@ -209,13 +214,8 @@ impl NetworkSettingsApplication {
 
     pub(crate) fn open_window(&mut self, cx: &mut Context<Self>) {
         if let Some(window) = self.window {
-            if window
-                .update(cx, |_, window, _| {
-                    window.activate_window();
-                    window.refresh();
-                })
-                .is_ok()
-            {
+            if cx.windows().contains(&window) {
+                self.prepare_material_window(window, false, cx);
                 return;
             }
             self.window = None;
@@ -257,14 +257,14 @@ impl NetworkSettingsApplication {
             WindowOptions {
                 window_bounds: Some(window_bounds),
                 titlebar: None,
-                focus: true,
-                show: true,
+                focus: self.platform.is_none(),
+                show: self.platform.is_none(),
                 kind: WindowKind::Normal,
                 is_movable: true,
                 is_resizable: false,
                 is_minimizable: false,
                 display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.NetworkSettings".into()),
                 window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
@@ -272,6 +272,7 @@ impl NetworkSettingsApplication {
                 inactive_frame_interval: None,
                 icon: None,
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let close_application = application.clone();
@@ -319,6 +320,7 @@ impl NetworkSettingsApplication {
                 {
                     self.settings_view = view_slot.borrow_mut().take();
                 }
+                self.prepare_material_window(window.into(), true, cx);
             }
             Err(error) => self.notifications.update(cx, |notifications, cx| {
                 notifications.show_error(
@@ -363,6 +365,7 @@ impl NetworkSettingsApplication {
     ) -> Result<bool, String> {
         self.apply_global(
             settings,
+            self.config.system.clone(),
             system,
             self.config.process_blacklist.clone(),
             correlation_id,
@@ -378,6 +381,7 @@ impl NetworkSettingsApplication {
     fn apply_global(
         &mut self,
         settings: NetworkSettings,
+        baseline_system: SystemSettings,
         system: SystemSettings,
         blacklist: ProcessBlacklistSettings,
         correlation_id: uuid::Uuid,
@@ -408,9 +412,10 @@ impl NetworkSettingsApplication {
         // Persist first. Until the canonical AppConfig write succeeds every newly starting
         // operation continues to snapshot the old policy, so a rejected save can never leak into
         // an active browser, scheduled, clipboard, quick-launch, or download operation.
-        let next_config = match AppConfig::update_global_settings_with_blacklist(
+        let next_config = match AppConfig::merge_global_settings_with_blacklist(
             &self.config_path,
             settings.clone(),
+            &baseline_system,
             system.clone(),
             blacklist,
         ) {
@@ -434,6 +439,14 @@ impl NetworkSettingsApplication {
                 );
             }
         };
+        if let Some((view, _)) = completion.as_ref() {
+            let view = view.clone();
+            let saved_draft = system.clone();
+            cx.defer(move |cx| {
+                let _ = view.update(cx, |view, _| view.baseline_system = saved_draft);
+            });
+        }
+        let system = next_config.system.clone();
         let font_changed = self.config.system.ui_font_family != system.ui_font_family;
         info!(event = "global.settings.persisted", %correlation_id, rule_count = next_config.process_blacklist.entries().len(), elapsed_ms = started_at.elapsed().as_millis(), "global settings durably saved");
         let shell_changed = self.config.system.start_on_login_silently
@@ -443,11 +456,16 @@ impl NetworkSettingsApplication {
                 != system.start_on_login_silently
             || self.system_settings.borrow().close_to_tray != system.close_to_tray;
         let next_theme = system.theme;
-        cx.defer(move |cx| crate::theme::set_theme_preference(next_theme, cx));
+        let requested_style = system.material_style;
+        let requested_tuning = system.material_tuning;
+        cx.defer(move |cx| {
+            crate::theme::set_appearance(next_theme, requested_style, requested_tuning, cx)
+        });
         let next_font = system.ui_font_family.clone();
         cx.defer(move |cx| {
             let font_available = crate::theme::set_ui_font_family(&next_font, cx);
             info!(event = "global.settings.presentation.applied", %correlation_id, font_changed, font_available,
+                requested_style = requested_style.as_str(),
                 elapsed_ms = started_at.elapsed().as_millis(), "saved appearance applied to existing windows");
         });
         let notification_center = self.notifications.clone();
@@ -847,6 +865,8 @@ struct NetworkSettingsView {
     start_on_login_silently: bool,
     close_to_tray: bool,
     theme_preference: nxtools_core::ThemePreference,
+    baseline_system: SystemSettings,
+    material: material_settings::MaterialSettingsDraft,
     ui_font: font_settings::FontSettingsDraft,
     notification_position: nxtools_core::NotificationPosition,
     notification_duration: Entity<InputState>,
@@ -936,6 +956,12 @@ impl NetworkSettingsView {
             });
         }
         let ui_font = font_settings::FontSettingsDraft::new(&system.ui_font_family, window, cx);
+        let material = material_settings::MaterialSettingsDraft::new(
+            system.material_style,
+            system.material_tuning,
+            window,
+            cx,
+        );
         Self {
             theme: Theme::zed_dark(),
             application,
@@ -943,6 +969,8 @@ impl NetworkSettingsView {
             start_on_login_silently: system.start_on_login_silently,
             close_to_tray: system.close_to_tray,
             theme_preference: system.theme,
+            baseline_system: system.clone(),
+            material,
             ui_font,
             notification_position: system.notification_position,
             notification_duration,
@@ -1037,10 +1065,13 @@ impl NetworkSettingsView {
             start_on_login_silently: self.start_on_login_silently,
             close_to_tray: self.close_to_tray,
             theme: self.theme_preference,
+            material_style: self.material.selected(cx),
+            material_tuning: self.material.tuning(cx),
             ui_font_family,
             notification_position: self.notification_position,
             notification_duration_seconds,
         };
+        let baseline_system = self.baseline_system.clone();
         let view = cx.entity().downgrade();
         let source_window = window.window_handle();
         cx.defer(move |cx| {
@@ -1048,6 +1079,7 @@ impl NetworkSettingsView {
             let result = application.update(cx, |application, cx| {
                 application.apply_global(
                     settings,
+                    baseline_system,
                     system,
                     blacklist,
                     correlation_id,
@@ -1245,6 +1277,8 @@ impl NetworkSettingsView {
                 .into_any_element(),
             9 => self.render_data_directory(cx),
             10 => self.ui_font.render(self.saving),
+            11 => self.material.render(self.saving),
+            13 => self.material.render_content(self.saving, cx),
             _ => div().into_any_element(),
         }
     }
@@ -1312,7 +1346,9 @@ impl Render for NetworkSettingsView {
                 complex(4, "应用黑名单 进程 禁用剪贴板 禁用速启 应用规则 全屏 独占全屏 无边框全屏 呼出"),
             ])),
             SettingPage::new("外观").resettable(false).group(SettingGroup::new().items([
-                complex(6, "主题 浅色 深色 Latte Frappe Catppuccin Gruvbox Solarized 跟随系统"),
+                ordinary(11, "主题风格", "实底或亚克力（Windows 10 为“磨砂”）；所有窗口与弹出面板统一使用该材质。配色、深浅色和字体独立，应用后生效。"),
+                ordinary(13, "内容层不透明度", "磨砂风格下内容区的不透明度；越高文字越清晰，应用后生效。"),
+                complex(6, "主题 浅色 深色 石墨 雾蓝 松石 暖砂 Latte Frappe Catppuccin Gruvbox Solarized 跟随系统"),
                 ordinary(10, "界面字体", "搜索并选择已安装的中文或英文字体；应用后生效。不支持的字形使用系统回退，等宽诊断字体不变。"),
             ])),
             SettingPage::new("数据").resettable(false).group(SettingGroup::new().items([
@@ -1493,6 +1529,8 @@ mod tests {
                         start_on_login_silently: false,
                         close_to_tray: false,
                         theme: nxtools_core::ThemePreference::Dark,
+                        material_style: nxtools_core::MaterialStyle::Solid,
+                        material_tuning: Default::default(),
                         ui_font_family: nxtools_core::default_ui_font_family(),
                         notification_position: Default::default(),
                         notification_duration_seconds: nxtools_core::default_notification_duration(
@@ -1874,6 +1912,7 @@ mod tests {
                         .apply_global(
                             config.network.clone(),
                             config.system.clone(),
+                            config.system.clone(),
                             rules,
                             correlation_id,
                             None,
@@ -1934,6 +1973,7 @@ mod tests {
                         .apply_global(
                             config.network.clone(),
                             config.system.clone(),
+                            config.system.clone(),
                             ProcessBlacklistSettings::from_entries(vec![]),
                             uuid::Uuid::new_v4(),
                             None,
@@ -1967,6 +2007,7 @@ mod tests {
                     owner
                         .apply_global(
                             owner.config.network.clone(),
+                            owner.config.system.clone(),
                             owner.config.system.clone(),
                             ProcessBlacklistSettings::from_entries(vec![]),
                             uuid::Uuid::new_v4(),
@@ -2291,6 +2332,8 @@ mod tests {
             start_on_login_silently: true,
             close_to_tray: true,
             theme: nxtools_core::ThemePreference::Dark,
+            material_style: nxtools_core::MaterialStyle::Solid,
+            material_tuning: Default::default(),
             ui_font_family: nxtools_core::default_ui_font_family(),
             notification_position: Default::default(),
             notification_duration_seconds: nxtools_core::default_notification_duration(),
@@ -2353,6 +2396,8 @@ mod tests {
                         start_on_login_silently: true,
                         close_to_tray: true,
                         theme: nxtools_core::ThemePreference::Dark,
+                        material_style: nxtools_core::MaterialStyle::Solid,
+                        material_tuning: Default::default(),
                         ui_font_family: nxtools_core::default_ui_font_family(),
                         notification_position: Default::default(),
                         notification_duration_seconds: nxtools_core::default_notification_duration(
@@ -2392,6 +2437,8 @@ mod tests {
             start_on_login_silently: true,
             close_to_tray: true,
             theme: nxtools_core::ThemePreference::Dark,
+            material_style: nxtools_core::MaterialStyle::Solid,
+            material_tuning: Default::default(),
             ui_font_family: nxtools_core::default_ui_font_family(),
             notification_position: Default::default(),
             notification_duration_seconds: nxtools_core::default_notification_duration(),
@@ -2483,6 +2530,8 @@ mod tests {
                         start_on_login_silently: true,
                         close_to_tray: true,
                         theme: nxtools_core::ThemePreference::Dark,
+                        material_style: nxtools_core::MaterialStyle::Solid,
+                        material_tuning: Default::default(),
                         ui_font_family: nxtools_core::default_ui_font_family(),
                         notification_position: Default::default(),
                         notification_duration_seconds: nxtools_core::default_notification_duration(
@@ -2780,6 +2829,7 @@ mod tests {
             settings.notification_position = nxtools_core::NotificationPosition::BottomRight;
             app.apply_global(
                 app.config.network.clone(),
+                app.config.system.clone(),
                 settings,
                 app.config.process_blacklist.clone(),
                 uuid::Uuid::new_v4(),
@@ -2808,6 +2858,7 @@ mod tests {
             assert!(
                 app.apply_global(
                     app.config.network.clone(),
+                    app.config.system.clone(),
                     settings,
                     app.config.process_blacklist.clone(),
                     uuid::Uuid::new_v4(),

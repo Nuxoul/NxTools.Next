@@ -11,6 +11,10 @@ $env:RUSTFLAGS='-C codegen-units=256'
 ```
 Coordinate one Cargo process. Use full-operation timeout, inspect surviving cargo/rustc after timeout, never duplicate builds. If building was declined for memory pressure, compiled verification requires separate approval. Release wrappers require committed-memory headroom preflight and exact process/service ownership.
 
+The Cargo workspace contains14 first-party owners plus the fixed editor path dependency's implicit member. The build script strictly lints all first-party targets with `--workspace --all-targets --exclude gpui-kit-markdown-editor`, then strictly lints the fixed editor's production library with `-p gpui-kit-markdown-editor --lib`; both use `-D warnings`. Complete workspace tests retain the editor library and story/gallery tests. `tests/architecture/markdown-editor-contracts.py` guards those commands, the fixed revision, dependency pins and exact source adaptations.
+
+Before complete Rust tests, `scripts/build.ps1` creates a fresh GUID-owned scratch root, builds the Debug isolated-codecs worker and Debug test apphost, generates independent TAR/stream samples, and exports AC progress/OPT03 create terminals through exact fixture entries. `NXTOOLS_TAR_STREAM_ORACLE` selects an existing independent7-Zip decoder when it is not on PATH or in the conventional installation. The stage clears manual story input, retains a matching worker copy, restores caller environment and removes only its own root in `finally`. Direct workspace tests must provide the same explicit fixture inputs. Controlled build-host and build-tree regression scripts cover prerequisite order, complete test scope, failure propagation and cleanup; they do not execute product/native tests.
+
 ## Check selection
 | Change | Relevant verification |
 | --- | --- |
@@ -39,5 +43,7 @@ A failing full suite stays failing even if single rerun passes; bounded causal d
 
 ## Restricted release gates
 Indexer changes to MFT/USN/service/cache require, when separately authorized, `tests/performance/indexer-idle-cpu.ps1 -RestartService -AssertRegression` against packaged LocalSystem then real service search. Restart restores versioned mmap base+persisted delta; packaged/protected approved/runtime hashes must match. Never kill same-name unrelated processes or stop unowned services. C# real DOpus/Files/Explorer, registry/tray/global hooks, external GPUI acceptance and currently unisolated cache/signing fixtures are explicitly outside default fixture selection. They are retained, listed with scope, and require separate native authorization/filters; missing supported live environment is SKIP, not PASS. Owned synthetic HWND/fake operations remain eligible fixtures. This classification does not grant release acceptance.
+
+When real scans/user index access are prohibited, default workspace tests require four explicit test-harness exclusions: `the_real_windows_mft_boundary_is_either_searchable_or_actionably_denied`, `the_real_windows_usn_boundary_observes_a_new_file_or_is_actionably_denied`, `closing_the_desktop_pipe_stops_the_real_indexer_process`, and `an_oversized_real_process_frame_is_rejected_and_terminates_the_session`. The first two access the test executable's real volume; the process fixtures start the production indexer, whose shared settings/cache uses PROGRAMDATA. APPDATA/LOCALAPPDATA overrides do not isolate that boundary. Preserve their original assertions, report exclusions separately and do not count them as passes.
 
 Current evidence is [dated SOL report](../../../docs/audits/2026-10-08-sol-review-remediation.md), including 2026-10-09 fixture-only 103/103 engine closeout. It is not a promise that all current changes were packaged or that pending real pointer/DPI/LocalSystem checks passed.

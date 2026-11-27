@@ -106,6 +106,15 @@ impl WindowsWindowInner {
             }
             WM_ACTIVATE => self.handle_activate_msg(wparam),
             WM_CREATE => self.handle_create_msg(handle),
+            WM_WINDOWPOSCHANGED => {
+                // The native client rect is final here. DefWindowProc sends WM_MOVE/WM_SIZE
+                // next, and their callbacks may immediately read saved window bounds.
+                self.state
+                    .border_offset
+                    .update(handle, self.state.is_fullscreen())
+                    .log_err();
+                None
+            }
             WM_MOVE => self.handle_move_msg(handle, lparam),
             WM_SIZE => self.handle_size_msg(wparam, lparam),
             WM_GETMINMAXINFO => self.handle_get_min_max_info_msg(lparam),
@@ -223,9 +232,9 @@ impl WindowsWindowInner {
         unsafe {
             let minmax_info = &mut *(lparam.0 as *mut MINMAXINFO);
             minmax_info.ptMinTrackSize.x = min_size.width.scale(scale_factor).as_f32() as i32
-                + boarder_offset.width_offset.get();
+                + boarder_offset.width();
             minmax_info.ptMinTrackSize.y = min_size.height.scale(scale_factor).as_f32() as i32
-                + boarder_offset.height_offset.get();
+                + boarder_offset.height();
         }
         Some(0)
     }
@@ -777,21 +786,13 @@ impl WindowsWindowInner {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> Option<isize> {
-        if !self.hide_title_bar || self.state.is_fullscreen() || wparam.0 == 0 {
-            return None;
-        }
-
-        unsafe {
-            let params = lparam.0 as *mut NCCALCSIZE_PARAMS;
-            let saved_top = (*params).rgrc[0].top;
-            let result = DefWindowProcW(handle, WM_NCCALCSIZE, wparam, lparam);
-            (*params).rgrc[0].top = saved_top;
-            if self.state.is_maximized() {
-                let dpi = GetDpiForWindow(handle);
-                (*params).rgrc[0].top += get_frame_thicknessx(dpi);
-            }
-            Some(result.0 as isize)
-        }
+        calculate_frame_client_size(
+            handle,
+            wparam,
+            lparam,
+            self.hide_title_bar,
+            self.state.is_fullscreen(),
+        )
     }
 
     fn handle_activate_msg(self: &Rc<Self>, wparam: WPARAM) -> Option<isize> {
@@ -880,7 +881,6 @@ impl WindowsWindowInner {
         let is_maximized = self.state.is_maximized();
         let new_scale_factor = new_dpi / USER_DEFAULT_SCREEN_DPI as f32;
         self.state.scale_factor.set(new_scale_factor);
-        self.state.border_offset.update(handle).log_err();
 
         self.state
             .direct_manipulation
@@ -893,29 +893,40 @@ impl WindowsWindowInner {
             monitor_info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
             if unsafe { GetMonitorInfoW(monitor, &mut monitor_info) }.as_bool() {
                 let work_area = monitor_info.rcWork;
-                let width = work_area.right - work_area.left;
-                let height = work_area.bottom - work_area.top;
-
-                // Update the window size to match the new monitor work area
-                // This will trigger WM_SIZE which will handle the size change
+                // A custom maximized client fills rcWork; its native sizing frame
+                // remains outside that area, as on an ordinary maximize transition.
+                let rect = if self.hide_title_bar {
+                    maximized_custom_frame_rect(work_area, new_dpi as u32)
+                } else {
+                    work_area
+                };
                 unsafe {
                     SetWindowPos(
                         handle,
                         None,
-                        work_area.left,
-                        work_area.top,
-                        width,
-                        height,
+                        rect.left,
+                        rect.top,
+                        rect.right - rect.left,
+                        rect.bottom - rect.top,
                         SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                     )
                     .context("unable to set maximized window position after dpi has changed")
                     .log_err();
                 }
 
-                // SetWindowPos may not send WM_SIZE for maximized windows in some cases,
-                // so we manually update the size to ensure proper rendering
-                let device_size = size(DevicePixels(width), DevicePixels(height));
-                self.handle_size_change(device_size, new_scale_factor, true);
+                // No size message is guaranteed when the outer size is unchanged.
+                // Use the real final client, not the suggested/work-area outer size.
+                let mut client = RECT::default();
+                if unsafe { GetClientRect(handle, &mut client) }
+                    .log_err()
+                    .is_some()
+                {
+                    let device_size = size(
+                        DevicePixels(client.right - client.left),
+                        DevicePixels(client.bottom - client.top),
+                    );
+                    self.handle_size_change(device_size, new_scale_factor, true);
+                }
             }
         } else {
             // For non-maximized windows, use the suggested RECT from the system
@@ -939,6 +950,11 @@ impl WindowsWindowInner {
                 .log_err();
             }
         }
+
+        self.state
+            .border_offset
+            .update(handle, self.state.is_fullscreen())
+            .log_err();
 
         Some(0)
     }
@@ -994,37 +1010,11 @@ impl WindowsWindowInner {
             return drag_area;
         }
 
-        let dpi = unsafe { GetDpiForWindow(handle) };
-        // We do not use the OS title bar, so the default `DefWindowProcW` will only register a 1px edge for resizes
-        // We need to calculate the frame thickness ourselves and do the hit test manually.
-        let frame_y = get_frame_thicknessx(dpi);
-        let frame_x = get_frame_thicknessy(dpi);
-        let mut cursor_point = POINT {
-            x: lparam.signed_loword().into(),
-            y: lparam.signed_hiword().into(),
-        };
-
-        unsafe { ScreenToClient(handle, &mut cursor_point).ok().log_err() };
         if self.is_resizable
             && !self.state.is_maximized()
-            && 0 <= cursor_point.y
-            && cursor_point.y <= frame_y
+            && let Some(hit) = custom_frame_resize_hit_test(handle, lparam)
         {
-            // x-axis actually goes from -frame_x to 0
-            return Some(if cursor_point.x <= 0 {
-                HTTOPLEFT
-            } else {
-                let mut rect = Default::default();
-                unsafe { GetWindowRect(handle, &mut rect) }.log_err();
-                // right and bottom bounds of RECT are exclusive, thus `-1`
-                let right = rect.right - rect.left - 1;
-                // the bounds include the padding frames, so accommodate for both of them
-                if right - 2 * frame_x <= cursor_point.x {
-                    HTTOPRIGHT
-                } else {
-                    HTTOP
-                }
-            } as _);
+            return Some(hit);
         }
 
         drag_area
@@ -1217,7 +1207,10 @@ impl WindowsWindowInner {
     ) -> Option<isize> {
         if wparam.0 != 0 {
             self.state.click_state.system_update(wparam.0);
-            self.state.border_offset.update(handle).log_err();
+            self.state
+                .border_offset
+                .update(handle, self.state.is_fullscreen())
+                .log_err();
             // system settings may emit a window message which wants to take the refcell self.state, so drop it
 
             self.system_settings().update(wparam.0);
@@ -1811,4 +1804,76 @@ fn notify_frame_changed(handle: HWND) {
         )
         .log_err();
     }
+}
+
+// Shared with owned-HWND regressions so they exercise the production NCCALCSIZE boundary.
+pub(crate) fn calculate_frame_client_size(
+    handle: HWND,
+    wparam: WPARAM,
+    lparam: LPARAM,
+    hide_title_bar: bool,
+    fullscreen: bool,
+) -> Option<isize> {
+    if !hide_title_bar && !fullscreen {
+        return None;
+    }
+
+    // For both NCCALCSIZE forms RECT is the first field. Normal custom frames and
+    // fullscreen use the entire proposed window rect, without removing native styles.
+    if fullscreen || !unsafe { IsZoomed(handle) }.as_bool() {
+        return Some(0);
+    }
+
+    unsafe {
+        let rect = lparam.0 as *mut RECT;
+        let top = (*rect).top;
+        let result = DefWindowProcW(handle, WM_NCCALCSIZE, wparam, lparam);
+        // Keep the native maximized sizing frame on every side, not the caption.
+        (*rect).top = top + get_frame_thicknessy(GetDpiForWindow(handle));
+        Some(result.0)
+    }
+}
+
+pub(crate) fn maximized_custom_frame_rect(work_area: RECT, dpi: u32) -> RECT {
+    let x = get_frame_thicknessx(dpi);
+    let y = get_frame_thicknessy(dpi);
+    RECT {
+        left: work_area.left - x,
+        top: work_area.top - y,
+        right: work_area.right + x,
+        bottom: work_area.bottom + y,
+    }
+}
+
+pub(crate) fn custom_frame_resize_hit_test(handle: HWND, lparam: LPARAM) -> Option<isize> {
+    let mut cursor = POINT {
+        x: lparam.signed_loword().into(),
+        y: lparam.signed_hiword().into(),
+    };
+    let mut client = RECT::default();
+    unsafe { ScreenToClient(handle, &mut cursor) }
+        .ok()
+        .log_err()?;
+    unsafe { GetClientRect(handle, &mut client) }.log_err()?;
+    if cursor.x < 0 || cursor.y < 0 || cursor.x >= client.right || cursor.y >= client.bottom {
+        return None;
+    }
+    let dpi = unsafe { GetDpiForWindow(handle) };
+    let x = get_frame_thicknessx(dpi);
+    let y = get_frame_thicknessy(dpi);
+    let left = cursor.x < x;
+    let right = cursor.x >= client.right - x;
+    let top = cursor.y < y;
+    let bottom = cursor.y >= client.bottom - y;
+    Some(match (left, right, top, bottom) {
+        (true, _, true, _) => HTTOPLEFT,
+        (_, true, true, _) => HTTOPRIGHT,
+        (true, _, _, true) => HTBOTTOMLEFT,
+        (_, true, _, true) => HTBOTTOMRIGHT,
+        (true, _, _, _) => HTLEFT,
+        (_, true, _, _) => HTRIGHT,
+        (_, _, true, _) => HTTOP,
+        (_, _, _, true) => HTBOTTOM,
+        _ => return None,
+    } as isize)
 }

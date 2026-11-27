@@ -164,3 +164,11 @@ Good: UAC or Open With returns after the former deadline and completes the same 
 `repo:rust/crates/nxtools-ipc/src/lib.rs#tests`: `human_shell_commands_outlive_machine_deadlines_and_route_terminal_once`, `human_shell_commands_retire_on_disconnect_without_consuming_replacement_results`, `machine_shell_commands_keep_their_original_timeout`. Exercise every typed exemption, caller ID, delayed terminal data, duplicate completion, disconnect and same-ID replacement. Keep picker, cleanup, queue pressure and ordinary timeout tests.
 ### 7. Wrong vs Correct
 Wrong: a single short completion deadline for both human dialogs and machine requests. Correct: typed human-operation exemptions in the original router, finite machine-stage limits in their owning adapters, original connection-scoped terminal handling.
+
+## Window material single-flight submission
+
+Evidence: `repo:rust/crates/nxtools-ipc/src/window_material.rs`. ApplyWindowMaterial uses a capacity-bounded FIFO in the original ActiveConnection and original PlatformCommandReceiver. Register caller ID, generation and ordinary10second deadline before admission; ordinary commands and retained cancellations remain independently deliverable. Owner supersession/close removes only its exact unsent ID through `retire_queued_window_material`; dispatched work keeps its native slot until the actual terminal or connection retirement.
+
+The original result route releases only the exact current-generation in-flight ID and wakes the same consumer. Unknown/duplicate/old-generation results cannot release another slot. Native `window_material_unavailable` or an in-flight IPC deadline quarantines material output for that connection and fails queued owners; it never creates a replacement worker while the old native call may remain active. A queued-only timeout removes that command without quarantining a healthy in-flight call. Disconnect/replacement retires all original pending IDs and never replays waiting HWND actions.
+
+Required tests cover original terminal routing/wake, ordinary-command responsiveness, bounded admission, owner retirement/coalescing, exact generation and duplicate results, native unavailable, in-flight timeout, queued timeout and disconnect. Synthetic bridge fixtures never execute a real indexer/service or mutate Windows material settings.

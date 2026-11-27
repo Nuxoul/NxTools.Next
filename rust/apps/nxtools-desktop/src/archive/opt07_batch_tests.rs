@@ -225,7 +225,7 @@ fn opt07_password_opt_in_is_unchecked_and_original_ticket_scoped(
         Some(false),
         "every original prompt starts unchecked"
     );
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position: gpui_kit::point(px(240.), px(90.)),
         delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), px(-1000.))),
         ..Default::default()

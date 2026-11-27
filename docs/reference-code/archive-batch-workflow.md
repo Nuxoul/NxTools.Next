@@ -1,5 +1,7 @@
 # Archive batch progress, passwords and terminal actions
 
+Current framework source lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md), with active Component at `vendor/gpui-component-0100` and Windows at `vendor/gpui-pre-windows-0312`. Earlier versioned source coordinates below remain dated evidence; layout/variants, task/password/action owners, native lifecycle and deferred callbacks are unchanged.
+
 ## Reference and authority
 
 The OPT-07 brief changes presentation, not the original two-running/FIFO scheduler. [Archive reference](archive.md#12-whole-product-native-reference) and [operation lifecycle](../../.trellis/tasks/10-31-archive-research/bandizip-operation-lifecycle.md) are the reference entry. Legacy NxTools has no general archive owner (archive.md §1); its package/FFmpeg ZIP helpers are not this workflow.

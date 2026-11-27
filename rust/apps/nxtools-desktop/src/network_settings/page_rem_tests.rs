@@ -95,7 +95,7 @@ fn audit06_pages_global_ordinary_input_rules_and_fixed_footer_follow_root(cx: &m
 }
 
 fn wheel(surface: &mut VisualTestContext, position: gpui_kit::Point<gpui_kit::Pixels>, lines: f32) {
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position,
         delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, lines)),
         ..Default::default()

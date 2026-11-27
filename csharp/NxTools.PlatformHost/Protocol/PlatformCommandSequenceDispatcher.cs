@@ -21,6 +21,7 @@ internal sealed class PlatformCommandSequenceDispatcher
         "present_fixed_window_over_anchor",
         "prepare_notification_window",
         "prepare_main_window",
+        "apply_window_material",
         "activate_window",
         "query_installed_applications",
         "query_shell_actions",

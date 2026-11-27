@@ -133,7 +133,6 @@ fn indexed_search_entries(items: &[IndexSearchItem]) -> Vec<ExternalSearchEntry>
 }
 
 const PANEL_WIDTH: f32 = 620.0;
-const PANEL_CORNER_RADIUS: f32 = 8.0;
 const LAUNCHER_LIST_MAX_HEIGHT: f32 = 470.0;
 const LAUNCHER_RESULT_ROW_HEIGHT: f32 = 52.0;
 const LAUNCHER_RESULT_ICON_SIZE: f32 = 32.0;
@@ -154,10 +153,6 @@ const INDEX_CANDIDATE_LIMIT: usize = 200;
 const ICON_PREFETCH_LIMIT: usize = 10;
 const ICON_RESOURCE_CACHE_LIMIT: usize = 96;
 const ICON_VISIBLE_OVERSCAN: usize = 2;
-
-fn quick_launch_corner_radius(scale_factor: f32) -> u32 {
-    (PANEL_CORNER_RADIUS * scale_factor).round().max(1.0) as u32
-}
 
 pub(crate) fn quick_launch_process_is_blacklisted(config: &AppConfig, process_name: &str) -> bool {
     config.process_is_blacklisted(process_name, ProcessBlacklistFeature::QuickLaunch)
@@ -199,6 +194,8 @@ mod result_motion;
 mod retained_text;
 use retained_text::QuickLaunchResults;
 pub(crate) mod preview;
+mod preview_presentation;
+use preview_presentation::PreviewMaterialAction;
 mod search;
 
 use self::actions::*;
@@ -1809,6 +1806,7 @@ impl QuickLaunchApplication {
             | PlatformEvent::TrayActionRequested(_)
             | PlatformEvent::SystemMotionPreferenceChanged(_)
             | PlatformEvent::SystemThemePreferenceChanged(_)
+            | PlatformEvent::SystemMaterialCapabilitiesChanged(_)
             | PlatformEvent::ClipboardCaptured(_)
             | PlatformEvent::ClipboardPanelRequested(_)
             | PlatformEvent::TaskbarOverlayEditGestureFinished(_) => {}
@@ -1937,7 +1935,6 @@ impl QuickLaunchApplication {
                     y,
                     width: bounds.size.width.into(),
                     height: bounds.size.height.into(),
-                    corner_radius: Some(quick_launch_corner_radius(window.scale_factor())),
                 })
             })
             .ok()
@@ -2036,6 +2033,9 @@ impl QuickLaunchApplication {
                     "quick-launch panel hide failed after retry"
                 );
             }
+            return;
+        }
+        if self.handle_preview_material_result(correlation_id, &result, cx) {
             return;
         }
         if self.handle_quick_launch_preview_stage_result(
@@ -3340,6 +3340,14 @@ impl QuickLaunchApplication {
     }
 
     fn hide_quick_launch_preview_window(&mut self, cx: &mut Context<Self>) {
+        let native_may_be_visible =
+            self.preview.visible || self.preview.material_lifecycle.is_some();
+        self.preview.material_wait = None;
+        if let Some((id, started)) = self.preview.material_lifecycle.take() {
+            info!(event = "quick_launch.preview.prepare.retired", correlation_id = %id,
+                elapsed_ms = started.elapsed().as_millis() as u64);
+        }
+        self.preview.material.retire(&self.platform);
         self.preview.exit_generation = self.preview.exit_generation.wrapping_add(1).max(1);
         self.preview.pending_stage = None;
         if let Some(image) = self.preview.image_asset.take() {
@@ -3355,7 +3363,7 @@ impl QuickLaunchApplication {
             .window
             .as_ref()
             .map_or(0, |preview| preview.identity.native);
-        if self.preview.visible
+        if native_may_be_visible
             && native_window_handle != 0
             && let Err(error) = self
                 .platform
@@ -3409,22 +3417,12 @@ impl QuickLaunchApplication {
         }
 
         let application = cx.entity().downgrade();
-        let platform = Rc::clone(&self.platform);
         let native_slot = Rc::new(RefCell::new(0_i64));
         let opened_native_slot = Rc::clone(&native_slot);
         let view_slot = Rc::new(RefCell::new(None));
         let opened_view_slot = Rc::clone(&view_slot);
         let displayed_entry_id = payload.entry_id.clone();
         let mut image_asset = quick_launch_preview_image_asset(&payload);
-        let panel_scale_factor = candidate.panel_scale_factor;
-        let device_x = (bounds.origin.x.as_f32() * panel_scale_factor).round() as i32;
-        let device_y = (bounds.origin.y.as_f32() * panel_scale_factor).round() as i32;
-        let device_width = (preview_size.width.as_f32() * panel_scale_factor)
-            .round()
-            .max(1.0) as i32;
-        let device_height = (preview_size.height.as_f32() * panel_scale_factor)
-            .round()
-            .max(1.0) as i32;
         let opened = cx.open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -3436,7 +3434,7 @@ impl QuickLaunchApplication {
                 is_resizable: false,
                 is_minimizable: false,
                 display_id: placement.display_id,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.QuickLaunchPreview".into()),
                 window_min_size: Some(preview_size),
                 window_decorations: Some(WindowDecorations::Client),
@@ -3444,6 +3442,7 @@ impl QuickLaunchApplication {
                 inactive_frame_interval: None,
                 icon: None,
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let window_handle = if cfg!(test) {
@@ -3452,36 +3451,6 @@ impl QuickLaunchApplication {
                     native_window_handle(window).unwrap_or_default()
                 };
                 *opened_native_slot.borrow_mut() = window_handle;
-                if window_handle != 0 {
-                    let _ = platform.send_command(PlatformCommand::SetWindowNoActivate(
-                        SetWindowNoActivateCommand {
-                            window_handle,
-                            enabled: true,
-                        },
-                    ));
-                    let _ = platform.send_command(PlatformCommand::SetWindowBounds(
-                        SetWindowBoundsCommand {
-                            window_handle,
-                            x: device_x,
-                            y: device_y,
-                            width: device_width,
-                            height: device_height,
-                            corner_radius: None,
-                        },
-                    ));
-                    let _ = platform.send_command(PlatformCommand::SetWindowTopmost(
-                        SetWindowTopmostCommand {
-                            window_handle,
-                            enabled: true,
-                        },
-                    ));
-                    let _ = platform.send_command(PlatformCommand::SetWindowVisibility(
-                        SetWindowVisibilityCommand {
-                            window_handle,
-                            visible: true,
-                        },
-                    ));
-                }
                 let view = cx.new(|_| QuickLaunchPreview::new(payload, application));
                 *opened_view_slot.borrow_mut() = Some(view.downgrade());
                 cx.new(|cx| Root::new(view, window, cx))
@@ -3504,10 +3473,45 @@ impl QuickLaunchApplication {
                     },
                     view,
                 });
-                self.preview.visible = true;
-                self.preview.displayed_entry_id = Some(displayed_entry_id);
                 self.preview.image_asset = image_asset;
-                self.restore_quick_launch_panel_keyboard_focus(cx);
+                self.preview.no_activate_ready = false;
+                self.preview.restore_primary_focus = true;
+                let window_identity = self
+                    .preview
+                    .window
+                    .as_ref()
+                    .expect("created preview")
+                    .identity;
+                if cfg!(test) && window_identity.native == 0 {
+                    // TestWindow has no native visibility boundary.
+                    self.preview.visible = true;
+                    self.preview.displayed_entry_id = Some(displayed_entry_id);
+                    self.restore_quick_launch_panel_keyboard_focus(cx);
+                    self.preview.restore_primary_focus = false;
+                } else {
+                    self.preview.visible = false;
+                    self.preview.displayed_entry_id = None;
+                    self.begin_preview_material_presentation(cx);
+                    let stage = QuickLaunchPreviewPendingStage {
+                        command_id: uuid::Uuid::nil(),
+                        phase: QuickLaunchPreviewStagePhase::InitialNoActivate,
+                        window_identity,
+                        generation: self.preview.generation,
+                        entry_id: displayed_entry_id,
+                        payload: None,
+                        preview_size,
+                        bounds,
+                        panel_scale_factor: candidate.panel_scale_factor,
+                    };
+                    self.send_preview_stage(
+                        stage,
+                        PlatformCommand::SetWindowNoActivate(SetWindowNoActivateCommand {
+                            window_handle: window_identity.native,
+                            enabled: true,
+                        }),
+                        cx,
+                    );
+                }
             }
             Err(error) => {
                 self.preview.visible = false;
@@ -3524,19 +3528,28 @@ impl QuickLaunchApplication {
         let Some(popup) = self.popup.clone() else {
             return;
         };
-        if popup.native_window_handle != 0
-            && let Err(error) =
-                self.platform
-                    .send_command(PlatformCommand::ActivateWindow(ActivateWindowCommand {
-                        window_handle: popup.native_window_handle,
-                    }))
-        {
-            warn!(%error, "failed to restore quick-launch keyboard target after preview creation");
-        }
-        let _ = popup.window.update(cx, |_, window, app| {
-            let _ = popup
-                .panel
-                .update(app, |panel, cx| panel.focus_search(window, cx));
+        let owner = cx.entity().downgrade();
+        let platform = Rc::clone(&self.platform);
+        let generation = self.preview.generation;
+        cx.defer(move |app| {
+            let current = owner.read_with(app, |owner, _| {
+                owner.preview.visible && owner.preview.generation == generation
+                    && owner.popup.as_ref().is_some_and(|current| {
+                        current.window == popup.window
+                            && current.native_window_handle == popup.native_window_handle
+                    })
+            }).unwrap_or(false);
+            if !current { return; }
+            if popup.native_window_handle != 0
+                && let Err(error) = platform.send_command(PlatformCommand::ActivateWindow(
+                    ActivateWindowCommand { window_handle: popup.native_window_handle }
+                ))
+            {
+                warn!(%error, "failed to restore quick-launch keyboard target after preview creation");
+            }
+            let _ = popup.window.update(app, |_, window, app| {
+                let _ = popup.panel.update(app, |panel, cx| panel.focus_search(window, cx));
+            });
         });
     }
 
@@ -3558,6 +3571,7 @@ impl QuickLaunchApplication {
             self.show_quick_launch_preview(payload, candidate, cx);
             return;
         }
+        self.begin_preview_material_presentation(cx);
         let entry_id = payload.entry_id.clone();
         let mut stage = QuickLaunchPreviewPendingStage {
             command_id: uuid::Uuid::nil(),
@@ -3570,6 +3584,18 @@ impl QuickLaunchApplication {
             bounds,
             panel_scale_factor: candidate.panel_scale_factor,
         };
+        if !self.preview.no_activate_ready {
+            stage.phase = QuickLaunchPreviewStagePhase::InitialNoActivate;
+            self.send_preview_stage(
+                stage,
+                PlatformCommand::SetWindowNoActivate(SetWindowNoActivateCommand {
+                    window_handle: native_window_handle,
+                    enabled: true,
+                }),
+                cx,
+            );
+            return;
+        }
         match self
             .platform
             .send_command(PlatformCommand::SetWindowPosition(
@@ -3606,7 +3632,7 @@ impl QuickLaunchApplication {
         {
             return false;
         }
-        let mut stage = self
+        let stage = self
             .preview
             .pending_stage
             .take()
@@ -3624,6 +3650,10 @@ impl QuickLaunchApplication {
         {
             return true;
         }
+        if stage.window_identity.native != 0 && !self.preview_stage_is_current(&stage, cx) {
+            self.hide_quick_launch_preview_window(cx);
+            return true;
+        }
         if !success {
             warn!(
                 %correlation_id,
@@ -3635,26 +3665,18 @@ impl QuickLaunchApplication {
             return true;
         }
         match stage.phase {
+            QuickLaunchPreviewStagePhase::InitialNoActivate => {
+                self.preview.no_activate_ready = true;
+                self.prepare_initial_preview_bounds(stage, cx);
+            }
+            QuickLaunchPreviewStagePhase::InitialBounds => {
+                self.wait_for_preview_material(stage, PreviewMaterialAction::InitialFrame, cx);
+            }
+            QuickLaunchPreviewStagePhase::InitialShow => {
+                self.finish_prepared_preview(stage, cx);
+            }
             QuickLaunchPreviewStagePhase::MoveOffscreen if !self.preview.visible => {
-                match self
-                    .platform
-                    .send_command(PlatformCommand::SetWindowVisibility(
-                        SetWindowVisibilityCommand {
-                            window_handle: stage.window_identity.native,
-                            visible: true,
-                        },
-                    )) {
-                    Ok(command_id) => {
-                        stage.command_id = command_id;
-                        stage.phase = QuickLaunchPreviewStagePhase::ShowOffscreen;
-                        self.preview.pending_stage = Some(stage);
-                        self.preview.visible = true;
-                    }
-                    Err(error) => {
-                        warn!(%error, "failed to show staged quick-launch preview");
-                        self.hide_quick_launch_preview_window(cx);
-                    }
-                }
+                self.wait_for_preview_material(stage, PreviewMaterialAction::ShowOffscreen, cx);
             }
             QuickLaunchPreviewStagePhase::MoveOffscreen
             | QuickLaunchPreviewStagePhase::ShowOffscreen => {
@@ -3662,14 +3684,12 @@ impl QuickLaunchApplication {
                 self.render_staged_quick_launch_preview(stage, cx);
             }
             QuickLaunchPreviewStagePhase::RevealOnscreen => {
-                let _ = self
-                    .platform
-                    .send_command(PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
-                        window_handle: stage.window_identity.native,
-                        enabled: true,
-                    }));
-                self.preview.visible = true;
-                self.preview.displayed_entry_id = Some(stage.entry_id);
+                if cfg!(test) && stage.window_identity.native == 0 {
+                    self.preview.visible = true;
+                    self.preview.displayed_entry_id = Some(stage.entry_id);
+                } else {
+                    self.finish_prepared_preview(stage, cx);
+                }
             }
         }
         true
@@ -3709,48 +3729,25 @@ impl QuickLaunchApplication {
                 return;
             }
             window.on_next_frame(move |_, app| {
-                let _ = application.update(app, |application, cx| {
-                    if application
-                        .preview
-                        .window
-                        .as_ref()
-                        .is_none_or(|preview| preview.identity != window_identity)
-                        || application.preview.generation != generation
-                        || application.preview.hovered_entry_id.as_deref()
-                            != Some(entry_id.as_str())
-                    {
-                        return;
-                    }
-                    let x = (bounds.origin.x.as_f32() * panel_scale_factor).round() as i32;
-                    let y = (bounds.origin.y.as_f32() * panel_scale_factor).round() as i32;
-                    match application
-                        .platform
-                        .send_command(PlatformCommand::SetWindowPosition(
-                            SetWindowPositionCommand {
-                                window_handle: window_identity.native,
-                                x,
-                                y,
-                            },
-                        )) {
-                        Ok(command_id) => {
-                            application.preview.pending_stage =
-                                Some(QuickLaunchPreviewPendingStage {
-                                    command_id,
-                                    phase: QuickLaunchPreviewStagePhase::RevealOnscreen,
-                                    window_identity,
-                                    generation,
-                                    entry_id,
-                                    payload: None,
-                                    preview_size,
-                                    bounds,
-                                    panel_scale_factor,
-                                });
-                        }
-                        Err(error) => {
-                            warn!(%error, "failed to reveal refreshed quick-launch preview");
-                            application.hide_quick_launch_preview_window(cx);
-                        }
-                    }
+                app.defer(move |app| {
+                    let _ = application.update(app, |application, cx| {
+                        let stage = QuickLaunchPreviewPendingStage {
+                            command_id: uuid::Uuid::nil(),
+                            phase: QuickLaunchPreviewStagePhase::RevealOnscreen,
+                            window_identity,
+                            generation,
+                            entry_id,
+                            payload: None,
+                            preview_size,
+                            bounds,
+                            panel_scale_factor,
+                        };
+                        application.wait_for_preview_material(
+                            stage,
+                            PreviewMaterialAction::RevealOnscreen,
+                            cx,
+                        );
+                    });
                 });
             });
             window.refresh();
@@ -4243,7 +4240,7 @@ impl QuickLaunchApplication {
                 is_resizable: false,
                 is_minimizable: false,
                 display_id,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.QuickLaunch".into()),
                 window_min_size: Some(size(px(1.0), px(1.0))),
                 window_decorations: Some(WindowDecorations::Client),
@@ -4251,6 +4248,7 @@ impl QuickLaunchApplication {
                 inactive_frame_interval: None,
                 icon: None,
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
@@ -4269,7 +4267,7 @@ impl QuickLaunchApplication {
                     panel
                 });
                 *opened_panel_slot.borrow_mut() = Some(panel.downgrade());
-                cx.new(|cx| Root::new(panel, window, cx))
+                cx.new(|cx| crate::ui::popup_surface::root(panel, window, cx))
             },
         );
         match opened {

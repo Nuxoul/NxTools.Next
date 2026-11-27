@@ -216,6 +216,23 @@ internal static class ArchiveProductSessionTests
                 Check(result.Terminal.Code == expected && result.Terminal.CleanupComplete, "v2 " + mode + ": " + result.Terminal.Code);
                 Check(result.Events.All(item => item.Batch is null), "unnegotiated metadata escaped");
             }
+            ulong? totalBytes = null;
+            foreach (var delta in new int?[] { null, 0, 1 }) {
+                var limit = delta is null ? 8388608ul : totalBytes!.Value - (ulong)delta.Value;
+                var request = ArchiveProductReadTests.Command("test", path: Path.Combine(root, "transport-boundary.zip"), version: 2,
+                    limits: new() { MaxTransportBytes = limit });
+                Check(session.Dispatch(request).Success, "deterministic transport boundary admission");
+                var result = await Finish(session, ArchiveReadWire.Parse(request));
+                Check(result.Terminal.CleanupComplete && session.ActiveCount == 0, "transport boundary releases native owner");
+                if (delta is null) {
+                    Check(result.Terminal.Status == "succeeded" && result.Terminal.Transfer is { PrivateBytes: > 0 }, "fixed wire baseline");
+                    totalBytes = result.Terminal.Transfer!.PrivateBytes;
+                } else if (delta == 0) {
+                    Check(result.Terminal.Status == "succeeded" && result.Terminal.Transfer?.PrivateBytes == limit, "exact cumulative byte allowance");
+                } else {
+                    Check(result.Terminal.Status == "failed" && result.Terminal.Code == "metadata_budget", "one byte below cumulative transport rejects");
+                }
+            }
             File.Delete(Path.Combine(root, ArchiveReadHelper.DeploymentName));
         } finally { Directory.Delete(root, true); }
     }

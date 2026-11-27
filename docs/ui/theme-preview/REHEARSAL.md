@@ -66,3 +66,7 @@ Recordings/reports remain in session scratch: `theme-search-{1100,390}`, `theme-
 - No NxTools/PlatformHost/DWM/GPU/private-memory/power measurements were taken. Browser blur/timing is not an estimate of product cost.
 - This is an authored theme study, not a feature-complete clone or pixel-equivalent capture of every current GPUI surface. Scene controls are illustrations; host preview controls are interactive.
 - No product source, framework patch, dependency lock, configuration, service, package or installation was changed.
+
+## Palette revision
+
+Acrylic roles follow the product's one-translucent-layer model: window shell 72 %, panes 43 % over the shell (84 % composed), popups 97.6 %. Dark and light overview stills were re-captured in Chrome after the change: the wallpaper hue still bleeds through shell and sidebar, and text/dividers stay legible. Browser evidence only; the native surface matrix is in the task's surface-matrix.md.

@@ -63,6 +63,7 @@ pub(crate) mod extension_adapter;
 mod link_detection;
 mod link_placement;
 mod popup_activation;
+mod popup_material;
 pub(crate) use capture_pause::CapturePauseSnapshot;
 pub(crate) use currency_tool::CurrencyStatus;
 #[path = "clipboard_preview_presentation.rs"]
@@ -202,6 +203,9 @@ struct PopupSession {
     lifecycle: PopupLifecycle<PopupWindow>,
     pending_visibility: HashMap<uuid::Uuid, PendingPopupVisibility>,
     pending_activation: Option<popup_activation::PendingPopupActivation>,
+    material: crate::ui::material::Preparation,
+    pending_material: Option<popup_material::PendingPopupMaterial>,
+    material_observers_installed: bool,
     load_generation: u64,
     pending_load_generation: Option<u64>,
     // Armed only after native reveal confirmation, never for hidden creation bounds.
@@ -233,6 +237,10 @@ struct PreviewSession {
     candidate: Option<PreviewCandidate>,
     pending_stage: Option<PendingPreviewStage>,
     timing: Option<PreviewTiming>,
+    material: crate::ui::material::Preparation,
+    pending_material: Option<preview_presentation::PendingPreviewMaterial>,
+    material_presenting: bool,
+    material_observers_installed: bool,
 }
 
 struct PreviewTiming {
@@ -264,6 +272,7 @@ enum PreviewStagePhase {
     InitialShow,
 }
 
+#[derive(Clone)]
 struct PendingPreviewStage {
     command_id: uuid::Uuid,
     native_window_handle: i64,
@@ -1320,6 +1329,7 @@ impl ClipboardApplication {
                 inactive_frame_interval: None,
                 icon: None,
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let handle = native_window_handle(window).unwrap_or_default();
@@ -1939,6 +1949,15 @@ impl ClipboardApplication {
         session_id: uuid::Uuid,
         reason: PopupCloseReason,
     ) -> Result<uuid::Uuid, PlatformBridgeError> {
+        if self.popup.pending_material.is_some()
+            && self.popup.lifecycle.current().is_some_and(|popup| {
+                popup.window == popup_window
+                    && popup.session_id == session_id
+                    && popup.native_window_handle == native_window_handle
+            })
+        {
+            self.retire_popup_material("hide_requested");
+        }
         self.retire_popup_activation("hide_requested");
         self.popup
             .pending_visibility
@@ -1991,6 +2010,7 @@ impl ClipboardApplication {
     }
 
     fn abandon_pending_popup_visibility(&mut self, terminal: &'static str) {
+        self.retire_popup_material(terminal);
         self.retire_popup_activation(terminal);
         for (_, pending) in self.popup.pending_visibility.drain() {
             let Some(reason) = pending.close_reason else {
@@ -2242,6 +2262,7 @@ impl ClipboardApplication {
             info!(event = "clipboard.preview.lifecycle_ended", correlation_id = %timing.correlation_id,
                 elapsed_ms = timing.started_at.elapsed().as_millis() as u64);
         }
+        self.retire_preview_material("hidden");
         self.preview.pending_stage = None;
         if self.preview.visible
             && self.preview.native_window_handle != 0
@@ -2288,27 +2309,14 @@ impl ClipboardApplication {
         .detach();
     }
 
-    fn stage_reused_preview(&mut self, mut stage: PendingPreviewStage) {
-        let native_window_handle = self.preview.native_window_handle;
-        match self
-            .platform
-            .send_command(PlatformCommand::SetWindowPosition(
-                SetWindowPositionCommand {
-                    window_handle: native_window_handle,
-                    x: PREVIEW_STAGING_COORDINATE,
-                    y: PREVIEW_STAGING_COORDINATE,
-                },
-            )) {
-            Ok(command_id) => {
-                stage.command_id = command_id;
-                self.preview.pending_stage = Some(stage);
-                self.preview.displayed_item_id = None;
-            }
-            Err(error) => {
-                error!(%error, "failed to stage clipboard preview outside the display");
-                self.hide_preview_window();
-            }
-        }
+    fn stage_reused_preview(&mut self, stage: PendingPreviewStage, cx: &mut Context<Self>) {
+        let command = PlatformCommand::SetWindowPosition(SetWindowPositionCommand {
+            window_handle: stage.native_window_handle,
+            x: PREVIEW_STAGING_COORDINATE,
+            y: PREVIEW_STAGING_COORDINATE,
+        });
+        self.preview.displayed_item_id = None;
+        self.dispatch_preview_presentation_step(stage, command, cx);
     }
 
     fn handle_preview_stage_result(
@@ -2364,11 +2372,15 @@ impl ClipboardApplication {
             }
             return true;
         }
+        if !self.preview_material_ready(cx) {
+            self.hide_preview_window();
+            return true;
+        }
 
         match stage.phase {
             PreviewStagePhase::ReuseNoActivate => {
                 stage.phase = PreviewStagePhase::MoveOffscreen;
-                self.stage_reused_preview(stage);
+                self.stage_reused_preview(stage, cx);
             }
             PreviewStagePhase::MeasureInitial | PreviewStagePhase::MeasureReuse => return true,
             PreviewStagePhase::InitialNoActivate
@@ -2386,29 +2398,22 @@ impl ClipboardApplication {
                 }
             }
             PreviewStagePhase::ReuseBounds if !self.preview.visible => {
-                match self
-                    .platform
-                    .send_command(PlatformCommand::SetWindowVisibility(
-                        SetWindowVisibilityCommand {
-                            window_handle: self.preview.native_window_handle,
-                            visible: true,
-                        },
-                    )) {
-                    Ok(command_id) => {
-                        stage.command_id = command_id;
-                        stage.phase = PreviewStagePhase::ShowOffscreen;
-                        self.preview.pending_stage = Some(stage);
-                        // Treat a successfully queued show as visible immediately so a pointer
-                        // leave can enqueue a matching hide behind it before confirmation arrives.
-                        self.preview.visible = true;
-                    }
-                    Err(error) => {
-                        error!(%error, "failed to show staged clipboard preview");
-                        self.hide_preview_window();
-                    }
+                if !self.preview_material_ready(cx) {
+                    self.hide_preview_window();
+                    return true;
                 }
+                stage.phase = PreviewStagePhase::ShowOffscreen;
+                let command = PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+                    window_handle: stage.native_window_handle,
+                    visible: true,
+                });
+                self.dispatch_preview_presentation_step(stage, command, cx);
             }
             PreviewStagePhase::ReuseBounds | PreviewStagePhase::ShowOffscreen => {
+                if !self.preview_material_ready(cx) {
+                    self.hide_preview_window();
+                    return true;
+                }
                 self.preview.visible = true;
                 self.render_staged_preview(stage, cx);
             }
@@ -2416,80 +2421,64 @@ impl ClipboardApplication {
         true
     }
 
-    fn render_staged_preview(&mut self, stage: PendingPreviewStage, cx: &mut Context<Self>) {
+    fn render_staged_preview(&mut self, mut stage: PendingPreviewStage, cx: &mut Context<Self>) {
         let Some(preview) = self.preview.window.as_ref() else {
-            self.preview.visible = false;
-            self.preview.displayed_item_id = None;
+            self.hide_preview_window();
             return;
         };
         let view = preview.view.clone();
-        let requested_item_id = stage.item.id;
-        let generation = stage.generation;
-        let native_window_handle = self.preview.native_window_handle;
+        let window = preview.window;
         let application = cx.entity().downgrade();
-        let platform = Rc::clone(&self.platform);
-        let (x, y) = preview_device_origin(stage.bounds, stage.panel_scale_factor);
-        let update_result = preview.window.update(cx, move |_, window, app| {
-            // C# already acknowledged the final offscreen bounds; no competing
-            // asynchronous GPUI native resize before the replacement frame.
-            if view
-                .update(app, |preview, cx| {
-                    if stage.item.kind != ClipboardKind::Text { preview.set_item(stage.item, stage.layout, window, cx); }
-                    else { preview.set_measured_layout(stage.layout, cx); }
+        let token = uuid::Uuid::new_v4();
+        stage.command_id = token;
+        self.preview.pending_stage = Some(stage.clone());
+        self.arm_preview_frame_timeout(token, stage.native_window_handle, cx);
+        cx.defer(move |cx| {
+            let current = application
+                .update(cx, |owner, cx| {
+                    owner.preview_frame_is_current(token, &stage, cx)
                 })
-                .is_err()
-            {
+                .unwrap_or(false);
+            if !current {
                 return;
             }
-            window.on_next_frame(move |_, app| {
-                let _ = application.update(app, |application, _cx| {
-                    if !preview_callback_is_current(
-                        application.preview.generation,
-                        generation,
-                        application.preview.hovered_item_id,
-                        requested_item_id,
-                        application.preview.scroll_suppressed,
-                        application.preview.native_window_handle,
-                        native_window_handle,
-                    ) {
-                        return;
-                    }
-                    if let Err(error) = platform.send_command(PlatformCommand::SetWindowPosition(
-                        SetWindowPositionCommand {
-                            window_handle: native_window_handle,
-                            x,
-                            y,
-                        },
-                    )) {
-                        error!(%error, "failed to reveal refreshed clipboard preview");
-                        application.hide_preview_window();
-                        return;
-                    }
-                    if let Err(error) = platform.send_command(PlatformCommand::SetWindowTopmost(
-                        SetWindowTopmostCommand {
-                            window_handle: native_window_handle,
-                            enabled: true,
-                        },
-                    )) {
-                        error!(%error, "failed to keep refreshed clipboard preview topmost");
-                    }
-                    application.preview.visible = true;
-                    application.preview.displayed_item_id = Some(requested_item_id);
-                    if let Some(timing) = application.preview.timing.take() {
-                        info!(event = "clipboard.preview.reuse_reveal_queued", correlation_id = %timing.correlation_id,
-                            generation, elapsed_ms = timing.started_at.elapsed().as_millis() as u64,
-                            native_elapsed_ms = ?timing.native_started_at.map(|started| started.elapsed().as_millis() as u64));
+            let callback_owner = application.clone();
+            let update_result = window.update(cx, move |_, window, app| {
+                // Native offscreen bounds already match the replacement frame.
+                if view
+                    .update(app, |preview, cx| {
+                        if stage.item.kind != ClipboardKind::Text {
+                            preview.set_item(stage.item.clone(), stage.layout, window, cx);
+                        } else {
+                            preview.set_measured_layout(stage.layout, cx);
+                        }
+                    })
+                    .is_err()
+                {
+                    return;
+                }
+                window.on_next_frame(move |_, cx| {
+                    cx.defer(move |cx| {
+                        let _ = callback_owner.update(cx, |owner, cx| {
+                            owner.reveal_reused_preview(token, stage, cx);
+                        });
+                    });
+                });
+                window.refresh();
+            });
+            if update_result.is_err() {
+                let _ = application.update(cx, |owner, _| {
+                    if owner
+                        .preview
+                        .pending_stage
+                        .as_ref()
+                        .is_some_and(|stage| stage.command_id == token)
+                    {
+                        owner.hide_preview_window();
                     }
                 });
-            });
-            window.refresh();
+            }
         });
-        if update_result.is_err() {
-            self.preview.window = None;
-            self.preview.native_window_handle = 0;
-            self.preview.visible = false;
-            self.preview.displayed_item_id = None;
-        }
     }
 
     fn show_preview(&mut self, candidate: PreviewCandidate, cx: &mut Context<Self>) {
@@ -2586,6 +2575,7 @@ impl ClipboardApplication {
                 inactive_frame_interval: None,
                 icon: None,
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let preview_window_handle = native_window_handle(window);
@@ -2811,7 +2801,13 @@ impl ClipboardApplication {
                 }
                 self.preview.pending_stage = None;
                 self.preview.generation = self.preview.generation.wrapping_add(1);
-                if let Some(current) = self.popup.lifecycle.current().cloned() {
+                if let Some(current) = self
+                    .popup
+                    .lifecycle
+                    .current()
+                    .filter(|popup| self.popup.size_tracking_session == Some(popup.session_id))
+                    .cloned()
+                {
                     if let Ok(command_id) =
                         self.platform
                             .send_command(PlatformCommand::SetWindowTopmost(
@@ -2822,6 +2818,16 @@ impl ClipboardApplication {
                             ))
                     {
                         self.popup.lifecycle.replace_pending_topmost(command_id);
+                        let _ = self
+                            .platform
+                            .send_command(PlatformCommand::SetWindowVisibility(
+                                SetWindowVisibilityCommand {
+                                    window_handle: current.native_window_handle,
+                                    visible: false,
+                                },
+                            ));
+                        self.popup.size_tracking_session = None;
+                        self.begin_popup_material(current.clone(), cx);
                     }
                     let panel = current.panel.clone();
                     cx.defer(move |cx| {
@@ -2885,8 +2891,7 @@ impl ClipboardApplication {
                         .window
                         .update(cx, |_, window, _| window.remove_window());
                 }
-                self.preview.pending_stage = None;
-                self.preview.generation = self.preview.generation.wrapping_add(1);
+                self.dismiss_preview(cx);
                 if let Some(current) = self.popup.lifecycle.current().cloned() {
                     let _ = current.window.update(cx, |_, _window, app| {
                         let _ = current.panel.update(app, |panel, cx| {
@@ -2923,6 +2928,9 @@ impl ClipboardApplication {
                 correlation_id,
                 result,
             } => {
+                if self.finish_popup_material(correlation_id, &result, cx) {
+                    return;
+                }
                 if self.finish_link_placement(correlation_id, &result, cx) {
                     return;
                 }
@@ -3109,6 +3117,9 @@ impl ClipboardApplication {
                     cx.notify();
                     return;
                 }
+                if self.finish_preview_material(correlation_id, &result, cx) {
+                    return;
+                }
                 if self.handle_preview_stage_result(
                     correlation_id,
                     result.success,
@@ -3141,6 +3152,23 @@ impl ClipboardApplication {
                         );
                         return;
                     };
+                    if pending.visible
+                        && !result.success
+                        && result.error.as_deref() == Some("platform command timed out")
+                    {
+                        self.retire_popup_material("visibility_timeout");
+                        return;
+                    }
+                    if pending.visible && self.current_popup_material_receipt(cx).is_none() {
+                        self.drive_popup_material(cx);
+                        return;
+                    }
+                    if !result.success
+                        && !pending.visible
+                        && self.current_popup_material_receipt(cx).is_none()
+                    {
+                        return;
+                    }
                     let elapsed_ms = pending.started_at.elapsed().as_millis() as u64;
                     if result.success {
                         if pending.visible {
@@ -3152,6 +3180,7 @@ impl ClipboardApplication {
                                 });
                             });
                             self.request_popup_activation(popup.clone(), cx);
+                            self.complete_popup_material_reveal(cx);
                             info!(%correlation_id, %pending.session_id, elapsed_ms, "clipboard popup revealed after topmost confirmation");
                         } else {
                             if let Some(reason) = pending.close_reason.as_ref() {
@@ -3186,6 +3215,9 @@ impl ClipboardApplication {
                             );
                         }
                         error!(%correlation_id, %reason, "failed to change clipboard popup visibility");
+                        if pending.visible {
+                            self.complete_popup_material_reveal(cx);
+                        }
                         if !pending.visible {
                             self.popup.size_tracking_session = Some(popup.session_id);
                         }
@@ -3220,7 +3252,7 @@ impl ClipboardApplication {
                             warn!(
                                 %correlation_id,
                                 reason = %topmost_reason,
-                                "clipboard window topmost failed; revealing fallback window"
+                                "clipboard window topmost failed"
                             );
                             (previous, true)
                         }
@@ -3230,49 +3262,13 @@ impl ClipboardApplication {
                             .window
                             .update(cx, |_, window, _| window.remove_window());
                     }
-                    if let Some(popup) = self.popup.lifecycle.current().cloned() {
-                        match self
-                            .platform
-                            .send_command(PlatformCommand::SetWindowVisibility(
-                                SetWindowVisibilityCommand {
-                                    window_handle: popup.native_window_handle,
-                                    visible: true,
-                                },
-                            )) {
-                            Ok(command_id) => {
-                                self.popup.pending_visibility.insert(
-                                    command_id,
-                                    PendingPopupVisibility {
-                                        window: popup.window,
-                                        visible: true,
-                                        native_window_handle: popup.native_window_handle,
-                                        session_id: popup.session_id,
-                                        close_reason: None,
-                                        started_at: Instant::now(),
-                                    },
-                                );
-                                if topmost_failed {
-                                    let _ = popup.window.update(cx, |_, window, app| {
-                                        let _ = popup.panel.update(app, |panel, cx| {
-                                            panel.handle_topmost_failure(
-                                                topmost_reason.clone(),
-                                                window,
-                                                cx,
-                                            );
-                                        });
-                                    });
-                                }
-                            }
-                            Err(error) => {
-                                error!(%error, "failed to reveal clipboard popup after topmost result");
-                                let _ = popup.window.update(cx, |_, window, app| {
-                                    let _ = popup.panel.update(app, |panel, cx| {
-                                        panel.handle_topmost_failure(error.to_string(), window, cx);
-                                    });
-                                });
-                            }
-                        }
+                    if !result.success
+                        && result.error.as_deref() == Some("platform command timed out")
+                    {
+                        self.retire_popup_material("topmost_timeout");
+                        return;
                     }
+                    self.popup_material_topmost(topmost_failed.then_some(topmost_reason), cx);
                     return;
                 }
                 let Some(popup) = self.popup.lifecycle.current().cloned() else {
@@ -3453,6 +3449,7 @@ impl ClipboardApplication {
             | PlatformEvent::TrayActionRequested(_)
             | PlatformEvent::SystemMotionPreferenceChanged(_)
             | PlatformEvent::SystemThemePreferenceChanged(_)
+            | PlatformEvent::SystemMaterialCapabilitiesChanged(_)
             | PlatformEvent::QuickLaunchPanelRequested(_)
             | PlatformEvent::QuickLaunchKeyboardHealthChanged(_)
             | PlatformEvent::QuickLaunchDirectoryContextResolved(_)
@@ -3567,6 +3564,7 @@ impl ClipboardApplication {
                 inactive_frame_interval: None,
                 icon: None,
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 let native_window = native_window_handle(window);
@@ -3591,7 +3589,7 @@ impl ClipboardApplication {
                     .with_capture_pause(capture_pause)
                 });
                 *opened_panel_slot.borrow_mut() = Some(panel.downgrade());
-                cx.new(|cx| Root::new(panel, window, cx))
+                cx.new(|cx| crate::ui::popup_surface::root(panel, window, cx))
             },
         );
 
@@ -3627,7 +3625,6 @@ impl ClipboardApplication {
                             y: (bounds.origin.y.as_f32() * scale).round() as i32,
                             width: (bounds.size.width.as_f32() * scale).round() as i32,
                             height: (bounds.size.height.as_f32() * scale).round() as i32,
-                            corner_radius: None,
                         }))
                         .map_err(|error| format!("failed to size clipboard popup: {error}"));
                     match bounds_result {
@@ -3674,6 +3671,14 @@ impl ClipboardApplication {
                     return;
                 };
                 self.popup.lifecycle.stage(popup, topmost_command);
+                self.begin_popup_material(
+                    self.popup
+                        .lifecycle
+                        .current()
+                        .expect("staged popup")
+                        .clone(),
+                    cx,
+                );
                 self.popup_monitor = request.cursor_monitor;
                 self.retire_popup_activation("popup_replaced");
                 self.popup.size_tracking_session = None;
@@ -3924,9 +3929,23 @@ mod asset_tests {
             .find("window.on_next_frame")
             .expect("the native surface must wait for a freshly submitted GPUI frame");
         let reveal = render_source[after_frame..]
-            .find("PlatformCommand::SetWindowPosition")
+            .find("owner.reveal_reused_preview")
             .map(|offset| after_frame + offset)
-            .expect("the refreshed preview must return on-screen after frame submission");
+            .expect(
+                "the refreshed preview must return on-screen through the material-qualified boundary",
+            );
+        let presentation = include_str!("clipboard_preview_presentation.rs");
+        let reveal_source = &presentation[presentation
+            .find("fn reveal_reused_preview")
+            .expect("original native reveal boundary")..];
+        assert!(
+            reveal_source
+                .find("preview_frame_is_current")
+                .expect("current frame guard")
+                < reveal_source
+                    .find("PlatformCommand::SetWindowPosition")
+                    .expect("native reveal")
+        );
 
         assert!(update < after_frame);
         assert!(after_frame < reveal);

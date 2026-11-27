@@ -18,9 +18,9 @@ foreach ($contract in @('Settings::new("clipboard-official-settings")', 'Setting
     '.resettable(false)', 'Form::vertical()', 'Field::new()', 'fn render_clipboard_control(',
     'clipboard-settings-workspace', 'clipboard-storage-path', '"呼出与快捷操作"', '"保留与隐私"', '"压缩包与存储"',
     'application.set_clipboard_modifier_action(modifier, action)', 'application.set_clipboard_retention(',
-    'update_clipboard_capture_limit(', 'application.request_clipboard_export(cx)',
-    'application.request_clipboard_import(cx)', 'application.request_clipboard_database_backup(cx)',
-    'application.request_clipboard_database_compaction(cx)', 'application.request_clipboard_storage_migration(cx)',
+    'update_clipboard_capture_limit(', 'application.request_clipboard_export(source_window_handle, cx)',
+    'application.request_clipboard_import(source_window_handle, cx)', 'application.request_clipboard_database_backup(cx)',
+    'application.request_clipboard_database_compaction(cx)', 'application.request_clipboard_storage_migration(source_window_handle, cx)',
     '.disabled(management_busy)', 'cx.defer(', 'this.hotkey_focus.focus(window, cx)',
     '"clipboard-hotkey-row"', '"clipboard-hotkey-help"', '"clipboard-hotkey-registration-status"')) {
     if (-not $clipboardPageSource.Contains($contract)) { throw "Clipboard Settings component/owner missing: $contract" }
@@ -156,7 +156,7 @@ foreach ($requiredTabContract in @(
     'context_menu_shell(',
     '.on_drag(',
     '.on_drop(',
-    '.on_scroll_wheel('
+    '.on_scroll('
 )) {
     if (-not $popupModSource.Contains($requiredTabContract)) {
         throw "CL-04 category strip contract missing: $requiredTabContract"

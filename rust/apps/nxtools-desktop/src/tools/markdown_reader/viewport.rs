@@ -8,6 +8,7 @@ use gpui_kit::base::text::{
 use gpui_kit::{AnyElement, ListOffset, Pixels, canvas};
 
 use super::*;
+use crate::ui::motion::{self, UiMotionPreference};
 
 struct Projection {
     blocks: Vec<(usize, Range<usize>)>,
@@ -91,9 +92,28 @@ pub(super) struct Navigation {
     pub(super) active_heading: Option<usize>,
     pub(super) hovered_code: Option<usize>,
     heading_flash: Option<(usize, Instant, RenderedText)>,
+    motion_subscription: Option<Subscription>,
 }
 
 impl Navigation {
+    fn observe_heading_flash_motion(&mut self, id: usize, cx: &mut Context<Reader>) {
+        if self.motion_subscription.is_some() {
+            return;
+        }
+        self.motion_subscription =
+            Some(cx.observe_global::<UiMotionPreference>(move |reader, cx| {
+                if motion::reduced_motion(cx)
+                    && let Some(tab) = reader.tabs.iter_mut().find(|tab| tab.id == id)
+                    && tab.navigation.heading_flash.take().is_some()
+                {
+                    let owner = cx.weak_entity();
+                    cx.defer(move |cx| {
+                        let _ = owner.update(cx, |_, cx| cx.notify());
+                    });
+                }
+            }));
+    }
+
     pub(super) fn headings<'a>(&'a self, document: &'a Document) -> &'a [Heading] {
         self.projection
             .as_ref()
@@ -218,14 +238,29 @@ impl Reader {
         };
         let color = Theme::active(cx).accent;
         let view = tab.view.clone();
+        let owner = cx.weak_entity();
+        let id = tab.id;
+        let flash = (index, started, revision.clone());
         canvas(
-            move |_, _, cx| {
+            move |_, window, cx| {
                 let elapsed = cx
                     .background_executor()
                     .now()
                     .saturating_duration_since(started);
                 let state = view.read(cx);
-                if elapsed >= HEADING_FLASH || state.rendered_text() != revision {
+                if !motion::motion_allowed(cx)
+                    || elapsed >= HEADING_FLASH
+                    || state.rendered_text() != revision
+                {
+                    window.defer(cx, move |_, cx| {
+                        let _ = owner.update(cx, |reader, _| {
+                            if let Some(tab) = reader.tabs.iter_mut().find(|tab| tab.id == id)
+                                && tab.navigation.heading_flash.as_ref() == Some(&flash)
+                            {
+                                tab.navigation.heading_flash = None;
+                            }
+                        });
+                    });
                     return None;
                 }
                 let list = state.list_state();
@@ -235,8 +270,10 @@ impl Reader {
                 let alpha = 0.14 * (1. - elapsed.as_secs_f32() / HEADING_FLASH.as_secs_f32());
                 (rect.size.height > px(0.)).then_some((rect, alpha))
             },
-            move |_, frame, window, _| {
-                if let Some((rect, alpha)) = frame {
+            move |_, frame, window, cx| {
+                if motion::motion_allowed(cx)
+                    && let Some((rect, alpha)) = frame
+                {
                     window.paint_quad(gpui_kit::fill(rect, color.opacity(alpha)));
                     window.request_animation_frame();
                 }
@@ -490,18 +527,22 @@ impl Reader {
         }) else {
             return;
         };
+        tab.navigation.observe_heading_flash_motion(id, cx);
         tab.navigation.picked = Some(index);
         tab.navigation.active_heading = Some(index);
-        tab.navigation.heading_flash = tab
-            .committed_map(cx)
-            .and_then(|map| map.block_at(offset))
-            .map(|block| {
-                (
-                    block,
-                    cx.background_executor().now(),
-                    tab.view.read(cx).rendered_text(),
-                )
-            });
+        tab.navigation.heading_flash = if motion::motion_allowed(cx) {
+            tab.committed_map(cx)
+                .and_then(|map| map.block_at(offset))
+                .map(|block| {
+                    (
+                        block,
+                        cx.background_executor().now(),
+                        tab.view.read(cx).rendered_text(),
+                    )
+                })
+        } else {
+            None
+        };
         Self::scroll_preview(tab, offset, window, cx);
         if tab.draft.is_split() {
             Self::scroll_source(tab, offset, window, cx);

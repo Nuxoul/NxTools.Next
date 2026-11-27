@@ -5,8 +5,11 @@ $dispatcherPath = Join-Path $root 'rust\apps\nxtools-desktop\src\platform_events
 $source = Get-Content -Raw -LiteralPath $dispatcherPath
 $quickLaunchPath = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch.rs'
 $quickLaunchModuleDir = Join-Path $root 'rust\apps\nxtools-desktop\src\quick_launch'
+$previewPresentationSource = Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'preview_presentation.rs')
 $quickLaunchSource = (@(
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'preview.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'preview_presentation.rs')),
+        (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'monitor_presentation.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'panel.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'result_motion.rs')),
         (Get-Content -Raw -LiteralPath (Join-Path $quickLaunchModuleDir 'actions.rs')),
@@ -79,7 +82,7 @@ foreach ($requiredPopupConstant in @(
 foreach ($requiredPopupRenderContract in @(
     'quick-launch-search-header',
     'quick-launch-results-surface',
-    '.font_family(UI_FONT_FAMILY)',
+    '.map(|panel| crate::ui::popup_surface::round(panel, corners))',
     '.bg(theme.canvas)',
     '.text_color(theme.text)',
     '.border_color(theme.canvas)',
@@ -90,6 +93,12 @@ foreach ($requiredPopupRenderContract in @(
     if (-not $panelRender.Contains($requiredPopupRenderContract)) {
         throw 'Quick Launch must preserve the tokenized collapsed/expanded popup contract.'
     }
+}
+$themeSource = Get-Content -Raw -LiteralPath (Join-Path $root 'rust\apps\nxtools-desktop\src\theme.rs')
+if (-not $themeSource.Contains('theme.font_family = resolved;') -or
+    -not $quickLaunchSource.Contains('crate::ui::popup_surface::root(panel, window, cx)') -or
+    $panelRender.Contains('.font_family(UI_FONT_FAMILY)')) {
+    throw 'Quick Launch must inherit the independently selected Root font, not force a module-local UI font.'
 }
 $searchChrome = ($panelRender -split '\.id\("quick-launch-window"\)',2)[1] -split '\.when\(recent_button_visible',2 | Select-Object -First 1
 if ([regex]::Matches($searchChrome,'\.border_color\(theme\.canvas\)').Count -ne 2 -or
@@ -780,7 +789,10 @@ foreach ($requiredContentGeometryContract in @(
 $nativeBoundsSource = Get-Content -Raw -LiteralPath (Join-Path $root 'csharp\NxTools.PlatformHost\Windows\WindowsPlatformAdapter.NativeMethods.cs')
 $nativeBounds = ($nativeBoundsSource -split 'internal static WindowsCommandResult SetWindowBounds\(', 2)[1] -split 'internal static WindowsCommandResult SetWindowBoundsCentered\(', 2 | Select-Object -First 1
 if (-not $nativeBounds.Contains('SwpNoZOrder | SwpNoActivate') -or
-    -not $nativeBounds.Contains('after.Width == width && after.Height == height')) {
+    -not $nativeBounds.Contains('NativeWindowInsets.From(outer, client)') -or
+    -not $nativeBounds.Contains('(long)width + insets.Left + insets.Right') -or
+    -not $nativeBounds.Contains('after.Width != width || after.Height != height') -or
+    -not $nativeBounds.Contains('Windows did not apply the requested GPUI client bounds.')) {
     throw 'Content sizing must retain the existing no-activate C# client-bounds/readback owner.'
 }
 if ($resultRender.Contains('RESULT_TITLE_SIZE') -or
@@ -1079,14 +1091,22 @@ $stagePreview = $quickLaunchSource.Substring(
     $stagePreviewEnd - $stagePreviewStart
 )
 foreach ($requiredStageIdentityContract in @(
-    'preview.identity != stage.window_identity',
-    'preview.identity != window_identity',
-    'window_handle: stage.window_identity.native',
-    'window_handle: window_identity.native'
+    'preview.identity == stage.window_identity',
+    'cx.windows().contains(&preview.identity.gpui)',
+    'self.preview.generation == stage.generation',
+    'self.preview.hovered_entry_id.as_deref() == Some(stage.entry_id.as_str())',
+    'started.elapsed() < PREVIEW_MATERIAL_TIMEOUT',
+    'if !self.preview_stage_is_current(&stage, cx)',
+    'if !self.preview_stage_is_current(&wait.stage, cx)',
+    'window_handle: stage.window_identity.native'
 )) {
-    if (-not $stagePreview.Contains($requiredStageIdentityContract)) {
-        throw 'Every Quick Launch stage and next-frame callback must freeze both GPUI and native window identity.'
+    if (-not $previewPresentationSource.Contains($requiredStageIdentityContract)) {
+        throw 'Every Quick Launch stage must qualify the frozen live GPUI/native identity, generation, entry and deadline.'
     }
+}
+if ($previewPresentationSource -notmatch '(?s)fn frame_prepared_preview.*?window\.on_next_frame\(.*?cx\.defer\(.*?owner\.wait_for_preview_material\(\s*stage,\s*PreviewMaterialAction::InitialShow' -or
+    $stagePreview -notmatch 'preview\.identity != stage\.window_identity') {
+    throw 'Quick Launch frame continuations and native ACKs must requalify their frozen stage before showing.'
 }
 if (-not $quickLaunchSource.Contains('struct QuickLaunchPreviewWindowIdentity') -or
     -not $quickLaunchSource.Contains('gpui: AnyWindowHandle') -or
@@ -1397,18 +1417,13 @@ $newPreviewBody = $quickLaunchSource.Substring(
     $newPreviewStart,
     $reusePreviewStart - $newPreviewStart
 )
-$boundsCommandIndex = $newPreviewBody.IndexOf('PlatformCommand::SetWindowBounds')
-$visibilityCommandIndex = $newPreviewBody.IndexOf('PlatformCommand::SetWindowVisibility')
-if ($boundsCommandIndex -lt 0 -or
-    $visibilityCommandIndex -lt 0 -or
-    $boundsCommandIndex -gt $visibilityCommandIndex) {
-    throw @'
-Quick-launch first-preview regression: a hidden GPUI Windows popup still has
-CW_USEDEFAULT native bounds until GPUI applies its deferred placement. The C#
-adapter must atomically apply the requested device-pixel bounds before the
-first visibility command, otherwise the preview flashes at a temporary large
-size on its first appearance.
-'@
+if ($newPreviewBody -notmatch 'phase: QuickLaunchPreviewStagePhase::InitialNoActivate' -or
+    $stagePreview -notmatch '(?s)QuickLaunchPreviewStagePhase::InitialNoActivate =>.*?self\.prepare_initial_preview_bounds\(stage, cx\)' -or
+    $stagePreview -notmatch '(?s)QuickLaunchPreviewStagePhase::InitialBounds =>\s*\{\s*self\.wait_for_preview_material\(stage, PreviewMaterialAction::InitialFrame, cx\)' -or
+    $previewPresentationSource -notmatch '(?s)fn prepare_initial_preview_bounds.*?PlatformCommand::SetWindowBounds.*?stage\.phase = QuickLaunchPreviewStagePhase::InitialBounds;.*?self\.send_preview_stage\(stage, command, cx\)' -or
+    $previewPresentationSource -notmatch 'PreviewMaterialAction::InitialFrame => self\.frame_prepared_preview\(stage, cx\)' -or
+    $previewPresentationSource -notmatch '(?s)PreviewMaterialAction::InitialShow \| PreviewMaterialAction::ShowOffscreen =>.*?PlatformCommand::SetWindowVisibility.*?visible: true') {
+    throw 'The first preview must ACK non-activation and final device-pixel bounds, then qualify material and a deferred frame before visibility.'
 }
 
 Write-Host 'PASS first preview applies final native bounds before becoming visible'

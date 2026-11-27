@@ -32,7 +32,7 @@ fn fixture_with_persistence(cx: &mut TestAppContext, persistent: bool) -> Fixtur
     let application = cx.update(|cx| {
         let notifications = cx.new(|_| NotificationCenter::default());
         cx.new(|cx| {
-            DownloadApplication::new(
+            crate::downloads::ordinary_presentation_fixture::confirmed_application(
                 engine,
                 Rc::new(platform),
                 notifications,
@@ -294,7 +294,7 @@ fn download_layout_progress_filename_main_metrics_and_fixed_footer_do_not_requir
     );
 }
 
-fn key(surface: &mut VisualTestContext, key: &str) {
+fn key(surface: &mut VisualTestContext, key: &'static str) {
     let handle = surface.update(|window, _| window.window_handle());
     surface.simulate_event(gpui_kit::KeyDownEvent {
         keystroke: gpui_kit::Keystroke::parse(key).expect("test key"),
@@ -349,7 +349,7 @@ fn wheel(
     count: usize,
 ) {
     for _ in 0..count {
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: hit,
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, lines)),
             ..Default::default()
@@ -2345,7 +2345,7 @@ fn ref08_written_window(
     let engine = f.application.read_with(cx, |app, _| app.engine.clone());
     let task_id = runtime.block_on(async {
         let mut request = request(f);
-        request.source_url = server.url("/old");
+        request.source_url = server.url("/partial-old");
         request.connection_limit = Some(1);
         let task_id = engine
             .submit(request, RequestOrigin::Ui)
@@ -2373,7 +2373,10 @@ fn ref08_written_window(
             .await
             .expect("writer drain");
         assert_eq!(paused.task.status(), DownloadStatus::Paused);
-        assert!(paused.downloaded_bytes > 0 && paused.downloaded_bytes < 16);
+        assert!(
+            paused.downloaded_bytes > 0
+                && paused.downloaded_bytes < b4_url_fixture::CONTENT.len() as u64
+        );
         task_id
     });
     f.application.update(cx, |app, cx| {
@@ -2406,7 +2409,7 @@ fn ref08_edit(surface: &mut VisualTestContext, value: &str) {
     draw(surface);
 }
 
-fn ref08_confirmation(cx: &mut TestAppContext, activation: &str) {
+fn ref08_confirmation(cx: &mut TestAppContext, activation: &'static str) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -2755,7 +2758,7 @@ fn ref09_preview(surface: &mut VisualTestContext, value: &str) {
     draw(surface);
 }
 
-fn ref09_confirm_selection(cx: &mut TestAppContext, activation: &str) {
+fn ref09_confirm_selection(cx: &mut TestAppContext, activation: &'static str) {
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(2)
         .enable_all()
@@ -3404,8 +3407,12 @@ fn b4_ref10_real_parallel_events_refresh_original_window_through_rebalance(
         .build()
         .expect("owned parallel HTTP runtime");
     let server = b4_range_fixture::DeterministicHttpServer::start_concurrent();
+    server.hold_imbalanced_response(true);
     let f = fixture_with_persistence(cx, true);
     let engine = f.application.read_with(cx, |app, _| app.engine.clone());
+    let events = engine
+        .subscribe_events()
+        .expect("bounded state-admission observer");
     let task_id = runtime.block_on(async {
         let mut request = request(&f);
         request.source_url = format!("http://{}/range-imbalanced", server.address());
@@ -3413,7 +3420,7 @@ fn b4_ref10_real_parallel_events_refresh_original_window_through_rebalance(
         request.connection_limit = Some(2);
         request.expected_total_bytes = None;
         engine
-            .submit(request, RequestOrigin::Ui)
+            .enqueue(request, RequestOrigin::Ui)
             .expect("original parallel admission")
     });
     f.application.update(cx, |app, cx| {
@@ -3443,10 +3450,55 @@ fn b4_ref10_real_parallel_events_refresh_original_window_through_rebalance(
         DownloadWindowPhase::Progress,
         true,
     ));
+    draw(&mut surface);
+    runtime.block_on(async {
+        engine
+            .resume(task_id)
+            .expect("start after original window preparation");
+    });
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+    let mut downloading_sequence = None;
+    loop {
+        surface.run_until_parked();
+        while let Ok(event) = events.try_recv() {
+            if matches!(&event.event, DownloadEvent::TaskChanged { task }
+                if task.id() == task_id && task.status() == DownloadStatus::Downloading)
+            {
+                downloading_sequence = Some(event.sequence);
+            }
+        }
+        if downloading_sequence.is_some_and(|sequence| {
+            f.application
+                .read_with(&surface, |app, _| app.last_event_sequence >= sequence)
+        }) && view.read_with(&surface, |view, _| {
+            view.snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.task.status() == DownloadStatus::Downloading)
+        }) {
+            break;
+        }
+        assert!(
+            std::time::Instant::now() < deadline,
+            "initial downloading state reaches the original view"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
+    server.hold_imbalanced_response(false);
     let progress = loop {
         surface.run_until_parked();
         let progress = view.read_with(&surface, |view, _| view.progress.clone());
+        let observed = progress.as_ref().map(|progress| {
+            (
+                progress.downloaded_bytes,
+                progress.total_bytes,
+                progress.segments.len(),
+                progress
+                    .segments
+                    .iter()
+                    .map(|segment| segment.segment_index)
+                    .max(),
+            )
+        });
         if let Some(progress) = progress.filter(|progress| {
             progress.downloaded_bytes > 0
                 && Some(progress.downloaded_bytes) != progress.total_bytes
@@ -3461,7 +3513,8 @@ fn b4_ref10_real_parallel_events_refresh_original_window_through_rebalance(
         }
         assert!(
             std::time::Instant::now() < deadline,
-            "real rebalanced partial event reaches production view"
+            "real rebalanced partial event reaches production view: attempts={}, observed={observed:?}",
+            server.dynamic_range_attempts(),
         );
         std::thread::sleep(std::time::Duration::from_millis(2));
     };
@@ -3530,6 +3583,7 @@ fn b4_ref10_real_parallel_events_refresh_original_window_through_rebalance(
             .iter()
             .any(|node| node.label() == Some("真实字节区间：已完成 · 已写入前缀 · 空白为未写入"))
     }));
+    server.hold_imbalanced_response(false);
     let completed = runtime
         .block_on(engine.wait_for_terminal(task_id, std::time::Duration::from_secs(8)))
         .expect("original writer terminal and drain");
@@ -3887,7 +3941,7 @@ fn b5_menu_choose(
     surface: &mut VisualTestContext,
     selector: &'static str,
     label: &str,
-    activation: &str,
+    activation: &'static str,
 ) {
     if selector == "download-window-completion-menu" {
         crate::downloads::task_window::layout_tests::open_completion_page(surface);
@@ -5144,4 +5198,62 @@ fn b5_repair_execute_sleep_once(f: &Fixture, cx: &mut TestAppContext, correlatio
     });
     cx.run_until_parked();
     b5_repair_assert_idle(f, cx);
+}
+
+#[gpui_kit::test]
+fn user_feedback_default_solid_settings_navigation_preserves_visible_regions(
+    cx: &mut TestAppContext,
+) {
+    let f = fixture(cx);
+    let saved =
+        std::fs::read(f.directory.path().join("config.json")).expect("owned settings baseline");
+    let (view, mut surface) = settings(&f, cx);
+    let directory_input = view.read_with(&surface, |view, _| view.directory.entity_id());
+    for page in [
+        DownloadSettingsPage::General,
+        DownloadSettingsPage::Request,
+        DownloadSettingsPage::Transfer,
+        DownloadSettingsPage::Window,
+        DownloadSettingsPage::Diagnostics,
+    ] {
+        draw(&mut surface);
+        let id =
+            gpui_kit::ElementId::from(gpui_kit::SharedString::from(format!("0-{}", page.index())));
+        let painted = surface.update(|window, cx| {
+            let node = gpui_kit::base::test_support::snapshots(window)
+                .into_iter()
+                .find(|node| node.path().last() == Some(&id))
+                .expect("original Settings navigation item");
+            let foreground = ComponentTheme::global(cx).sidebar_foreground;
+            assert!(
+                node.visible(),
+                "default Solid navigation must be inside its clip: {page:?} {:?}",
+                node.bounds()
+            );
+            assert!(
+                foreground.a > 0.0,
+                "default Solid navigation foreground must remain opaque"
+            );
+            node.bounds()
+        });
+        assert!(painted.size.width > px(0.0) && painted.size.height >= px(12.0));
+        let viewport = surface.update(|window, _| window.fully_visible_bounds());
+        assert!(
+            viewport.contains(&painted.center()),
+            "navigation is clipped: {page:?} {painted:?}"
+        );
+        assert!(
+            painted.right() <= px(168.0),
+            "navigation stays in the original rail: {painted:?}"
+        );
+    }
+    assert_eq!(
+        view.read_with(&surface, |view, _| view.directory.entity_id()),
+        directory_input
+    );
+    assert_eq!(
+        std::fs::read(f.directory.path().join("config.json"))
+            .expect("owned settings after navigation"),
+        saved
+    );
 }

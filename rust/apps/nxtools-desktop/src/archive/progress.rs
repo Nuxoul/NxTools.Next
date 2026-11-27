@@ -578,7 +578,8 @@ impl JobProgressView {
         let decline_input = PromptButtonInput::default();
         self.prompt_inputs
             .extend([confirm_input.clone(), decline_input.clone()]);
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let ok_owner = owner.clone();
             let cancel_owner = owner.clone();
             let close_owner = owner.clone();
@@ -665,6 +666,7 @@ impl JobProgressView {
         self.prompt_inputs = vec![confirm_input.clone(), cancel_input_guard.clone()];
         self.prompt_inputs.extend(conflict_inputs.iter().cloned());
         window.open_dialog(cx,move|dialog,_,cx|{
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let reusable = owner.read_with(cx, |app,_| app.batch_password_eligible(id)).unwrap_or(false);
             let ok_owner=owner.clone();let cancel_owner=owner.clone();let ok_prompt=prompt.clone();let ok_input=input.clone();let ok_apply=apply.clone();let ok_reuse=reuse.clone();
             let button_confirm=explicit_confirm.clone();let ok_explicit=explicit_confirm.clone();let action_anchor=confirm_anchor.clone();

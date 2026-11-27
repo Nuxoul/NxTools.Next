@@ -68,3 +68,7 @@ Actual GPUI/Windows Acrylic, fixed-client frame alignment and correlated native 
 ## Isolated resource evidence
 
 The30-run paired Solid/Acrylic Debug comparison is complete: [results and limits](performance-results.md), [structured measurements](performance-results.json), [portable raw evidence](performance-data.zip). It covers idle, changing background, finite input-state updates, real1000-row virtualized scrolling and three windows in one process. This does not complete the full-product/Release/60Hz/power acceptance gates above or authorize production integration.
+
+## Formal integration authority
+
+用户2026-11-21授权正式接入，并确认最小框架补丁范围：固定gpui-pre0.3.9的scene/style，以及固定Windows后端的directx_renderer/shaders/window/events。仅用于已认可的source-over/UnderBorder与客户区/边距缓存一致性，不升级版本或启用Fast。接入前基线`a712ce7ca82f1ab574ceacb3d0ac792cf93cb83a`已推送origin/main。正式阶段顺序与边界以 [实施计划](implement.md) 为准；此前仅限规划/隔离预览的限制不再阻止该计划内的产品代码修改，打包安装和服务操作仍未授权。

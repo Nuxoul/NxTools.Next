@@ -197,7 +197,7 @@ fn number_part_bounds(
 }
 
 fn scroll_tool_body_to_bottom(window: &mut VisualTestContext) {
-    window.simulate_event(gpui_kit::ScrollWheelEvent {
+    window.simulate_event(gpui_kit::ScrollEvent {
         position: gpui_kit::point(px(240.0), px(280.0)),
         delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -20.0)),
         ..Default::default()
@@ -289,7 +289,7 @@ fn kit_foundation_tools_form_keeps_fixed_budget_and_single_toggle_actions(cx: &m
     let copy = include_str!("tools_page.rs");
     assert!(!copy.contains("tool-settings-copy-only"));
     assert!(!copy.contains("tool-settings-open-browser"));
-    window.simulate_event(gpui_kit::ScrollWheelEvent {
+    window.simulate_event(gpui_kit::ScrollEvent {
         position: gpui_kit::point(px(240.0), px(180.0)),
         delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 20.0)),
         ..Default::default()

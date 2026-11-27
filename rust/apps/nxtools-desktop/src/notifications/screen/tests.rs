@@ -48,10 +48,60 @@ fn fixture(
     let (bridge, endpoint) = nxtools_ipc::platform_bridge(16);
     endpoint.set_connected_for_contract_test(true);
     cx.update(|cx| attach(center.clone(), Rc::new(bridge), source, cx));
+    cx.update(|cx| {
+        let mut facts = crate::ui::material::UiMaterialCapabilities::default();
+        facts.connected();
+        assert!(facts.apply(
+            nxtools_protocol::window_material::SystemMaterialCapabilitiesChanged {
+                correlation_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+                revision: 1,
+                supported: true,
+                transparency_enabled: true,
+                high_contrast: false,
+                energy_saver: false,
+                remote_session: false,
+                native_error_code: 0,
+                system_backdrop: true,
+                rounded_corners: true,
+            }
+        ));
+        cx.set_global(facts);
+    });
     let host = cx.read(|cx| cx.global::<ScreenGlobal>().0.clone());
     (center, host, endpoint, source)
 }
 fn result(host: &Entity<ScreenHost>, id: Uuid, data: Option<String>, cx: &mut TestAppContext) {
+    let surface = host.read_with(cx, |host, _| {
+        host.surface
+            .as_ref()
+            .map(|surface| (surface.window, surface.hwnd))
+    });
+    if let Some((window, hwnd)) = surface {
+        cx.update(|cx| {
+            crate::ui::material::runtime::set_test_window_handle(window, hwnd, cx);
+            if crate::ui::material::runtime::receipt(window, cx).is_none() {
+                let command = crate::ui::material::command(
+                    hwnd,
+                    nxtools_protocol::window_material::MaterialSurface::Transparent,
+                    cx,
+                )
+                .expect("synthetic native facts");
+                let receipt = transparent_receipt(command);
+                let prepared = crate::ui::material::Preparation::confirmed(
+                    Uuid::new_v4(),
+                    command,
+                    receipt,
+                    cx,
+                )
+                .expect("confirmed transparent fixture");
+                let platform = host.read(cx).platform.clone();
+                assert!(crate::ui::material::runtime::track_prepared(
+                    window, platform, prepared, cx
+                ));
+            }
+        });
+    }
     host.update(cx, |host, cx| {
         host.handle(
             PlatformNotification::CommandResult {
@@ -861,4 +911,127 @@ fn notification_sizing_three_long_cards_keep_actions_inside_bounded_native_stack
             "actions remainreachable"
         );
     }
+}
+
+fn transparent_receipt(
+    command: nxtools_protocol::window_material::ApplyWindowMaterialCommand,
+) -> nxtools_protocol::window_material::AppliedWindowMaterial {
+    use nxtools_protocol::window_material::*;
+    AppliedWindowMaterial {
+        session_id: command.session_id,
+        facts_revision: command.facts_revision,
+        window_handle: command.window_handle,
+        generation: command.generation,
+        style: command.style,
+        surface: command.surface,
+        dark: command.dark,
+        effective: EffectiveWindowMaterial::Transparent,
+        fallback_reason: MaterialFallbackReason::None,
+        native_error_code: 0,
+    }
+}
+
+#[gpui_kit::test]
+fn material_notification_frame_waits_for_transparent_receipt_and_timeout_rejects_late_success(
+    cx: &mut TestAppContext,
+) {
+    let (center, host, endpoint, _) = fixture(cx);
+    center.update(cx, |center, cx| {
+        center.show_progress("material", "合成通知", "材质等待", cx)
+    });
+    cx.run_until_parked();
+    let surface = host
+        .read_with(cx, |host, _| {
+            host.surface
+                .as_ref()
+                .map(|surface| (surface.window, surface.hwnd))
+        })
+        .expect("popup");
+    cx.update(|cx| crate::ui::material::runtime::set_test_window_handle(surface.0, surface.1, cx));
+    let mut material_request = None;
+    for _ in 0..8 {
+        let request = endpoint
+            .try_receive_command_for_contract_test()
+            .expect("bounded prepare/frame phase");
+        match request.message {
+            nxtools_protocol::Message::PlatformCommand(
+                PlatformCommand::PrepareNotificationWindow(prepare),
+            ) => {
+                let mut popup = VisualTestContext::from_window(surface.0, cx);
+                popup.simulate_scale_factor_change(1.0);
+                popup.simulate_resize(size(px(prepare.width as f32), px(prepare.height as f32)));
+                let result = nxtools_protocol::PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: Some(format!(
+                        "{{\"width\":{},\"height\":{},\"dpi\":96}}",
+                        prepare.width, prepare.height
+                    )),
+                };
+                endpoint
+                    .route_command_result_for_contract_test(request.id, result.clone())
+                    .expect("prepare terminal");
+                host.update(cx, |host, cx| {
+                    host.handle(
+                        PlatformNotification::CommandResult {
+                            correlation_id: request.id,
+                            result,
+                        },
+                        cx,
+                    )
+                });
+                popup.update(|window, cx| {
+                    window.draw(cx).clear(cx);
+                    window.simulate_next_frame(cx);
+                });
+                cx.run_until_parked();
+            }
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ApplyWindowMaterial(
+                command,
+            )) => {
+                material_request = Some((request.id, command));
+                break;
+            }
+            _ => panic!(
+                "native prepare/frame cannot reveal before material: {:?}",
+                request.message
+            ),
+        }
+    }
+    let (request_id, command) =
+        material_request.expect("transparent request after original hidden frame");
+    assert_eq!(
+        command.surface,
+        nxtools_protocol::window_material::MaterialSurface::Transparent
+    );
+    assert!(!host.read_with(cx, |host, _| host.visible));
+    cx.executor().advance_clock(Duration::from_secs(5));
+    cx.run_until_parked();
+    assert!(!cx.read(|cx| cx.windows().contains(&surface.0)));
+    let result = nxtools_protocol::PlatformCommandResult {
+        success: true,
+        error: None,
+        native_error_code: None,
+        data: Some(serde_json::to_string(&transparent_receipt(command)).expect("late receipt")),
+    };
+    endpoint
+        .route_command_result_for_contract_test(request_id, result.clone())
+        .expect("real IPC terminal");
+    cx.update(|cx| {
+        crate::ui::material::runtime::handle_notification(
+            &PlatformNotification::CommandResult {
+                correlation_id: request_id,
+                result,
+            },
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    assert!(!host.read_with(cx, |host, _| host.visible));
+    assert!(!cx.read(|cx| cx.windows().contains(&surface.0)));
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "late receipt cannot reveal retired popup"
+    );
 }

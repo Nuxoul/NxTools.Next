@@ -34,7 +34,7 @@ fn near(actual: gpui_kit::Pixels, expected: f32, context: &str) {
         "{context}: {actual:?} != {expected}"
     );
 }
-fn key(surface: &mut VisualTestContext, stroke: &str) {
+fn key(surface: &mut VisualTestContext, stroke: &'static str) {
     surface.simulate_keystrokes(stroke);
     surface.simulate_event(gpui_kit::KeyUpEvent {
         keystroke: gpui_kit::Keystroke::parse(stroke).expect("static activation"),
@@ -196,7 +196,7 @@ fn audit06_shared_form_path_tracks_actual_input_and_fixed_footer(cx: &mut TestAp
         .debug_bounds("shared-rem-last")
         .expect("long error end");
     assert!(before.bottom() > viewport.bottom());
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position: viewport.center(),
         delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(-5000.0))),
         ..Default::default()

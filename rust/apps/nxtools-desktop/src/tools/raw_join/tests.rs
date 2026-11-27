@@ -448,7 +448,7 @@ fn ref18_minimum_scroll_keeps_medium_footer_and_output_input_reachable(cx: &mut 
             {
                 break;
             }
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: viewport.center(),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., -2.)),
                 ..Default::default()
@@ -582,6 +582,7 @@ fn ref18_archive_menu_opens_reuses_and_retires_real_window(cx: &mut TestAppConte
 
     let (bridge, _server) = platform_bridge(32);
     let bridge = Rc::new(bridge);
+    cx.update(|cx| super::material_tests::prepare_presentation_fixture(bridge.clone(), cx));
     let (_, browser_surface) = cx.add_window_view(move |window, cx| {
         window.resize(size(px(920.), px(480.)));
         let view = cx.new(|cx| {
@@ -690,7 +691,7 @@ fn focus_dialog_button(surface: &mut VisualTestContext, label: &'static str) {
     panic!("actual dialog button {label} must be keyboard reachable");
 }
 
-fn release_dialog_key(surface: &mut VisualTestContext, key: &str) {
+fn release_dialog_key(surface: &mut VisualTestContext, key: &'static str) {
     let keystroke = gpui_kit::Keystroke::parse(key).expect("dialog activation key");
     surface.simulate_event(gpui_kit::KeyDownEvent {
         keystroke: keystroke.clone(),

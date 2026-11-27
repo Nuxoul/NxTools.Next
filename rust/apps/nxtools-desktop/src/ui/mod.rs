@@ -9,11 +9,13 @@ mod history_filters;
 mod icon_colors;
 pub(crate) mod markdown_document;
 mod markdown_edit;
+pub(crate) mod material;
 pub(crate) mod metrics;
 pub(crate) mod monitor_placement;
 pub(crate) mod motion;
 #[cfg(debug_assertions)]
 pub(crate) mod native_acceptance;
+pub(crate) mod popup_surface;
 mod preview;
 pub(crate) mod preview_image;
 mod preview_text;
@@ -680,11 +682,7 @@ impl ClipboardPanel {
         markdown_document::init(cx);
         let search_input = cx.new(|cx| InputState::new(window, cx).placeholder("搜索剪贴板历史"));
         search_input.focus_handle(cx).focus(window, cx);
-        let edit_input = cx.new(|cx| {
-            TextareaState::new(window, cx)
-                .auto_grow(5, 12)
-                .placeholder("输入剪贴板文本")
-        });
+        let edit_input = cx.new(|cx| TextareaState::new(window, cx).placeholder("输入剪贴板文本"));
         let edit_rich = cx.new(|cx| {
             markdown_editor::BlockEditorState::new(window, cx)
                 .with_image_policy(markdown_editor::ImagePolicy::Placeholder)
@@ -2749,7 +2747,7 @@ impl Render for ClipboardPanel {
                             .h(px(CONTROL_HEIGHT_ACTION))
                             .overflow_x_scroll()
                             .track_scroll(&category_scroll)
-                            .on_scroll_wheel({
+                            .on_scroll({
                                 let scroll = category_scroll.clone();
                                 move |event, window, app| {
                                     app.stop_propagation();
@@ -3466,13 +3464,21 @@ impl Render for ClipboardPanel {
             .capture_key_up(
                 cx.listener(|panel, event, window, cx| panel.number_key_up(event, window, cx)),
             )
-            .child(panel_window_frame(theme, content))
+            .child(panel_window_frame(
+                theme,
+                content,
+                popup_surface::corners(window, cx),
+            ))
             .child(self.render_search_input_fallback(cx))
             .into_any_element()
     }
 }
 
-fn panel_window_frame(theme: Theme, content: impl IntoElement) -> gpui_kit::AnyElement {
+fn panel_window_frame(
+    theme: Theme,
+    content: impl IntoElement,
+    corners: gpui_kit::Corners<gpui_kit::Pixels>,
+) -> gpui_kit::AnyElement {
     div()
         .id("clipboard-panel-window")
         .size_full()
@@ -3483,6 +3489,7 @@ fn panel_window_frame(theme: Theme, content: impl IntoElement) -> gpui_kit::AnyE
                 .border_1()
                 .border_color(theme.border)
                 .bg(theme.canvas)
+                .map(|shell| popup_surface::round(shell, corners))
                 .child(content),
         )
         .into_any_element()
@@ -3959,3 +3966,9 @@ mod efficiency_tests;
 
 #[cfg(test)]
 mod history_identity_tests;
+
+#[cfg(test)]
+mod auxiliary_theme_tests;
+
+#[cfg(test)]
+pub(crate) mod corner_surface_tests;

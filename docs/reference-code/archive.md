@@ -4,6 +4,8 @@ Status: **Phase A reference**; [task](../../.trellis/tasks/10-16-archive-manager
 Follow [workflow](README.md); source inspection is not runtime acceptance.
 [Conflicts](../../.trellis/tasks/10-16-archive-manager/research/stream-conflict-sources.md).
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md): Component `vendor/gpui-component-0100`, Windows `vendor/gpui-pre-windows-0312`. Earlier versioned source coordinates and outcomes below remain dated evidence. Requested layouts/variants/parent adaptations, source/task/native gesture ownership, preview lifecycle and deferred callbacks are unchanged; API availability is not adoption or acceptance.
+
 ## 1. Evidence sources and legal boundary
 
 | Source | Location | What was inspected | Boundary |
@@ -1415,3 +1417,13 @@ remain unchanged; no native window lifecycle or resource option is added.
 `worker_drag.rs::run_codec` clones that admitted request once and changes only per-demand ordinal/
 entry/output allowances (lines186–200); its working-memory allowance and retained reader do not
 change between demands. No metadata-only reader is transferred into this payload owner.
+
+## Isolated archive product fixture ownership
+
+- `rust/crates/nxtools-archive/tests/product_read_chain.rs` creates a GUID-owned `archive-product-chain-*/package` under `PI_SCRATCH_DIR`, copies the current Cargo worker and launches only `NxTools.PlatformHost.Tests.exe --archive-product-host`. The original typed pipe handshake keeps its five-second deadline.
+- `csharp/NxTools.PlatformHost.Tests/ArchiveProductHost.cs` constructs `ArchiveReadSession.ForOwnedTestPackage` before connecting. `ArchiveReadHelper.GuardOwnedRoot` admits the existing archive-product GUID forms under explicit session scratch as well as temporary storage; the test-apphost identity, literal package-child handling, GUID and native helper lease remain required. Production helper selection and release identity are independent.
+- `ArchiveProductReadTests.HelperProtection` exercises session-scratch package admission and rejects the unowned scratch root before the existing missing/lease/reparse cases.
+- `tests/integration/prepare-tar-stream-safety-fixtures.py` produces independent tiny TAR/stream inputs. `ArchiveJobTerminalTests.RepairProgressProductionWire` exports actual progress envelopes, and `Opt03NativeTests.ActualCreateResultLocations` exports actual create terminals. Rust AC/OPT03 and TAR readmission tests consume these explicit exports, not user archives or installed product state.
+- Kit0.10.0的`Tree::new -> ListItem`标签槽使用官方`Label::truncate()`及其1.25rem行高；固定32DIP行、原图标、tooltip和拖拽命中所有者保持。窄名称与短父级名称比较实际绘制文本的单行高度，不以固定容器高度代替文本几何。
+- 实际worker的终态工作观测含耗时，传输配额覆盖该实际序列化长度。`ArchiveProductSessionTests.LargeReadNegotiationAndFiniteBudgets`用固定帧及原runner验证累计传输恰好允许/少一字节拒绝；`product_read_chain.rs`保留实际worker累计元数据的同一精确边界，以及累计传输/保留超限、信用、取消和原生清理。
+- `browser_drag.rs`的原Pending只为`start`登记可取内容成员；`locate`的零字节文件标记仅定位接收目录，不接收虚拟内容进度、不发materialize/提取。原定位回执仍延迟提交同一水合快照的`Here`请求与冻结ordinals。阶段进度夹具在原32项连接队列内消费Start与taskbar命令，保留各格式的实际序列化阶段和原生终态所有权。

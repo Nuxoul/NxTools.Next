@@ -32,7 +32,7 @@ Native and extension topics are navigated here without inventing Rust workspace 
 
 ## Use and quality
 - Follow package index pre-development and quality check sections; read linked topic files, not only the index.
-- Desktop UI selection starts with [component-first rules](shared/ui-component-selection.md), [current0.8.0 release/API delta](../../docs/reference-code/gpui-kit-080.md), then [historical79-entry table](../../docs/reference-code/gpui-kit-component-table.md) and [API index](../../docs/reference-code/gpui-kit-component-index.md). Current0.8.0/defaultpre0.3.9 supersedes oldpins, not approvedlayout/variant/parent-transformation or business/nativecontracts. Type adoption is not visualacceptance.
+- Desktop UI selection starts with [component-first rules](shared/ui-component-selection.md), [current 0.10.0 release/API delta](../../docs/reference-code/gpui-kit-0100.md), then [historical79-entry table](../../docs/reference-code/gpui-kit-component-table.md) and [API index](../../docs/reference-code/gpui-kit-component-index.md). Current 0.10.0/default pre0.3.12 supersedes old pins, not approved layout/variant/parent-transformation or business/native contracts. Type adoption is not visual acceptance.
 - Shared rules have one home; package topics name real sources/tests and exceptions. Do not duplicate changing constants across docs.
 - [Installed-feedback boundaries](shared/installed-feedback.md) covers stage-specific 7z workspace, namespace icon capability, About download admission and heading pointer behavior.
 - [Foundation gaps](shared/foundation-backlog.md) are explicit differences, not exemptions declaring compliance. Do not implement those gaps in a documentation-only task.

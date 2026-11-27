@@ -137,15 +137,16 @@ fn queue07_category_input_has_no_duplicate_inset_frame(cx: &mut TestAppContext) 
     let slot = surface
         .debug_bounds("clipboard-category-name-field")
         .expect("name slot");
-    let nodes = surface.update(|window, _| test_support::snapshots(window));
-    let input = nodes
-        .iter()
-        .find(|n| {
-            n.role() == Some(gpui_kit::Role::TextInput)
-                && n.bounds().top() >= slot.top()
-                && n.bounds().bottom() <= slot.bottom()
-        })
-        .expect("real original Input");
+    let input_id = f
+        .panel
+        .read_with(&surface, |panel, _| panel.category_name_input.entity_id());
+    let input = surface.update(|window, _| {
+        test_support::find(window, &[], &gpui_kit::ElementId::from(("input", input_id)))
+            .expect("real original Input frame")
+    });
+    assert_eq!(input.role(), Some(gpui_kit::Role::TextInput));
+    assert_eq!(input.label(), Some("分类名称"));
+    assert!(input.bounds().top() >= slot.top() && input.bounds().bottom() <= slot.bottom());
     assert_eq!(
         input.bounds().size.width,
         slot.size.width,
@@ -626,6 +627,21 @@ fn queue07_long_text_and_resize_keep_form_footer_and_cancel_identity(cx: &mut Te
             "textarea={field:?} footer={footer:?} editor={editor:?}"
         );
         assert!(footer.bottom() <= px(height) && footer.right() <= px(width));
+        surface.update(|window, cx| input.read(cx).focus_handle(cx).focus(window, cx));
+        surface.simulate_keystrokes("ctrl-end");
+        surface.simulate_input("末行编辑");
+        surface.refresh().expect("bounded Textarea last line");
+        let (value, scroll) = surface.read(|cx| {
+            (
+                input.read(cx).value().to_string(),
+                input.read(cx).scroll_offset(),
+            )
+        });
+        assert!(value.ends_with("末行编辑"), "last line remains editable");
+        assert!(
+            scroll.y < px(0.0),
+            "long text scrolls inside its fixed viewport"
+        );
         for key in ["kbd:ctrl-enter", "kbd:escape"] {
             let hint = surface
                 .debug_bounds(key)
@@ -765,7 +781,7 @@ fn queue07_retained_category_navigation_long_names_wheel_and_context_stay_live(
             .read_with(&surface, |panel, _| panel.category_scroll.max_offset().x)
             > px(0.0)
     );
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position: point(px(100.0), px(55.0)),
         delta: gpui_kit::ScrollDelta::Lines(point(0.0, -1.0)),
         ..Default::default()

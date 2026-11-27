@@ -362,7 +362,7 @@ mod tests {
                     form.center().y.max(visible_top).min(visible_bottom),
                 )
             };
-            window.simulate_event(gpui_kit::ScrollWheelEvent {
+            window.simulate_event(gpui_kit::ScrollEvent {
                 position,
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, direction)),
                 ..Default::default()

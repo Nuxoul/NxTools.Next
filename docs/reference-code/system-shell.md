@@ -2,6 +2,8 @@
 
 Last verified: 2026-08-14.
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md): Component `vendor/gpui-component-0100`, Windows `vendor/gpui-pre-windows-0312`. Earlier versioned source coordinates and outcomes below remain dated evidence; original activating primary windows, passive auxiliary staging, native geometry/focus and deferred-owner rules are unchanged.
+
 ## User-visible contract
 
 - Product-global settings open from the main title bar, separate from module-specific settings.
@@ -486,3 +488,10 @@ MainWindow/open_about/paused-engine fixture covers caption Close before/after de
 Finite main native/caption close diagnostics record source, surface, target HWND and tray policy;
 About records its original correlation and target. The reported installed main-window hide is not
 accepted as resolved without a matching native reproduction. [Visibility evidence](../../.trellis/tasks/11-20-settings-lifecycle-feedback/about-close.md).
+
+The About material boundary is `open_about -> prepare_about -> runtime::when_ready ->
+activate_window`; preparation failure retires only the newly created About window. The
+combined update/close TestWindow fixture supplies an explicit synthetic HWND and current
+capability session, then uses the existing correlated IPC receipt helpers in `about/tests.rs`
+before clicking the original caption. Missing-HWND and failed/late receipt regressions remain
+separate from the positive close/admission fixture.

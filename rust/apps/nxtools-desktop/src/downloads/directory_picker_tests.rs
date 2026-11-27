@@ -25,7 +25,7 @@ impl PickerFixture {
         let app = cx.update(|cx| {
             let notifications = cx.new(|_| NotificationCenter::default());
             cx.new(|cx| {
-                DownloadApplication::new(
+                super::ordinary_presentation_fixture::confirmed_application(
                     DownloadEngine::open_in_memory().expect("picker in-memory engine"),
                     Rc::new(platform),
                     notifications,
@@ -819,16 +819,33 @@ fn directory_picker_fixed_confirmation_replacement_retires_original_view_request
         view.handoff_pending = true;
         view.probe_generation = 7;
     });
+    let operation_id = uuid::Uuid::new_v4();
     f.app.update(cx, |app, cx| {
-        app.create_fixed_confirmation(
-            source_handle,
-            source_view.downgrade(),
-            7,
-            uuid::Uuid::new_v4(),
-            cx,
-        )
+        app.new_download_native_handles_override = Some((701, 702));
+        app.create_fixed_confirmation(source_handle, source_view.downgrade(), 7, operation_id, cx)
     });
     cx.run_until_parked();
+    f.app.read_with(cx, |app, _| {
+        assert!(
+            app.new_download_handoff_commands
+                .iter()
+                .any(|command| matches!(
+                    command,
+                    PlatformCommand::PresentFixedWindowOverAnchor(command)
+                        if command.window_handle == 702 && command.anchor_window_handle == 701
+                ))
+        );
+    });
+    f.reply(
+        cx,
+        operation_id,
+        PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: None,
+        },
+    );
     let (target, target_handle) = f.app.read_with(cx, |app, _| {
         (
             app.new_download_view

@@ -66,3 +66,17 @@ Blacklist `process_window_pick` and `process_window_pick_changed` retain outer p
 session events. Action-specific fields, request/source/connection identity, device-pixel coordinates
 and original editor publication follow [the window selection contract](../../nxtools-desktop/backend/quality-guidelines.md#scenario-blacklist-process-window-selection).
 Roundtrip actual typed envelopes and check the C# parser/controller path, not DTO equality alone.
+
+## Native window material facts and receipts
+
+`window_material_v1` is explicitly negotiated under outer protocol1 before emitting the additive
+`system_material_capabilities_changed` event. `window_material.rs` separates requested Solid/Acrylic,
+backdrop/transparent host policy, session-qualified monotonic facts and effective setter/reset receipt.
+`apply_window_material` carries the current session, facts revision, HWND and nonzero generation;
+the native owner uses the actual pipe-peer PID rather than a caller-provided process claim.
+Original command-result data remains a JSON string. Receipt acceptance matches every request identity,
+style/surface/dark field plus coherent effective/fallback/native-error combinations. A successful
+setter or opaque reset is not compositor-pixel acceptance. Unknown enum values/extra command fields
+reject; Win10 does not require DWM38. Roundtrip/invalid-effect tests, original Hello negotiation,
+actual C# parser/pipe route and Desktop first-show barrier tests protect the cross-layer contract.
+Exact shapes and fallback order: [material contract](../../../tasks/11-21-desktop-motion-acrylic-style/material-contract.md).

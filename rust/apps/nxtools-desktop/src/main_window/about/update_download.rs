@@ -409,6 +409,27 @@ mod tests {
     ) {
         use std::{cell::RefCell, rc::Rc};
         cx.update(gpui_kit::init);
+        cx.executor().allow_parking();
+        cx.update(|cx| {
+            let mut facts = crate::ui::material::UiMaterialCapabilities::default();
+            facts.connected();
+            assert!(facts.apply(
+                nxtools_protocol::window_material::SystemMaterialCapabilitiesChanged {
+                    correlation_id: Uuid::new_v4(),
+                    session_id: Uuid::new_v4(),
+                    revision: 1,
+                    supported: true,
+                    transparency_enabled: true,
+                    high_contrast: false,
+                    energy_saver: false,
+                    remote_session: false,
+                    native_error_code: 0,
+                    system_backdrop: true,
+                    rounded_corners: true,
+                }
+            ));
+            cx.set_global(facts);
+        });
         let (downloads, root, engine) = application(cx);
         let (platform, endpoint) = nxtools_ipc::platform_bridge(64);
         endpoint.set_connected_for_contract_test(true);
@@ -443,11 +464,26 @@ mod tests {
             surface.update(|window, _| window.window_handle())
         };
         let main = slot.borrow_mut().take().expect("main owner");
-        for accepted_before_close in [true, false] {
-            main.update(cx, |main, cx| main.open_about(cx));
+        for (index, accepted_before_close) in [true, false].into_iter().enumerate() {
+            let about_handle = cx.update(|cx| {
+                main.update(cx, |main, cx| {
+                    main.open_about(cx);
+                    let handle = main.about_window.expect("hidden About opened");
+                    crate::ui::material::runtime::set_test_window_handle(
+                        handle,
+                        4242 + index as i64,
+                        cx,
+                    );
+                    handle
+                })
+            });
             cx.run_until_parked();
-            let about_handle =
-                main.read_with(cx, |main, _| main.about_window.expect("About opened"));
+            let (id, command) = super::super::tests::material_about_next(&endpoint);
+            super::super::tests::material_about_result(cx, &endpoint, id, command, true);
+            cx.read(|cx| {
+                assert_eq!(main.read(cx).about_window, Some(about_handle));
+                assert!(crate::ui::material::runtime::receipt(about_handle, cx).is_some());
+            });
             let about = cx.update(|cx| {
                 about_handle
                     .update(cx, |_, window, cx| {

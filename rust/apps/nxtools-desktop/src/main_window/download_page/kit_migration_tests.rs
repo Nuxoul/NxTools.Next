@@ -202,7 +202,7 @@ fn workspace_with_count(
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let downloads = cx.update(|cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            crate::downloads::ordinary_presentation_fixture::confirmed_application(
                 engine,
                 Rc::new(platform),
                 notifications.clone(),
@@ -907,7 +907,7 @@ fn followup_download_timeline_markers_keep_order_content_and_original_scroll(
     let label = download_timeline_label(&expected[0]);
     assert_eq!(label, "传输计划更新 · 1 个分段");
     for _ in 0..40 {
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: viewport.center(),
             delta: gpui_kit::ScrollDelta::Lines(point(0.0, -3.0)),
             ..Default::default()
@@ -1014,7 +1014,7 @@ fn tab_to_sort_header(
     );
 }
 
-fn sort_key_event(surface: &mut VisualTestContext, key: &str, down: bool, held: bool) {
+fn sort_key_event(surface: &mut VisualTestContext, key: &'static str, down: bool, held: bool) {
     let keystroke = gpui_kit::Keystroke::parse(key).expect("sort activation key");
     if down {
         surface.simulate_event(gpui_kit::KeyDownEvent {

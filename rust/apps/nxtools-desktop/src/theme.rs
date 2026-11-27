@@ -1,5 +1,9 @@
 use gpui_kit::{App, Rgba};
 
+pub(crate) mod material;
+#[cfg(test)]
+mod material_tests;
+
 #[cfg(test)]
 use crate::ui::typography::TEST_UI_FONT_FAMILY;
 pub(crate) use crate::ui::typography::{UI_FONT_FAMILY, UI_MONO_FONT_FAMILY};
@@ -39,14 +43,17 @@ pub struct Theme {
 
 const GRAPHITE_DARK: &str = include_str!("../assets/themes/nxtools-graphite-dark.json");
 const GRAPHITE_LIGHT: &str = include_str!("../assets/themes/nxtools-graphite-light.json");
+/// NxTools schemes: the defaults plus Mist, Pine and Sand, each light and dark.
+const NXTOOLS_SCHEMES: &str = include_str!("../assets/themes/nxtools.json");
+const DEFAULT_LIGHT: &str = "默认浅色";
+const DEFAULT_DARK: &str = "默认深色";
 
 fn default_colors(dark: bool) -> gpui_kit::component::ThemeColor {
     use std::sync::LazyLock;
     static COLORS: LazyLock<[gpui_kit::component::ThemeColor; 2]> = LazyLock::new(|| {
         let set: gpui_kit::component::ThemeSet =
-            serde_json::from_str(include_str!("../assets/themes/catppuccin.json"))
-                .expect("bundled Catppuccin themes");
-        ["Catppuccin Latte", "Catppuccin Frappe"].map(|name| {
+            serde_json::from_str(NXTOOLS_SCHEMES).expect("bundled NxTools schemes");
+        [DEFAULT_LIGHT, DEFAULT_DARK].map(|name| {
             let config = set
                 .themes
                 .iter()
@@ -105,20 +112,58 @@ impl Theme {
         }
     }
 
+    pub(crate) fn surface_on_canvas(self, surface: Rgba) -> Rgba {
+        if self.canvas.a == 0.0 {
+            surface
+        } else {
+            self.canvas.blend(surface)
+        }
+    }
+
     pub fn active(cx: &App) -> Self {
-        Self::from_colors(&gpui_kit::component::Theme::global(cx).colors)
+        let colors = &gpui_kit::component::Theme::global(cx).colors;
+        let mut theme = Self::from_colors(colors);
+        if cx
+            .try_global::<UiThemeState>()
+            .is_some_and(|state| state.material_style.is_frosted())
+        {
+            // Frosted palettes clear the sidebar roles for the system material; product cards
+            // and their edges use the card and divider roles instead.
+            theme.surface = colors.group_box.to_rgb();
+            theme.border_subtle = colors.border.to_rgb();
+        }
+        theme
+    }
+}
+
+pub(crate) fn overlay_background(cx: &App) -> gpui_kit::Background {
+    let theme = gpui_kit::component::Theme::global(cx);
+    if cx
+        .try_global::<UiThemeState>()
+        .copied()
+        .unwrap_or_default()
+        .material_style
+        .is_frosted()
+    {
+        theme.tokens.popover.background
+    } else {
+        theme.tokens.background.background
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct UiThemeState {
     pub preference: nxtools_core::ThemePreference,
+    pub material_style: nxtools_core::MaterialStyle,
+    pub tuning: nxtools_core::MaterialTuning,
     pub system_dark: bool,
 }
 impl Default for UiThemeState {
     fn default() -> Self {
         Self {
             preference: nxtools_core::ThemePreference::System,
+            material_style: nxtools_core::MaterialStyle::Solid,
+            tuning: nxtools_core::MaterialTuning::default(),
             system_dark: true,
         }
     }
@@ -155,8 +200,38 @@ fn set_ui_font_from_catalog(family: &str, installed: &[String], cx: &mut App) ->
 }
 
 pub(crate) fn set_theme_preference(preference: nxtools_core::ThemePreference, cx: &mut App) {
+    let style = cx
+        .try_global::<UiThemeState>()
+        .copied()
+        .unwrap_or_default()
+        .material_style;
+    set_appearance_preferences(preference, style, cx);
+}
+
+/// Saved intent only; native material effectiveness is confirmed separately by Windows.
+pub(crate) fn set_appearance_preferences(
+    preference: nxtools_core::ThemePreference,
+    material_style: nxtools_core::MaterialStyle,
+    cx: &mut App,
+) {
+    let tuning = cx
+        .try_global::<UiThemeState>()
+        .copied()
+        .unwrap_or_default()
+        .tuning;
+    set_appearance(preference, material_style, tuning, cx);
+}
+
+pub(crate) fn set_appearance(
+    preference: nxtools_core::ThemePreference,
+    material_style: nxtools_core::MaterialStyle,
+    tuning: nxtools_core::MaterialTuning,
+    cx: &mut App,
+) {
     let mut state = cx.try_global::<UiThemeState>().copied().unwrap_or_default();
     state.preference = preference;
+    state.material_style = material_style;
+    state.tuning = tuning;
     cx.set_global(state);
     apply_active_theme(cx);
     cx.refresh_windows();
@@ -195,8 +270,10 @@ pub(crate) fn observe_theme<T: 'static>(
 /// Production startup and visual fixtures use one component palette mapping.
 /// Transparent window backgrounds preserve the existing native alpha contract.
 pub(crate) fn apply_component_theme(cx: &mut App) {
+    crate::ui::material::paint::init(cx);
     crate::ui::components::project_menu::init(cx);
     for source in [
+        NXTOOLS_SCHEMES,
         GRAPHITE_LIGHT,
         GRAPHITE_DARK,
         include_str!("../assets/themes/catppuccin.json"),
@@ -209,6 +286,7 @@ pub(crate) fn apply_component_theme(cx: &mut App) {
     }
     cx.set_global(UiThemeState::default());
     apply_active_theme(cx);
+    observe_window_shape(cx);
 }
 
 fn apply_active_theme(cx: &mut App) {
@@ -223,7 +301,7 @@ fn apply_active_theme(cx: &mut App) {
         .unwrap_or_else(|| {
             registry
                 .themes()
-                .get("Catppuccin Latte")
+                .get(DEFAULT_LIGHT)
                 .cloned()
                 .unwrap_or_else(|| registry.default_light_theme().clone())
         });
@@ -232,7 +310,7 @@ fn apply_active_theme(cx: &mut App) {
         .unwrap_or_else(|| {
             registry
                 .themes()
-                .get("Catppuccin Frappe")
+                .get(DEFAULT_DARK)
                 .cloned()
                 .unwrap_or_else(|| registry.default_dark_theme().clone())
         });
@@ -255,12 +333,46 @@ fn apply_active_theme(cx: &mut App) {
         .try_global::<UiFontState>()
         .map(|state| state.0.clone())
         .unwrap_or_else(|| UI_FONT_FAMILY.into());
+    let rounded = crate::ui::material::rounded_corners(cx);
+    let mut contour = gpui_kit::Hsla::default();
+    let mut tint = None;
     ComponentTheme::update(cx, |component| {
         component.font_family = family;
         component.mono_font_family = UI_MONO_FONT_FAMILY.into();
         // Keep the official thin focus edge; omit the redundant outside halo.
         component.focus_ring = false;
+        // Every window is rounded once facts are known: DWM on Windows 11, a region on Windows 10.
+        component.window_radius = gpui_kit::px(if rounded {
+            material::WINDOW_RADIUS
+        } else {
+            0.0
+        });
+        contour = if state.material_style.is_frosted() {
+            let (frosted_contour, frosted_tint) = material::apply(&mut component.colors, dark);
+            tint = Some(frosted_tint);
+            frosted_contour
+        } else {
+            component.colors.window_border
+        };
     });
+    cx.set_global(material::Contour(contour));
+    if let Some(tint) = tint {
+        cx.set_global(tint);
+    }
+}
+
+/// Re-themes when the window-corner capability becomes known, and repaints on every capability
+/// change: which acrylic a frosted window uses (system or host backdrop) is read at paint time.
+fn observe_window_shape(cx: &mut App) {
+    cx.observe_global::<crate::ui::material::UiMaterialCapabilities>(|cx| {
+        let rounded = crate::ui::material::rounded_corners(cx);
+        let current = gpui_kit::component::Theme::global(cx).window_radius > gpui_kit::px(0.0);
+        if rounded != current {
+            apply_active_theme(cx);
+        }
+        cx.refresh_windows();
+    })
+    .detach();
 }
 
 #[cfg(test)]
@@ -281,7 +393,7 @@ mod tests {
     }
 
     #[gpui_kit::test]
-    fn latte_frappe_default_roles_are_applied_through_the_real_kit_theme(
+    fn default_scheme_roles_are_applied_through_the_real_kit_theme(
         cx: &mut gpui_kit::TestAppContext,
     ) {
         cx.update(gpui_kit::init);
@@ -727,5 +839,67 @@ mod ui_font_paint_tests {
         assert!(painted.iter().any(|name| name == TEST_UI_FONT_FAMILY));
         assert!(painted.iter().any(|name| name == UI_MONO_FONT_FAMILY));
         assert!(!painted.iter().any(|name| name == UI_FONT_FAMILY));
+    }
+
+    #[gpui_kit::test]
+    fn material_style_intent_remains_independent_across_palette_font_and_system_updates(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        use nxtools_core::{MaterialStyle, ThemePreference};
+        cx.update(gpui_kit::init);
+        cx.update(apply_component_theme);
+        cx.update(|cx| {
+            assert!(set_ui_font_from_catalog(
+                TEST_UI_FONT_FAMILY,
+                &[TEST_UI_FONT_FAMILY.into()],
+                cx
+            ));
+            let resolved_mono = gpui_kit::component::Theme::global(cx)
+                .mono_font_family
+                .clone();
+            for preference in ThemePreference::ALL {
+                set_appearance_preferences(preference, MaterialStyle::Solid, cx);
+                let solid = Theme::active(cx);
+                let radius = gpui_kit::component::Theme::global(cx).radius;
+                set_appearance_preferences(preference, MaterialStyle::Acrylic, cx);
+                assert_eq!(cx.global::<UiThemeState>().preference, preference);
+                assert_eq!(
+                    cx.global::<UiThemeState>().material_style,
+                    MaterialStyle::Acrylic
+                );
+                // The palette keeps its accent; Acrylic may only deepen text for legibility.
+                assert_eq!(Theme::active(cx).accent, solid.accent);
+                assert_eq!(gpui_kit::component::Theme::global(cx).radius, radius);
+                assert_eq!(
+                    gpui_kit::component::Theme::global(cx).font_family,
+                    TEST_UI_FONT_FAMILY
+                );
+                assert_eq!(
+                    gpui_kit::component::Theme::global(cx).mono_font_family,
+                    resolved_mono
+                );
+                for dark in [false, true] {
+                    apply_system_theme(dark, cx);
+                    assert_eq!(
+                        cx.global::<UiThemeState>().material_style,
+                        MaterialStyle::Acrylic
+                    );
+                    assert_eq!(
+                        cx.global::<UiThemeState>().is_dark(),
+                        preference.is_dark(dark)
+                    );
+                }
+                set_theme_preference(ThemePreference::SolarizedLight, cx);
+                assert_eq!(
+                    cx.global::<UiThemeState>().material_style,
+                    MaterialStyle::Acrylic
+                );
+                set_appearance_preferences(preference, MaterialStyle::Solid, cx);
+                assert_eq!(
+                    cx.global::<UiThemeState>().material_style,
+                    MaterialStyle::Solid
+                );
+            }
+        });
     }
 }

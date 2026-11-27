@@ -61,6 +61,7 @@ impl DownloadTaskWindowView {
                 return;
             }
         window.open_dialog(cx, move |dialog, _, cx| {
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let Some(view) = weak.upgrade() else { return dialog; };
             let Some(draft) = view.read(cx).source_draft.as_ref().filter(|draft| draft.operation_id == operation_id) else { return dialog; };
             let input = draft.input.clone();

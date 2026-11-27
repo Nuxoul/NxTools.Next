@@ -137,6 +137,10 @@ internal sealed class PlatformPipeClient(
 
         platformAdapter.BindDesktopInputPeer(desktopProcessId);
         var keyboardHealthAccepted = AcceptsKeyboardHealth(acknowledgement);
+        var materialAccepted = AcceptsWindowMaterial(acknowledgement);
+        var materialSession = platformAdapter.BindMaterialPeer(materialAccepted ? desktopProcessId : 0);
+        try
+        {
         platformAdapter.DiscardQueuedEventsForNewSession();
         var keyboardHealthSnapshot = platformAdapter.QuickLaunchKeyboardHealthSnapshot;
         if (CreateKeyboardHealthSnapshotEnvelope(keyboardHealthSnapshot, keyboardHealthAccepted) is { } keyboardSnapshot)
@@ -177,6 +181,21 @@ internal sealed class PlatformPipeClient(
                 });
         }
         catch { /* Diagnostic delivery cannot affect the handshake. */ }
+        if (materialAccepted && platformAdapter.MaterialSnapshot is { } materialSnapshot)
+        {
+            await WriteAsync(writer, PlatformEventEnvelopeFactory.Create(materialSnapshot), cancellationToken);
+            try
+            {
+                log.Write(materialSnapshot.NativeErrorCode == 0 ? "info" : "warning",
+                    "system.material.session_snapshot_sent", materialSnapshot.CorrelationId,
+                    new Dictionary<string, object?>
+                    {
+                        ["session_id"] = materialSnapshot.SessionId, ["revision"] = materialSnapshot.Revision,
+                        ["native_error_code"] = materialSnapshot.NativeErrorCode
+                    });
+            }
+            catch { /* Diagnostics cannot affect the handshake. */ }
+        }
         Console.WriteLine("PlatformHost connected to NxTools desktop protocol v1.");
         log.Write("info", "ipc.connected", fields: new Dictionary<string, object?>
         {
@@ -244,6 +263,8 @@ internal sealed class PlatformPipeClient(
             pendingClipboardEvents,
             keyboardHealthAccepted,
             keyboardHealthSnapshot,
+            materialAccepted,
+            materialSession,
             session.Token);
         var readTask = ReadLoopAsync(
             reader,
@@ -281,6 +302,8 @@ internal sealed class PlatformPipeClient(
                 CleanupPendingClipboardEvents(pendingClipboardEvents);
             }
         }
+        }
+        finally { platformAdapter.BindMaterialPeer(0); }
     }
 
     private async Task ReadLoopAsync(
@@ -612,10 +635,10 @@ internal sealed class PlatformPipeClient(
         catch (Exception error)
         {
             var safeNativeCommand = IsPickerCommand(commandName) || commandName is "show_context_menu" or "cancel_context_menu" or
-                "process_window_pick" or "prepare_notification_window" or "print_markdown_pdf";
+                "process_window_pick" or "prepare_notification_window" or "print_markdown_pdf" or "apply_window_material";
             result = safeNativeCommand
                 ? new WindowsCommandResult(false, IsPickerCommand(commandName) ? "picker_failed" :
-                    commandName == "process_window_pick" ? "window_pick_failed" : commandName == "print_markdown_pdf" ? "render_failed" :
+                    commandName == "apply_window_material" ? "window_material_failed" : commandName == "process_window_pick" ? "window_pick_failed" : commandName == "print_markdown_pdf" ? "render_failed" :
                     commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
                     error is Win32Exception nativeError ? nativeError.NativeErrorCode : error.HResult)
                 : CreateCommandFailureResult(error);
@@ -702,10 +725,10 @@ internal sealed class PlatformPipeClient(
                     ["command"] = commandName
                 });
         }
-        var safeNativeCommand = IsPickerCommand(commandName) || commandName is "process_window_pick" or "show_context_menu" or "cancel_context_menu" or "prepare_notification_window";
+        var safeNativeCommand = IsPickerCommand(commandName) || commandName is "process_window_pick" or "show_context_menu" or "cancel_context_menu" or "prepare_notification_window" or "apply_window_material";
         var result = safeNativeCommand
             ? new WindowsCommandResult(false, IsPickerCommand(commandName) ? "picker_failed" :
-                commandName == "process_window_pick" ? "window_pick_failed" : commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
+                commandName == "apply_window_material" ? "window_material_failed" : commandName == "process_window_pick" ? "window_pick_failed" : commandName == "prepare_notification_window" ? "Notification native command failed." : "Native context menu command failed.", NativeErrorCode:
                 error is Win32Exception nativeError ? nativeError.NativeErrorCode : error.HResult)
             : CreateCommandFailureResult(error);
         WriteCommandDiagnostic("error", "command.failed", diagnosticCorrelationId,
@@ -928,6 +951,8 @@ internal sealed class PlatformPipeClient(
             "process_window_pick" => await platformAdapter.ProcessWindowPickAsync(
                 ProcessWindowPickContract.Parse(envelope), desktopProcessId, cancellationToken),
             "prepare_main_window" => await platformAdapter.PrepareMainWindowAsync(PlatformCommandParser.ParsePrepareMainWindow(envelope), diagnosticCorrelationId, cancellationToken),
+            "apply_window_material" => await platformAdapter.ApplyWindowMaterialAsync(
+                WindowMaterialContract.Parse(envelope), diagnosticCorrelationId, cancellationToken),
             "prepare_notification_window" => await platformAdapter.PrepareNotificationWindowAsync(
                 PlatformCommandParser.ParsePrepareNotificationWindow(envelope), diagnosticCorrelationId, cancellationToken),
             "show_context_menu" => await platformAdapter.ShowContextMenuAsync(
@@ -1195,6 +1220,17 @@ internal sealed class PlatformPipeClient(
             capability.ValueKind == JsonValueKind.String &&
             capability.GetString() == PlatformCapabilities.QuickLaunchKeyboardHealth);
 
+    internal static bool AcceptsWindowMaterial(ProtocolEnvelope acknowledgement) =>
+        acknowledgement.Payload.TryGetProperty("accepted_capabilities", out var capabilities) &&
+        capabilities.ValueKind == JsonValueKind.Array &&
+        capabilities.EnumerateArray().Any(capability =>
+            capability.ValueKind == JsonValueKind.String &&
+            capability.GetString() == PlatformCapabilities.WindowMaterial);
+
+    internal static bool CanForwardMaterialEvent(WindowsPlatformEvent platformEvent, bool accepted, Guid session) =>
+        platformEvent is not SystemMaterialCapabilitiesChangedEvent material ||
+            (accepted && session != Guid.Empty && material.SessionId == session);
+
     internal static bool AcceptsArchiveJobLargeCount(ProtocolEnvelope acknowledgement) =>
         acknowledgement.Payload.TryGetProperty("accepted_capabilities", out var capabilities) &&
         capabilities.ValueKind == JsonValueKind.Array &&
@@ -1230,12 +1266,15 @@ internal sealed class PlatformPipeClient(
         ConcurrentDictionary<Guid, ClipboardCapturedEvent> pendingClipboardEvents,
         bool keyboardHealthAccepted,
         QuickLaunchKeyboardHealthChangedEvent? keyboardHealthSnapshot,
+        bool materialAccepted,
+        Guid materialSession,
         CancellationToken cancellationToken)
     {
         await foreach (var platformEvent in ReadEventsWithKeyboardHealthSnapshots(
             platformAdapter.Events, () => platformAdapter.QuickLaunchKeyboardHealthSnapshot,
             keyboardHealthAccepted, keyboardHealthSnapshot, cancellationToken))
         {
+            if (!CanForwardMaterialEvent(platformEvent, materialAccepted, materialSession)) continue;
             ProtocolEnvelope envelope;
             int frameBytes;
             try

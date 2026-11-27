@@ -670,7 +670,7 @@ fn focus_control(window: &mut VisualTestContext, selector: &'static str) {
     });
     panic!("production control must be keyboard reachable: {selector}; focused={focused:?}");
 }
-fn release_key(window: &mut VisualTestContext, key: &str) {
+fn release_key(window: &mut VisualTestContext, key: &'static str) {
     let keystroke = gpui_kit::Keystroke::parse(key).expect("key");
     window.simulate_event(gpui_kit::KeyDownEvent {
         keystroke: keystroke.clone(),
@@ -691,7 +691,7 @@ fn scroll_to_control(window: &mut VisualTestContext, selector: &'static str) {
         }) {
             return;
         }
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(px(650.0), px(350.0)),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -4.0)),
             ..Default::default()

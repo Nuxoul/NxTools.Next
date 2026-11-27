@@ -59,7 +59,7 @@ internal sealed record ConfigureDesktopShellCommand(
 internal sealed record SetWindowTopmostCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowNoActivateCommand(long WindowHandle, bool Enabled);
 internal sealed record SetWindowShadowCommand(long WindowHandle, bool Enabled);
-internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height, int? CornerRadius = null);
+internal sealed record SetWindowBoundsCommand(long WindowHandle, int X, int Y, int Width, int Height);
 internal sealed record QueryWindowGeometryCommand(long WindowHandle);
 internal sealed record SetWindowBoundsCenteredCommand(long WindowHandle, int Width, int Height);
 internal sealed record PresentFixedWindowOverAnchorCommand(long WindowHandle, long AnchorWindowHandle, int Width, int Height);
@@ -377,19 +377,11 @@ public static SetWindowShadowCommand ParseSetWindowShadow(ProtocolEnvelope envel
             envelope,
             "set_window_shadow",
             "Window-shadow command payload was empty.");
-    public static SetWindowBoundsCommand ParseSetWindowBounds(ProtocolEnvelope envelope)
-    {
-        if (envelope.Payload.TryGetProperty("data", out var data) &&
-            data.ValueKind == JsonValueKind.Object &&
-            data.TryGetProperty("corner_radius", out var radius) && radius.ValueKind != JsonValueKind.Null &&
-            (radius.ValueKind != JsonValueKind.Number || !radius.TryGetInt32(out var pixels) || pixels < 0))
-            throw new InvalidDataException("Window corner radius must be nonnegative device pixels.");
-        var command = Parse<SetWindowBoundsCommand>(
+    public static SetWindowBoundsCommand ParseSetWindowBounds(ProtocolEnvelope envelope) =>
+        Parse<SetWindowBoundsCommand>(
             envelope,
             "set_window_bounds",
             "Window-bounds command payload was empty.");
-        return command;
-    }
 
     public static QueryWindowGeometryCommand ParseQueryWindowGeometry(ProtocolEnvelope envelope) =>
         Parse<QueryWindowGeometryCommand>(envelope, "query_window_geometry", "Window-geometry command payload was empty.");

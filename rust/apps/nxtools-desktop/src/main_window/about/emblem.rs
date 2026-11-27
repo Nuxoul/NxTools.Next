@@ -65,7 +65,7 @@ impl Emblem {
         {
             let now = cx.background_executor().now();
             self.advance(now);
-            self.transition = (self.pose != target).then(|| Transition {
+            self.transition = (self.pose != target).then_some(Transition {
                 from: self.pose,
                 to: target,
                 started: now,

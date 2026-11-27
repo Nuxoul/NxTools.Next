@@ -1,11 +1,11 @@
-# GPUI Kit component table: current0.8.0 authority and historical catalog
+# GPUI Kit component table: current0.10.0 authority and historical catalog
 
-## Current product release (2026-10-21)
-User-authorized currentdependency is exactKit0.8.0/defaultpre0.3.9. FIRST read [current release/API delta](gpui-kit-080.md), then the historicalcatalog below and exactcurrentpublishedsource. Diff/publictext::editor_host now available; oldDiffunavailable/0.7.1pins apply only to historicalaudit. All recordedsourcecoordinates still exist in0.8.0; no claim that every0.8.0API or page was re-audited. ExistingToolbarghost+compact/officialvariants/userrequestedtiles rules stay.
+## Current product release
+User-authorized current dependency is exact Kit0.10.0/defaultpre0.3.12. FIRST read [current release/API delta](gpui-kit-0100.md), then the historical catalog below and exact current published source. Existing Toolbar ghost+compact, official variants, requested tiles and lifecycle rules stay. The 79-page/78-source audit below is historical, not a new 0.10.0 API or visual audit.
 
 ## Historical catalog audit (2026-10-15)
 
-At the 2026-10-15T20:34:41+0800 re-audit, the official [Component directory](https://gpui-kit.com/zh-CN/component/) displayed **v0.7.3** and **79 named documentation families**. All 79 pages were fetched/read for purpose, named composition, API headings and cautions; HTTP 79/79 success. The product then pinned **gpui-kit = =0.7.1**. Of these families, 78 had source-entry mappings/files verified in that release; **Diff was not available in locked 0.7.1**. These historical counts/hashes do not represent a new 0.8.0 website audit, complete API compatibility, executed examples or product adoption certification. Current product authority is the 0.8.0 section above.
+At the 2026-10-15T20:34:41+0800 re-audit, the official [Component directory](https://gpui-kit.com/zh-CN/component/) displayed **v0.7.3** and **79 named documentation families**. All 79 pages were fetched/read for purpose, named composition, API headings and cautions; HTTP 79/79 success. The product then pinned **gpui-kit = =0.7.1**. Of these families, 78 had source-entry mappings/files verified in that release; **Diff was not available in locked 0.7.1**. These historical counts/hashes do not represent a current website audit, complete API compatibility, executed examples or product adoption certification. Current product authority is the release section above.
 
 AI MUST read [short selection rules](../../.trellis/spec/shared/ui-component-selection.md) before coding, then the relevant rows and exact released sources in the [complete locked index](gpui-kit-component-index.md). [Offline searchable table](gpui-kit-components.html) uses the same embedded data as [JSON evidence](gpui-kit-component-catalog.json).
 

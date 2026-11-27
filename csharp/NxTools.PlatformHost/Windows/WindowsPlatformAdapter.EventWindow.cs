@@ -93,6 +93,9 @@ internal sealed partial class WindowsPlatformAdapter
         private readonly SystemThemePreference _systemTheme = new(new WindowsSystemThemeReader());
         private readonly PendingThemePublication _pendingTheme = new();
         internal ThemePreferenceSnapshot SystemThemeSnapshot => _systemTheme.Snapshot;
+        private readonly SystemMaterialPreference _systemMaterial = new(new WindowsSystemMaterialReader());
+        private readonly WindowMaterialOwner? _windowMaterials;
+        private readonly PendingMaterialPublication _pendingMaterial = new();
         private readonly FileDialogRecognitionRetry _fileDialogRecognitionRetry =
             new(FileDialogRecognitionMaxAttempts);
         private readonly FileDialogRecognitionRetry _directorySourceRecognitionRetry =
@@ -201,6 +204,7 @@ internal sealed partial class WindowsPlatformAdapter
                 : _quickLaunchHotKeyRegistration?.IsAvailable == true);
 
         private readonly NativeContextMenuCoordinator? _contextMenus;
+        private readonly Func<IntPtr, bool>? _queueWindowGeometry;
 
         public EventWindow(
             ChannelWriter<WindowsPlatformEvent> events,
@@ -208,7 +212,9 @@ internal sealed partial class WindowsPlatformAdapter
             IElevatedDirectoryNavigationChannel elevatedDirectoryNavigation,
             IPlatformLog log,
             ClipboardCaptureDropDiagnosticGate clipboardCaptureDropDiagnosticGate,
-            NativeContextMenuCoordinator? contextMenus = null, int? clipboardConsumerProcessId = null)
+            NativeContextMenuCoordinator? contextMenus = null, int? clipboardConsumerProcessId = null,
+            WindowMaterialOwner? windowMaterials = null,
+            Func<IntPtr, bool>? queueWindowGeometry = null)
         {
             _events = events;
             _foregroundContextProvider = foregroundContextProvider;
@@ -216,7 +222,9 @@ internal sealed partial class WindowsPlatformAdapter
             _log = log;
             _clipboardCaptureDropDiagnosticGate = clipboardCaptureDropDiagnosticGate;
             _contextMenus = contextMenus;
+            _windowMaterials = windowMaterials;
             _foregroundCallback = OnForegroundChanged;
+            _queueWindowGeometry = queueWindowGeometry;
             _fileDialogWindowCallback = OnFileDialogWindowChanged;
             _clipboardCapture = CreateClipboardCaptureOperations();
             _clipboardContent = ClipboardContentOperations.Windows(foregroundContextProvider);
@@ -259,8 +267,12 @@ internal sealed partial class WindowsPlatformAdapter
             _taskbarOverlayMoveSizeEndHook = InstallOptionalWindowEventHook(EventSystemMoveSizeEnd);
             SystemEvents.DisplaySettingsChanged += OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged += OnSystemUserPreferenceChanged;
+            SystemEvents.PowerModeChanged += OnSystemPowerModeChanged;
+            SystemEvents.SessionSwitch += OnSystemSessionSwitch;
             _systemMotion.Refresh(out _);
             _systemTheme.Refresh(out _);
+            _systemMaterial.Refresh(out var materialSnapshot);
+            _windowMaterials?.UpdateCapabilities(materialSnapshot);
             _hotKeyRegistration = new ClipboardHotKeyRegistration(
                 new NativeClipboardHotKeyRegistrar(() => Handle, ClipboardHotKeyId),
                 new ClipboardHotKeyBinding(ModAlt, VkC, "Alt+C"));
@@ -297,11 +309,13 @@ internal sealed partial class WindowsPlatformAdapter
             Action<Action> runExplorerWork,
             Action<Action> deferExplorerDelivery,
             Func<long, bool> isReturnForeground,
-            IElevatedDirectoryNavigationChannel? elevatedDirectoryNavigation = null)
+            IElevatedDirectoryNavigationChannel? elevatedDirectoryNavigation = null,
+            Func<IntPtr, bool>? queueWindowGeometry = null)
         {
             _events = events;
             _log = log;
             _foregroundContextProvider = new ForegroundContextProvider();
+            _queueWindowGeometry = queueWindowGeometry;
             _elevatedDirectoryNavigation = elevatedDirectoryNavigation!;
             _clipboardCaptureDropDiagnosticGate = new();
             _foregroundCallback = OnForegroundChanged;
@@ -555,6 +569,9 @@ internal sealed partial class WindowsPlatformAdapter
                         return;
                     }
                     break;
+                case 0x031E: // WM_DWMCOMPOSITIONCHANGED
+                    RefreshSystemMotionPreference();
+                    break;
                 case WmRefreshSystemMotion:
                     RefreshSystemMotionPreference();
                     return;
@@ -686,6 +703,12 @@ internal sealed partial class WindowsPlatformAdapter
             }
         }
 
+        internal void CompleteWindowGeometry(IntPtr rootWindow, CenteredResizeReplayResult replay)
+        {
+            if (replay.HadPendingResize) _resizeCompletions.Enqueue((rootWindow, replay));
+            _ = RequestCenteredResizeRecovery(rootWindow);
+        }
+
         private void RetryCenteredResizeRecovery()
         {
             foreach (var rootWindow in _centeredResizeRecovery.PendingRoots)
@@ -695,7 +718,7 @@ internal sealed partial class WindowsPlatformAdapter
             ScheduleCenteredResizeRecoveryTimer();
         }
 
-        private void RetryCenteredResizeForRoot(IntPtr rootWindow)
+        internal void RetryCenteredResizeForRoot(IntPtr rootWindow)
         {
             if (!NativeMethods.TryGetPendingCenteredResize(rootWindow, out var snapshot))
             {
@@ -747,19 +770,7 @@ internal sealed partial class WindowsPlatformAdapter
                     CenteredResizeRecoveryDecision.Exhausted);
                 return;
             }
-            _ = CenteredResizeWorkers.TrySchedule(rootWindow, () =>
-            {
-                CenteredResizeReplayResult replay;
-                try { replay = WindowsPlatformAdapter.ReapplyPendingCenteredResizeFor(rootWindow); }
-                catch (Exception failure)
-                {
-                    replay = new(true, snapshot.CorrelationId, snapshot.WindowHandle, snapshot.StartedAtTimestamp,
-                        snapshot.AttemptCount, false, false, failure.HResult) { Generation = snapshot.Generation };
-                    NativeMethods.CancelPendingCenteredResize(rootWindow, snapshot.CorrelationId, snapshot.Generation);
-                }
-                if (replay.HadPendingResize) _resizeCompletions.Enqueue((rootWindow, replay));
-                _ = RequestCenteredResizeRecovery(rootWindow);
-            });
+            _ = _queueWindowGeometry?.Invoke(rootWindow);
         }
 
         private void HandleCenteredResizeRecoveryDecision(
@@ -2178,7 +2189,10 @@ internal sealed partial class WindowsPlatformAdapter
                 return;
             }
             if (eventType == EventObjectDestroy && objectId == ObjIdWindow && childId == 0)
+            {
                 ThirdPartyFileManagerAdapter.RetireWindow(window.ToInt64());
+                _windowMaterials?.RetireWindow(window.ToInt64());
+            }
 
             var rootWindowHandle = NativeMethods.GetRootWindowHandle(window);
             if ((eventType is EventObjectDestroy or EventObjectHide) && objectId == ObjIdWindow)
@@ -2316,11 +2330,23 @@ internal sealed partial class WindowsPlatformAdapter
             }
         }
 
+        private void OnSystemPowerModeChanged(object? sender, PowerModeChangedEventArgs eventArgs) =>
+            RequestSystemPreferenceRefresh();
+        private void OnSystemSessionSwitch(object? sender, SessionSwitchEventArgs eventArgs) =>
+            RequestSystemPreferenceRefresh();
+        private void RequestSystemPreferenceRefresh()
+        {
+            if (!_systemMotionStopped)
+                _ = NativeMethods.PostMessage(Handle, WmRefreshSystemMotion, IntPtr.Zero, IntPtr.Zero);
+        }
+
         private void RefreshSystemMotionPreference()
         {
             if (_systemMotionStopped) return;
             if (_systemMotion.Refresh(out var snapshot)) _pendingMotion.Stage(snapshot);
             if (_systemTheme.Refresh(out var themeSnapshot)) _pendingTheme.Stage(themeSnapshot);
+            if (_systemMaterial.Refresh(out var materialSnapshot))
+                _pendingMaterial.Stage(_windowMaterials?.UpdateCapabilities(materialSnapshot));
             PublishPendingSystemMotion();
         }
 
@@ -2330,7 +2356,9 @@ internal sealed partial class WindowsPlatformAdapter
             var themeStarted = Stopwatch.GetTimestamp();
             var themeDelivered = _pendingTheme.TryPublish(value => _events.TryWrite(value));
             var delivered = _pendingMotion.TryPublish(value => _events.TryWrite(value));
-            if (_pendingMotion.HasPending || _pendingTheme.HasPending)
+            var materialDelivered = _pendingMaterial.TryPublish(
+                _windowMaterials?.SnapshotEvent()?.SessionId ?? Guid.Empty, value => _events.TryWrite(value));
+            if (_pendingMotion.HasPending || _pendingTheme.HasPending || _pendingMaterial.HasPending)
             {
                 var timer = NativeMethods.SetTimer(Handle, (UIntPtr)SystemMotionRetryTimerId, 250, IntPtr.Zero);
                 if (timer == UIntPtr.Zero)
@@ -2342,7 +2370,7 @@ internal sealed partial class WindowsPlatformAdapter
                         try
                         {
                             _log.Write("warning", "system.preference.retry_timer_failed",
-                                _pendingTheme.PendingCorrelationId ?? _pendingMotion.PendingCorrelationId ?? Guid.Empty,
+                                _pendingMaterial.PendingCorrelationId ?? _pendingTheme.PendingCorrelationId ?? _pendingMotion.PendingCorrelationId ?? Guid.Empty,
                                 new Dictionary<string, object?>
                                 {
                                     ["native_error_code"] = nativeError == 0 ? -1 : nativeError,
@@ -2358,6 +2386,24 @@ internal sealed partial class WindowsPlatformAdapter
             {
                 _ = NativeMethods.KillTimer(Handle, (UIntPtr)SystemMotionRetryTimerId);
                 _systemMotionRetryFailed = false;
+            }
+            if (materialDelivered is not null)
+            {
+                try
+                {
+                    _log.Write(materialDelivered.NativeErrorCode == 0 ? "info" : "warning",
+                        "system.material.capabilities_published", materialDelivered.CorrelationId,
+                        new Dictionary<string, object?>
+                        {
+                            ["session_id"] = materialDelivered.SessionId, ["revision"] = materialDelivered.Revision,
+                            ["supported"] = materialDelivered.Supported, ["transparency_enabled"] = materialDelivered.TransparencyEnabled,
+                            ["high_contrast"] = materialDelivered.HighContrast, ["energy_saver"] = materialDelivered.EnergySaver,
+                            ["remote_session"] = materialDelivered.RemoteSession, ["native_error_code"] = materialDelivered.NativeErrorCode,
+                            ["system_backdrop"] = materialDelivered.SystemBackdrop, ["rounded_corners"] = materialDelivered.RoundedCorners,
+                            ["elapsed_ms"] = Stopwatch.GetElapsedTime(themeStarted).TotalMilliseconds
+                        });
+                }
+                catch { /* Diagnostics cannot alter preference delivery. */ }
             }
             if (themeDelivered is not null)
             {
@@ -3238,9 +3284,12 @@ internal sealed partial class WindowsPlatformAdapter
             _systemMotionStopped = true;
             _pendingMotion.Stop();
             _pendingTheme.Stop();
+            _pendingMaterial.Stop();
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)SystemMotionRetryTimerId);
             SystemEvents.DisplaySettingsChanged -= OnSystemDisplaySettingsChanged;
             SystemEvents.UserPreferenceChanged -= OnSystemUserPreferenceChanged;
+            SystemEvents.PowerModeChanged -= OnSystemPowerModeChanged;
+            SystemEvents.SessionSwitch -= OnSystemSessionSwitch;
             _ = NativeMethods.KillTimer(Handle, (UIntPtr)PointerMonitorTimerId);
             _ = NativeMethods.KillTimer(
                 Handle,

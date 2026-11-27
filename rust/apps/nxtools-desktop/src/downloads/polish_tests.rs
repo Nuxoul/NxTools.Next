@@ -16,7 +16,7 @@ fn window_fixture(
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let application = cx.update(|cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            super::ordinary_presentation_fixture::confirmed_application(
                 engine,
                 Rc::new(platform),
                 notifications,
@@ -601,6 +601,7 @@ fn successful_probe_replaces_compact_window_with_fixed_confirmation(cx: &mut Tes
     });
     let (application, directory, _endpoint) = window_fixture(cx);
     application.update(cx, |application, cx| {
+        application.new_download_native_handles_override = Some((701, 702));
         application.open_new_download_window(cx)
     });
     cx.run_until_parked();
@@ -634,6 +635,14 @@ fn successful_probe_replaces_compact_window_with_fixed_confirmation(cx: &mut Tes
         std::thread::sleep(Duration::from_millis(10));
     }
     cx.run_until_parked();
+    let presentation_id = application.read_with(cx, |app, _| {
+        assert_eq!(app.new_download_handoff_commands.len(), 1);
+        app.pending_new_download_handoff
+            .as_ref()
+            .expect("material-qualified fixed presentation awaiting native ACK")
+            .command_id
+    });
+    fixed_result(cx, &application, presentation_id, true);
     let target = cx.read(|cx| {
         application
             .read(cx)
@@ -1600,11 +1609,12 @@ fn browser_export_completion_uses_center_not_settings_description(cx: &mut TestA
             if target.is_some() {
                 break;
             }
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(px(900.0), px(320.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -2.0)),
                 modifiers: Modifiers::default(),
                 touch_phase: gpui_kit::TouchPhase::Moved,
+                source: Default::default(),
             });
             surface.run_until_parked();
         }
@@ -1786,20 +1796,30 @@ fn queue02_headers_have_one_styled_textarea_frame(cx: &mut TestAppContext) {
         .debug_bounds("download-settings-default-headers-field")
         .expect("header slot");
     let actual = surface
-        .update(|window, _| gpui_kit::base::test_support::snapshots(window))
-        .into_iter()
-        .find(|snapshot| {
-            snapshot
-                .path()
-                .iter()
-                .any(|id| id == &gpui_kit::ElementId::from(("input", input.entity_id())))
+        .update(|window, _| {
+            gpui_kit::base::test_support::find(
+                window,
+                &[],
+                &gpui_kit::ElementId::from(("input", input.entity_id())),
+            )
         })
-        .expect("original textarea entity")
+        .expect("official textarea frame for original entity")
         .bounds();
-    assert_eq!(
-        actual.size, field.size,
-        "no duplicate painted frame or inset"
-    );
+    let reset = surface
+        .update(|window, _| {
+            gpui_kit::base::test_support::find(
+                window,
+                &[],
+                &gpui_kit::ElementId::from("download-settings-reset-headers"),
+            )
+        })
+        .expect("official reset Button")
+        .bounds();
+    assert_eq!(actual.left(), field.left(), "no duplicate left inset");
+    assert_eq!(actual.top(), field.top(), "no duplicate top inset");
+    assert_eq!(actual.right() + px(8.0), reset.left(), "one compound gap");
+    assert_eq!(reset.right(), field.right(), "reset remains in the field");
+    assert_eq!(actual.size.height, field.size.height, "one painted frame");
     assert_eq!(actual.size.height, px(120.0));
     let identity = input.entity_id();
     surface.simulate_click(actual.center(), Modifiers::default());
@@ -1820,7 +1840,7 @@ fn queue02_headers_have_one_styled_textarea_frame(cx: &mut TestAppContext) {
             .debug_bounds("download-settings-default-headers-field")
             .expect("stable frame")
             .size,
-        actual.size
+        field.size
     );
     let _ = std::fs::remove_dir_all(directory);
 }
@@ -1865,11 +1885,12 @@ pub(super) fn reveal_download_setting(
         {
             return bounds;
         }
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(px(900.0), px(320.0)),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -2.0)),
             modifiers: Modifiers::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         window.run_until_parked();
     }
@@ -2563,11 +2584,12 @@ fn feedback_download_category_master_uses_real_official_dropdown(cx: &mut TestAp
         if selector.is_some() {
             break;
         }
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: content.center(),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -2.0)),
             modifiers: Modifiers::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         surface.run_until_parked();
     }
@@ -3371,11 +3393,12 @@ fn runtime_feedback_firefox_store_button_dispatches_exact_url_and_keeps_settings
         if target.is_some() {
             break;
         }
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(px(900.0), px(320.0)),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -2.0)),
             modifiers: Modifiers::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         surface.run_until_parked();
     }
@@ -3614,7 +3637,7 @@ fn audit05_schedule_timefield_enter_saves_original_queue_once(cx: &mut TestAppCo
 
 fn audit05_schedule_key(
     surface: &mut VisualTestContext,
-    key: &str,
+    key: &'static str,
     down: bool,
     held: bool,
     character: bool,
@@ -3653,7 +3676,7 @@ fn audit05_schedule_fixture(
     let (platform, _endpoint) = nxtools_ipc::platform_bridge(16);
     let app = cx.new(|cx| {
         let notifications = cx.new(|_| NotificationCenter::default());
-        DownloadApplication::new(
+        super::ordinary_presentation_fixture::confirmed_application(
             engine,
             Rc::new(platform),
             notifications,
@@ -3973,7 +3996,7 @@ fn audit06_schedule_long_validation_scrolls_inside_fixed_surface(cx: &mut TestAp
             .debug_bounds("download-schedule-validation")
             .expect("two-line viewport");
         for _ in 0..60 {
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: viewport.center(),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 5.0)),
                 ..Default::default()
@@ -3986,7 +4009,7 @@ fn audit06_schedule_long_validation_scrolls_inside_fixed_surface(cx: &mut TestAp
             .debug_bounds("download-schedule-validation-text")
             .expect("actual full error layout");
         for _ in 0..60 {
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: viewport.center(),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -5.0)),
                 ..Default::default()

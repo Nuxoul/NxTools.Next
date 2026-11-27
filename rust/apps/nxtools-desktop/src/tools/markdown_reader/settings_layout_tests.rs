@@ -32,12 +32,13 @@ fn bounds(surface: &mut VisualTestContext, selector: &'static str) -> Bounds<Pix
 
 fn scroll(surface: &mut VisualTestContext, dy: f32) {
     let viewport = bounds(surface, "markdown-settings-content");
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         // The shared viewport margin avoids any child control gesture boundary.
         position: gpui_kit::point(viewport.left() + px(2.), viewport.center().y),
         delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), px(dy))),
         modifiers: Modifiers::default(),
         touch_phase: gpui_kit::TouchPhase::Moved,
+        source: Default::default(),
     });
     surface.run_until_parked();
     surface.refresh().expect("shared settings scroll");

@@ -76,7 +76,7 @@ impl LinkIntakeFixture {
         let (clipboard, downloads) = cx.update(|cx| {
             let notifications = cx.new(|_| NotificationCenter::default());
             let downloads = cx.new(|cx| {
-                DownloadApplication::new(
+                super::ordinary_presentation_fixture::confirmed_application(
                     DownloadEngine::open_in_memory().expect("original download engine"),
                     platform.clone(),
                     notifications.clone(),
@@ -150,7 +150,7 @@ impl LinkIntakeFixture {
         panel
     }
 
-    fn activate(&self, cx: &mut TestAppContext, panel: AnyWindowHandle, key: Option<&str>) {
+    fn activate(&self, cx: &mut TestAppContext, panel: AnyWindowHandle, key: Option<&'static str>) {
         let mut surface = VisualTestContext::from_window(panel, cx);
         surface.refresh().expect("production panel rendering");
         let row = surface.debug_bounds("link-panel-row-0").expect("row");

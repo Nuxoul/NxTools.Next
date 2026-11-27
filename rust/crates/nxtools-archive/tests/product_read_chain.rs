@@ -1000,19 +1000,15 @@ async fn v2_multibatch_credit_timeout_cancel_and_drop_preserve_native_owners() {
 }
 
 #[tokio::test(flavor = "current_thread")]
-async fn v2_cumulative_exact_byte_boundaries_and_one_less_are_enforced() {
+async fn v2_cumulative_retained_exact_byte_boundaries_and_one_less_are_enforced() {
     let (fixture, client, _) = Fixture::new().await;
     let original = client.start(large_request(&fixture)).expect("v2");
     let (_, terminal) = consume(&client, &original).await;
     let stats = terminal.transfer.expect("v2 actual counts");
-    for (transport, delta) in [(true, 0), (true, 1), (false, 0), (false, 1)] {
+    for delta in [0, 1] {
         let mut command = large_request(&fixture);
         let limits = command.limits.as_mut().expect("limits");
-        if transport {
-            limits.max_transport_bytes = stats.private_bytes - delta;
-        } else {
-            limits.max_retained_bytes = stats.received_bytes - delta;
-        }
+        limits.max_retained_bytes = stats.received_bytes - delta;
         let operation = client.start(command).expect("explicit finite quota");
         let (_, terminal) = consume(&client, &operation).await;
         assert!(terminal.cleanup_complete);

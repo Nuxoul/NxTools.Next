@@ -4,9 +4,50 @@ use nxtools_protocol::process_window_pick::{
     ProcessWindowPickChanged, ProcessWindowPickCommand, WindowPickCandidate, WindowPickRect,
     WindowPickState,
 };
+use nxtools_protocol::window_material::{
+    AppliedWindowMaterial, EffectiveWindowMaterial, MaterialFallbackReason, MaterialSurface,
+    SystemMaterialCapabilitiesChanged,
+};
 use nxtools_protocol::{Message, PlatformEvent};
 
-fn fixture(
+fn prepare_material(
+    window: AnyWindowHandle,
+    hwnd: i64,
+    surface: MaterialSurface,
+    platform: Rc<PlatformBridge>,
+    cx: &mut gpui_kit::App,
+) {
+    crate::ui::material::runtime::set_test_window_handle(window, hwnd, cx);
+    let command =
+        crate::ui::material::command(hwnd, surface, cx).expect("qualified material facts");
+    let receipt = AppliedWindowMaterial {
+        session_id: command.session_id,
+        facts_revision: command.facts_revision,
+        window_handle: hwnd,
+        generation: command.generation,
+        style: command.style,
+        surface,
+        dark: command.dark,
+        effective: if surface == MaterialSurface::Transparent {
+            EffectiveWindowMaterial::Transparent
+        } else {
+            EffectiveWindowMaterial::Solid
+        },
+        fallback_reason: MaterialFallbackReason::None,
+        native_error_code: 0,
+    };
+    let preparation =
+        crate::ui::material::Preparation::confirmed(uuid::Uuid::new_v4(), command, receipt, cx)
+            .expect("confirmed fixture material");
+    assert!(crate::ui::material::runtime::track_prepared(
+        window,
+        platform,
+        preparation,
+        cx,
+    ));
+}
+
+pub(super) fn fixture(
     cx: &mut TestAppContext,
 ) -> (
     Entity<NetworkSettingsApplication>,
@@ -21,8 +62,32 @@ fn fixture(
     let (bridge, endpoint) = nxtools_ipc::platform_bridge(32);
     endpoint.set_connected_for_contract_test(true);
     application.update(cx, |app, cx| {
-        app.platform = Some(Rc::new(bridge));
+        let mut facts = crate::ui::material::UiMaterialCapabilities::default();
+        facts.connected();
+        assert!(facts.apply(SystemMaterialCapabilitiesChanged {
+            correlation_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            revision: 1,
+            supported: true,
+            transparency_enabled: true,
+            high_contrast: false,
+            energy_saver: false,
+            remote_session: false,
+            native_error_code: 0,
+            system_backdrop: true,
+            rounded_corners: true,
+        }));
+        cx.set_global(facts);
+        let platform = Rc::new(bridge);
+        app.platform = Some(platform.clone());
         app.open_window(cx);
+        prepare_material(
+            app.window.expect("hidden settings"),
+            101,
+            MaterialSurface::Backdrop,
+            platform,
+            cx,
+        );
     });
     cx.run_until_parked();
     let (handle, view) = cx.read(|cx| {
@@ -40,7 +105,7 @@ fn fixture(
     (application, view, surface, directory, endpoint)
 }
 
-fn begin(
+pub(super) fn begin(
     application: &Entity<NetworkSettingsApplication>,
     view: &Entity<NetworkSettingsView>,
     surface: &mut VisualTestContext,
@@ -52,6 +117,13 @@ fn begin(
             window_picker_overlay::WindowPickerOverlay::open(cx).expect("synthetic overlay");
         // TestWindow has no HWND. Only this fixture supplies native facts.
         overlay.native_window_handle = 102;
+        prepare_material(
+            overlay.window,
+            102,
+            MaterialSurface::Transparent,
+            app.platform.clone().expect("platform"),
+            cx,
+        );
         app.begin_process_window_pick(
             id,
             view.downgrade(),
@@ -76,7 +148,7 @@ fn candidate() -> WindowPickCandidate {
     }
 }
 
-fn event(
+pub(super) fn event(
     application: &Entity<NetworkSettingsApplication>,
     surface: &mut VisualTestContext,
     id: uuid::Uuid,

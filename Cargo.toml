@@ -18,7 +18,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.7.4"
+version = "0.7.5"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 
@@ -30,7 +30,7 @@ chrono = { version = "0.4.45", default-features = false, features = ["clock"] }
 cbc = "0.1.2"
 directories = "6.0.0"
 fs2 = "0.4.3"
-gpui-kit = "=0.8.0"
+gpui-kit = "=0.10.0"
 gpui-kit-markdown-editor = { path = "vendor/gpui-kit-markdown-editor-010", default-features = false }
 
 image = { version = "=0.25.10", default-features = false, features = ["png"] }
@@ -82,5 +82,11 @@ todo = "deny"
 unwrap_used = "warn"
 
 [patch.crates-io]
-gpui-pre-windows = { path = "vendor/gpui-pre-windows-039" }
-gpui-component = { path = "vendor/gpui-component-080" }
+gpui-pre = { path = "vendor/gpui-pre-0312" }
+gpui-pre-windows = { path = "vendor/gpui-pre-windows-0312" }
+gpui-component = { path = "vendor/gpui-component-0100" }
+gpui-base = { path = "vendor/gpui-base-0100" }
+
+# Keep full interpreter identity verification within invocation budgets in dev/test.
+[profile.dev.package.sha2]
+opt-level = 3

@@ -356,12 +356,16 @@ mod tests {
 
     #[test]
     fn date_presets_are_half_open_calendar_ranges() {
-        let date = NaiveDate::from_ymd_opt(2026, 11, 17).unwrap();
-        let today = CaptureDate::Today.bounds(date, &chrono::Utc).unwrap();
-        let yesterday = CaptureDate::Yesterday.bounds(date, &chrono::Utc).unwrap();
+        let date = NaiveDate::from_ymd_opt(2026, 11, 17).expect("valid fixture calendar date");
+        let today = CaptureDate::Today
+            .bounds(date, &chrono::Utc)
+            .expect("bounded today preset");
+        let yesterday = CaptureDate::Yesterday
+            .bounds(date, &chrono::Utc)
+            .expect("bounded yesterday preset");
         let week = CaptureDate::LastSevenDays
             .bounds(date, &chrono::Utc)
-            .unwrap();
+            .expect("bounded seven-day preset");
         assert_eq!(yesterday.1, today.0);
         assert_eq!(today.1 - today.0, 86_400_000);
         assert_eq!(week, (today.0 - 6 * 86_400_000, today.1));

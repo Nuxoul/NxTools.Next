@@ -3110,7 +3110,7 @@ mod background_limit_ui_tests {
             if toggle.top() >= px(100.0) && toggle.bottom() <= px(400.0) {
                 break;
             }
-            window.simulate_event(gpui_kit::ScrollWheelEvent {
+            window.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(px(500.0), px(300.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -2.0)),
                 ..Default::default()
@@ -3130,10 +3130,16 @@ mod background_limit_ui_tests {
         view.update_in(window, |view, window, cx| {
             assert!(view.background_speed_limit_enabled);
             view.background_speed_limit_kib
-                .update(cx, |input, cx| input.set_value("0", window, cx));
+                .update(cx, |input, cx| input.replace_all("0", window, cx));
+        });
+        window.run_until_parked();
+        view.update_in(window, |view, window, cx| {
             assert!(view.current_draft(cx).is_err());
             view.background_speed_limit_kib
-                .update(cx, |input, cx| input.set_value("256", window, cx));
+                .update(cx, |input, cx| input.replace_all("256", window, cx));
+        });
+        window.run_until_parked();
+        view.update_in(window, |view, window, cx| {
             let draft = view.current_draft(cx).expect("positive rate");
             assert_eq!(draft.background_speed_limit.bytes_per_second, 256 * 1024);
             assert_eq!(draft.global_speed_limit_bytes_per_second, Some(8192));
@@ -3155,3 +3161,7 @@ mod background_limit_ui_tests {
 #[cfg(test)]
 #[path = "settings_task_rem_tests.rs"]
 mod settings_task_rem_tests;
+
+#[cfg(all(test, target_os = "windows"))]
+#[path = "settings_native_paint_tests.rs"]
+mod settings_native_paint_tests;

@@ -24,11 +24,12 @@ pub(super) fn choose_mode(surface: &mut VisualTestContext, index: usize) {
 
 fn scroll_pane(surface: &mut VisualTestContext, selector: &'static str, dy: f32) {
     let pane = surface.debug_bounds(selector).expect("scroll pane");
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position: pane.center(),
         delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), px(dy))),
         modifiers: Modifiers::default(),
         touch_phase: gpui_kit::TouchPhase::Moved,
+        source: Default::default(),
     });
     for _ in 0..3 {
         surface.refresh().expect("apply scroll geometry");
@@ -38,11 +39,11 @@ fn scroll_pane(surface: &mut VisualTestContext, selector: &'static str, dy: f32)
 
 #[gpui_kit::test]
 fn markdown_reader_opens_distinct_tabs_and_searches_rendered_text(cx: &mut TestAppContext) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create distinct tabs fixture directory");
     let first = directory.path().join("first.md");
     let second = directory.path().join("second.markdown");
-    std::fs::write(&first, "# 标题\n\n**中文**\n\n- 中文").unwrap();
-    std::fs::write(&second, "# Second\n\nOther page").unwrap();
+    std::fs::write(&first, "# 标题\n\n**中文**\n\n- 中文").expect("write first tab fixture");
+    std::fs::write(&second, "# Second\n\nOther page").expect("write second tab fixture");
     let (reader, surface) = open_fixture(cx);
     surface.update(|window, cx| {
         reader.update(cx, |reader, cx| {
@@ -73,7 +74,7 @@ fn markdown_reader_opens_distinct_tabs_and_searches_rendered_text(cx: &mut TestA
         let reader = reader.read(cx);
         assert_eq!(reader.tabs.len(), 2);
         assert_eq!(
-            file_name(&reader.active_tab().unwrap().document).as_ref(),
+            file_name(&reader.active_tab().expect("reopened first tab").document).as_ref(),
             "first.md"
         );
         let find = reader.find.as_ref().expect("rendered document matches");
@@ -84,9 +85,9 @@ fn markdown_reader_opens_distinct_tabs_and_searches_rendered_text(cx: &mut TestA
 
 #[gpui_kit::test]
 fn markdown_reader_three_modes_preserve_the_source_editor_and_draft(cx: &mut TestAppContext) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create mode switching fixture directory");
     let path = directory.path().join("edit.md");
-    std::fs::write(&path, "# A draft\n\nInitial text\n").unwrap();
+    std::fs::write(&path, "# A draft\n\nInitial text\n").expect("write initial draft fixture");
     let (reader, surface) = open_fixture(cx);
     surface.simulate_resize(size(px(680.), px(460.)));
     surface.update(|window, cx| {
@@ -146,11 +147,14 @@ fn markdown_reader_three_modes_preserve_the_source_editor_and_draft(cx: &mut Tes
     surface.simulate_input("New text");
     surface.run_until_parked();
     assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
+        std::fs::read_to_string(&path).expect("read source before explicit save"),
         "# A draft\n\nInitial text\n"
     );
     surface.read(|cx| {
-        let document = reader.read(cx).active_tab().unwrap();
+        let document = reader
+            .read(cx)
+            .active_tab()
+            .expect("active edited document");
         assert!(document.draft.dirty());
         assert!(
             document
@@ -167,20 +171,31 @@ fn markdown_reader_three_modes_preserve_the_source_editor_and_draft(cx: &mut Tes
     assert!(surface.debug_bounds("markdown-prose-viewport").is_some());
     surface.simulate_keystrokes("ctrl-s");
     surface.run_until_parked();
-    assert!(std::fs::read_to_string(&path).unwrap().contains("New text"));
-    assert!(!surface.read(|cx| reader.read(cx).active_tab().unwrap().draft.dirty()));
+    assert!(
+        std::fs::read_to_string(&path)
+            .expect("read explicitly saved draft")
+            .contains("New text")
+    );
+    assert!(!surface.read(|cx| {
+        reader
+            .read(cx)
+            .active_tab()
+            .expect("active saved document")
+            .draft
+            .dirty()
+    }));
 }
 
 #[gpui_kit::test]
 fn markdown_reader_outline_long_chinese_heading_stays_inside_one_row(cx: &mut TestAppContext) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create long outline fixture directory");
     let path = directory.path().join("章节 大纲.md");
     let title = "漫长的中文章节标题与内存感知带宽延迟乘积调参方法".repeat(3);
     std::fs::write(
         &path,
         format!("# 文档\n\n## {title}\n\n正文\n\n## 下一节\n\n结尾\n"),
     )
-    .unwrap();
+    .expect("write long Chinese heading fixture");
     let (reader, surface) = open_fixture(cx);
     surface.simulate_resize(size(px(680.), px(460.)));
     surface.update(|window, cx| {
@@ -489,11 +504,11 @@ fn markdown_reader_external_entry_reuses_tabs_and_respects_disabled_default(
     cx: &mut TestAppContext,
 ) {
     use nxtools_core::AppConfig;
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create external entry fixture directory");
     let first = directory.path().join("第一份 文档.md");
     let second = directory.path().join("第二份 文档.markdown");
-    std::fs::write(&first, "# First").unwrap();
-    std::fs::write(&second, "# Second").unwrap();
+    std::fs::write(&first, "# First").expect("write first external document fixture");
+    std::fs::write(&second, "# Second").expect("write second external document fixture");
     let mut config = AppConfig::default();
     config.markdown_reader.font_size = 20;
     config.markdown_reader.show_outline = false;
@@ -513,26 +528,30 @@ fn markdown_reader_external_entry_reuses_tabs_and_respects_disabled_default(
             .update(cx, |root, _, cx| {
                 let root = root
                     .downcast::<gpui_kit::base::Root>()
-                    .ok()
                     .expect("reader root");
                 let view = root
                     .read(cx)
                     .view()
                     .clone()
                     .downcast::<Reader>()
-                    .ok()
                     .expect("original reader");
                 let reader = view.read(cx);
                 assert_eq!(reader.tabs.len(), 2);
                 assert_eq!(
-                    file_name(&reader.active_tab().unwrap().document).as_ref(),
+                    file_name(
+                        &reader
+                            .active_tab()
+                            .expect("reused first external tab")
+                            .document
+                    )
+                    .as_ref(),
                     "第一份 文档.md"
                 );
                 assert_eq!(reader.font, 20.);
                 assert_eq!(reader.measure, presentation::WIDE_MEASURE);
                 assert!(!reader.outline_visible);
             })
-            .unwrap();
+            .expect("update existing reader window");
         config.markdown_reader.enabled = false;
         install_settings(&config, config_path, cx);
         assert!(!open_external(second, Uuid::new_v4(), None, cx));
@@ -542,9 +561,9 @@ fn markdown_reader_external_entry_reuses_tabs_and_respects_disabled_default(
 
 #[gpui_kit::test]
 fn markdown_reader_prose_code_action_copies_source_inside_narrow_view(cx: &mut TestAppContext) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create code action fixture directory");
     let path = directory.path().join("中文技术文档.md");
-    std::fs::write(&path, "# 网络调参\n\n## 带宽与延迟\n\n```rust\nlet rtt_ms = 120;\n```\n\n| 参数 | 计算方法 |\n| --- | --- |\n| RTT | long_unbroken_table_cell_that_must_not_widen_the_window_more |\n").unwrap();
+    std::fs::write(&path, "# 网络调参\n\n## 带宽与延迟\n\n```rust\nlet rtt_ms = 120;\n```\n\n| 参数 | 计算方法 |\n| --- | --- |\n| RTT | long_unbroken_table_cell_that_must_not_widen_the_window_more |\n").expect("write narrow technical document fixture");
     let (reader, surface) = open_fixture(cx);
     surface.simulate_resize(size(px(680.), px(460.)));
     surface.update(|window, cx| {

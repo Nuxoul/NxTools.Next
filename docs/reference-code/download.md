@@ -2,6 +2,8 @@
 
 Last verified: 2026-08-11.
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md): Component `vendor/gpui-component-0100`, Windows `vendor/gpui-pre-windows-0312`. Earlier versioned API/source coordinates and outcomes below remain dated evidence, not active dependency pins. Original requested layouts/variants, input/focus, task/native gesture and window owners, cancellation and deferred callbacks remain unchanged; availability is not adoption or acceptance.
+
 ## Scope and authority
 
 | Source | Role | Reuse rule |
@@ -3556,3 +3558,7 @@ Keep immutable routing, strict certificate validation, redirect-sensitive-header
 Rechecked `D:\Code\ab-download-manager-master\desktop\app\src\main\kotlin\com\abdownloadmanager\desktop\utils\OSFileIconProvider.kt::getIcon/getIconOfFileExtension`: names without a dot use the empty extension and still query/cache the OS file-type icon. Legacy `D:\Code\NxTools\Views\MainWindow.axaml` uses its generic draft glyph; it does not own Windows icon extraction.
 
 Next unfinished extensionless names previously produced no resource key, permanently retaining the line-art placeholder, while completed targets received Windows' generic file artwork. They now use the existing `nxtools-file-type:generic` resource and bounded correlated Shell icon request/cache. Known file types and completed actual-target icons retain their existing precedence; pending/image-load failure retains the original neutral File placeholder. No task state, row geometry, selection, native window lifecycle or file association changes. The production DownloadApplication regression asserts an actual generic extraction command, not source tokens.
+
+### Continuous Desktop progress projection
+
+Rechecked ABDM `BaseSingleDownloadComponent.kt:107–134` (same downloadId monitor state) and old NxTools `DownloadTaskViewModel.cs:599–625` (UI-thread status/progress notification). Next `downloads.rs::handle_engine_event -> refresh_snapshot -> apply_task_window_directive -> task_windows_impl.rs::update_task_window -> task_window.rs::replace_snapshot` preserves the original window/view/input. A compact task snapshot lacks live segment progress: consuming one continuous state event must not acknowledge later queued progress merely because the engine snapshot already has a higher sequence. Authoritative refresh/session change/gap retains its explicit invalidation semantics. The scoped regression/fix boundary is recorded in `11-21-desktop-motion-acrylic-style/download-followup.md`; no transfer, storage, IPC, native show/hide or task-window lifecycle replacement belongs to it.

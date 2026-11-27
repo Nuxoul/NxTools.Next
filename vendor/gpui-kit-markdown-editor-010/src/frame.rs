@@ -10,7 +10,7 @@
 use std::{collections::HashMap, ops::Range, rc::Rc};
 
 use gpui::{Bounds, Pixels, Point, point, px, size};
-use gpui_kit::base::text::editor_host::{ColumnAlign, LeafGeometry};
+use gpui_kit::base::text::editor_host::LeafGeometry;
 
 use super::{id::BlockId, position::BlockPosition, projection::LeafInfo};
 
@@ -36,7 +36,6 @@ pub(crate) fn into_frame(
             frame.leaves.push(LeafGeom {
                 info: *info,
                 geometry,
-                align: ColumnAlign::None,
             });
         }
     }
@@ -46,43 +45,16 @@ pub(crate) fn into_frame(
 pub(crate) struct LeafGeom {
     pub(crate) info: LeafInfo,
     geometry: LeafGeometry,
-    /// A table cell's column alignment. gpui-kit paints centred and
-    /// right-aligned cell text shifted inside the text element, but
-    /// `LeafGeometry` positions are unshifted; `row_shift` puts it back.
-    pub(crate) align: ColumnAlign,
 }
 
 impl LeafGeom {
-    /// How far the row at `y` (an unshifted line top) is painted right of
-    /// where `LeafGeometry` reports it, for an aligned table cell.
-    fn row_shift(&self, y: Pixels) -> Pixels {
-        if matches!(self.align, ColumnAlign::None | ColumnAlign::Left) {
-            return px(0.);
-        }
-        let len = self.geometry.len();
-        let b = self.bounds();
-        let (mut lo, mut hi) = (None::<Pixels>, None::<Pixels>);
-        for i in 0..=len {
-            let p = self.geometry.position_for_index(i);
-            if (p.y - y).abs() < px(0.5) {
-                lo = Some(lo.map_or(p.x, |v: Pixels| v.min(p.x)));
-                hi = Some(hi.map_or(p.x, |v: Pixels| v.max(p.x)));
-            }
-        }
-        let (Some(lo), Some(hi)) = (lo, hi) else {
-            return px(0.);
-        };
-        let free = (b.right() - lo) - (hi - lo);
-        let free = free.max(px(0.));
-        match self.align {
-            ColumnAlign::Center => free / 2.,
-            ColumnAlign::Right => free,
-            _ => px(0.),
-        }
-    }
-
     pub(crate) fn bounds(&self) -> Bounds<Pixels> {
-        self.geometry.bounds()
+        let mut bounds = self.geometry.bounds();
+        if let Some(content) = self.geometry.table_cell_content_bounds() {
+            bounds.origin.x = content.origin.x;
+            bounds.size.width = content.size.width;
+        }
+        bounds
     }
 
     pub(crate) fn line_height(&self) -> Pixels {
@@ -107,20 +79,11 @@ impl LeafGeom {
 
     /// Top of the caret at `offset`, window coordinates.
     pub(crate) fn caret_point(&self, offset: usize) -> Point<Pixels> {
-        let mut p = self.geometry.position_for_index(self.index(offset));
-        p.x += self.row_shift(p.y);
-        p
+        self.geometry.position_for_index(self.index(offset))
     }
 
     /// Closest model offset for a window point.
     pub(crate) fn offset_at(&self, at: Point<Pixels>) -> usize {
-        let mut at = at;
-        if !matches!(self.align, ColumnAlign::None | ColumnAlign::Left) {
-            // The row under `at`, then undo its alignment shift.
-            let row = self.geometry.index_for_position(at);
-            let y = self.geometry.position_for_index(row).y;
-            at.x -= self.row_shift(y);
-        }
         let index = self.geometry.index_for_position(at);
         if self.info.atomic {
             usize::from(index * 2 > self.geometry.len().max(1))
@@ -303,7 +266,7 @@ impl FrameLayout {
     }
 }
 
-/// One table's laid-out grid, rebuilt from its cells' text geometry.
+/// One table's laid-out grid, collected from the renderer's cell boxes.
 #[derive(Clone, Debug)]
 pub(crate) struct TableGeom {
     pub(crate) table: BlockId,
@@ -315,135 +278,50 @@ pub(crate) struct TableGeom {
     pub(crate) bounds: Bounds<Pixels>,
 }
 
-/// A table as the layout pass needs it: cell ids by row and column aligns.
+/// A table as the layout pass needs it: cell ids by row.
 pub(crate) struct TableShape {
     pub(crate) table: BlockId,
     pub(crate) grid: Vec<Vec<BlockId>>,
-    pub(crate) aligns: Vec<ColumnAlign>,
 }
 
-/// Cell box padding and rule widths of gpui-kit's table (`px_3`, `py(7)`,
-/// `border_r_1` between columns, `border_1` frame).
-const CELL_PAD_Y: f32 = 7.;
+/// The border width of the existing table frame.
 const RULE: f32 = 1.;
 
 impl FrameLayout {
-    /// Rebuild each table's column and row boxes from where its cells'
-    /// text was laid out (D20 follow-up). gpui-kit lays a column out as
-    /// `[lead slack][cell: px_3 + text + px_3][trail slack + divider]`, the
-    /// slack split by the column alignment (Left: after, Centre: both
-    /// sides, Right: before) and sized in proportion to the cell width.
-    /// The text element of a cell is the cell's content box, so its left
-    /// edge plus the alignment's slack share gives the column edge; the
-    /// one unknown, slack per pixel of cell, comes from the gaps between
-    /// neighbouring cells. Also records each cell's alignment.
-    pub(crate) fn layout_tables(
-        &mut self,
-        shapes: &[TableShape],
-        pad_x: Pixels,
-        content_right: Option<Pixels>,
-    ) {
+    /// Uses renderer-owned grid boxes, independently of each cell's aligned
+    /// text width. Text geometry already includes the painted alignment.
+    pub(crate) fn layout_tables(&mut self, shapes: &[TableShape]) {
         self.grids.clear();
         self.cell_boxes.clear();
         for shape in shapes {
-            for row in &shape.grid {
-                for (c, cell) in row.iter().enumerate() {
-                    let align = shape.aligns.get(c).copied().unwrap_or_default();
-                    if let Some(ix) = self.index.get(cell) {
-                        self.leaves[*ix].align = align;
-                    }
-                }
-            }
-            let cols = shape.grid.iter().map(Vec::len).max().unwrap_or(0);
-            // Each column's text element (left, width): all cells of a
-            // column share it.
-            let mut elems: Vec<Option<(Pixels, Pixels)>> = vec![None; cols];
-            for row in &shape.grid {
-                for (c, cell) in row.iter().enumerate() {
-                    if elems[c].is_none()
-                        && let Some(leaf) = self.leaf(*cell)
-                    {
-                        let b = leaf.bounds();
-                        elems[c] = Some((b.left(), b.size.width));
-                    }
-                }
-            }
-            let Some(elems) = elems.into_iter().collect::<Option<Vec<_>>>() else {
-                continue;
-            };
-            if elems.is_empty() {
-                continue;
-            }
-            let share = |c: usize| match shape.aligns.get(c).copied().unwrap_or_default() {
-                ColumnAlign::Center => (0.5, 0.5),
-                ColumnAlign::Right => (1., 0.),
-                _ => (0., 1.),
-            };
-            let cell_w = |c: usize| elems[c].1 + pad_x * 2.;
-            let rule = px(RULE);
-            // Slack per pixel of cell width, from the first informative gap.
-            let mut k: Option<f32> = None;
-            for c in 0..cols.saturating_sub(1) {
-                let gap = (elems[c + 1].0 - pad_x) - (elems[c].0 + elems[c].1 + pad_x) - rule;
-                let denom =
-                    share(c).1 * f32::from(cell_w(c)) + share(c + 1).0 * f32::from(cell_w(c + 1));
-                if denom > 0. {
-                    k = Some((f32::from(gap) / denom).max(0.));
-                    break;
-                }
-            }
-            if k.is_none()
-                && let Some(right) = content_right
-            {
-                let last = cols - 1;
-                let gap = (right - rule) - (elems[last].0 + elems[last].1 + pad_x);
-                let denom = share(last).1 * f32::from(cell_w(last));
-                if denom > 0. {
-                    k = Some((f32::from(gap) / denom).max(0.));
-                }
-            }
-            let k = k.unwrap_or(0.);
-            let col_spans: Vec<(Pixels, Pixels)> = (0..cols)
-                .map(|c| {
-                    let (lead, trail) = share(c);
-                    let slack = cell_w(c) * k;
-                    let left = elems[c].0 - pad_x - slack * lead;
-                    let right = elems[c].0 + elems[c].1 + pad_x + slack * trail;
-                    let right = if c + 1 < cols { right + rule } else { right };
-                    (left, right)
-                })
-                .collect();
-            let pad_y = px(CELL_PAD_Y);
-            let row_spans: Vec<(Pixels, Pixels)> = shape
+            let boxes: Option<Vec<Vec<Bounds<Pixels>>>> = shape
                 .grid
                 .iter()
-                .enumerate()
-                .filter_map(|(r, row)| {
-                    let bounds: Vec<Bounds<Pixels>> = row
-                        .iter()
-                        .filter_map(|c| self.leaf(*c).map(|l| l.bounds()))
-                        .collect();
-                    let top = bounds.iter().map(|b| b.top()).reduce(|a, b| a.min(b))?;
-                    let bottom = bounds.iter().map(|b| b.bottom()).reduce(|a, b| a.max(b))?;
-                    let last = r + 1 == shape.grid.len();
-                    Some((
-                        top - pad_y,
-                        bottom + pad_y + if last { px(0.) } else { rule },
-                    ))
+                .map(|row| {
+                    row.iter()
+                        .map(|cell| self.leaf(*cell)?.geometry.table_cell_bounds())
+                        .collect()
                 })
+                .collect();
+            let Some(boxes) = boxes else { continue };
+            let Some(first) = boxes.first().filter(|row| !row.is_empty()) else {
+                continue;
+            };
+            let col_spans: Vec<_> = first.iter().map(|b| (b.left(), b.right())).collect();
+            let row_spans: Vec<_> = boxes
+                .iter()
+                .filter_map(|row| row.first().map(|b| (b.top(), b.bottom())))
                 .collect();
             if row_spans.len() != shape.grid.len() {
                 continue;
             }
-            for (r, row) in shape.grid.iter().enumerate() {
-                for (c, cell) in row.iter().enumerate() {
-                    let (l, rt) = col_spans[c];
-                    let (t, b) = row_spans[r];
-                    self.cell_boxes
-                        .insert(*cell, Bounds::from_corners(point(l, t), point(rt, b)));
+            for (row, bounds) in shape.grid.iter().zip(&boxes) {
+                for (cell, bounds) in row.iter().zip(bounds) {
+                    self.cell_boxes.insert(*cell, *bounds);
                 }
             }
-            let (l, r) = (col_spans[0].0, col_spans[cols - 1].1);
+            let rule = px(RULE);
+            let (l, r) = (col_spans[0].0, col_spans[col_spans.len() - 1].1);
             let (t, b) = (row_spans[0].0, row_spans[row_spans.len() - 1].1);
             self.grids.push(TableGeom {
                 table: shape.table,

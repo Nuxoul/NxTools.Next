@@ -341,7 +341,7 @@ if ($restartIndexerServiceOnFailure -and $packageCompleted) {
 if ($CreateDistributionArchive -and -not $SkipInstaller -and $iscc -and $Configuration -eq 'Release') {
     & python (Join-Path $PSScriptRoot 'package-archive-source.py') `
         --output (Join-Path $root 'artifacts\installer\third_party\archive-worker\archive-worker-source.zip') `
-        --installer (Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.4.exe')
+        --installer (Join-Path $root 'artifacts\installer\NxTools.Next-setup-0.7.5.exe')
     if ($LASTEXITCODE -ne 0) { throw 'Complete release distribution failed.' }
 }
 }

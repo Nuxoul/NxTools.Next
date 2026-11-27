@@ -577,6 +577,7 @@ mod input_adoption_tests {
     }
     #[gpui_kit::test]
     fn custom_command_input_has_one_full_width_kit_frame(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::test::TestWindowExt as _;
         cx.update(gpui_kit::init);
         cx.update(crate::theme::apply_component_theme);
         let input_slot = Rc::new(std::cell::RefCell::new(None));
@@ -596,18 +597,7 @@ mod input_adoption_tests {
         let field = window
             .debug_bounds("adopted-command-input")
             .expect("field frame");
-        let actual = window.update(|window, _| {
-            gpui_kit::base::test_support::snapshots(window)
-                .into_iter()
-                .find(|snapshot| {
-                    snapshot
-                        .path()
-                        .iter()
-                        .any(|id| id == &gpui_kit::ElementId::from(("input", input.entity_id())))
-                })
-                .expect("actual Kit input snapshot")
-                .bounds()
-        });
+        let actual = window.update(|window, _| window.find(("input", input.entity_id())).bounds());
         assert_eq!(
             actual.size, field.size,
             "no hand-painted outer frame or inset around the actual Kit Input"
@@ -623,18 +613,7 @@ mod input_adoption_tests {
         );
         window.refresh().expect("repaint edited original input");
         assert_eq!(input.entity_id(), identity);
-        let repainted = window.update(|window, _| {
-            gpui_kit::base::test_support::snapshots(window)
-                .into_iter()
-                .find(|snapshot| {
-                    snapshot
-                        .path()
-                        .iter()
-                        .any(|id| id == &gpui_kit::ElementId::from(("input", identity)))
-                })
-                .expect("original entity remains the rendered Input")
-                .bounds()
-        });
+        let repainted = window.update(|window, _| window.find(("input", identity)).bounds());
         assert_eq!(
             repainted, actual,
             "focus/edit must not add a second frame or shift layout"

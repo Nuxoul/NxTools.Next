@@ -37,7 +37,7 @@ fn page(surface: &mut VisualTestContext, index: usize) {
     draw(surface);
 }
 fn wheel(surface: &mut VisualTestContext, hit: gpui_kit::Point<gpui_kit::Pixels>, amount: f32) {
-    surface.simulate_event(gpui_kit::ScrollWheelEvent {
+    surface.simulate_event(gpui_kit::ScrollEvent {
         position: hit,
         delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(amount))),
         ..Default::default()
@@ -238,7 +238,7 @@ fn audit06_shared_actual_quick_form_retains_inputs_and_original_save_at_minimum(
             .debug_bounds("quick-launch-command-form-scroll")
             .expect("original detail scroll");
         for _ in 0..5 {
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(scroll.center().x, scroll.top() + px(80.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -20.0)),
                 ..Default::default()

@@ -31,7 +31,7 @@ impl ExtensionManagerView {
         cx: &mut Context<Self>,
     ) {
         if target.is_some() {
-            self.detail_initial_page = 5;
+            self.detail_initial_page = 4;
         }
         let registry = self.application.read(cx).packages.clone();
         let defaults = registry
@@ -598,30 +598,63 @@ mod tests {
             super::super::click_management(surface, "运行环境", false);
             return;
         }
+        let viewport_selector = if selector == "environment-package-edit" {
+            Some("extension-detail-settings-viewport")
+        } else if selector == "environment-inherit"
+            || selector.starts_with("environment-browse-")
+            || selector.starts_with("environment-check-")
+        {
+            Some("environment-viewport")
+        } else {
+            None
+        };
+        let mut last_geometry = None;
         for _ in 0..24 {
             surface.update(|window, cx| window.draw(cx).clear(cx));
-            if let Some(bounds) = surface.debug_bounds(selector)
-                && bounds.top() >= px(0.0)
-                && bounds.bottom() <= px(430.0)
-                && (!(selector.starts_with("environment-browse-")
-                    || selector.starts_with("environment-check-"))
-                    || surface
-                        .debug_bounds("environment-viewport")
-                        .is_some_and(|viewport| {
-                            bounds.top() >= viewport.top() && bounds.bottom() <= viewport.bottom()
-                        }))
+            let viewport = viewport_selector.and_then(|selector| surface.debug_bounds(selector));
+            let button = surface.update(|window, _| {
+                gpui_kit::base::test_support::snapshots(window)
+                    .into_iter()
+                    .find(|node| {
+                        node.role() == Some(gpui_kit::Role::Button)
+                            && node.path().last() == Some(&gpui_kit::ElementId::from(selector))
+                    })
+            });
+            let bounds = button.as_ref().map(|button| button.bounds());
+            let window_bounds = surface.update(|window, _| window.fully_visible_bounds());
+            let clip =
+                viewport.map_or(window_bounds, |viewport| viewport.intersect(&window_bounds));
+            let hit_bounds = bounds.map(|bounds| bounds.intersect(&clip));
+            last_geometry = Some((bounds, viewport, clip));
+            if let Some(button) = button
+                && button.visible()
+                && button.disabled() != Some(true)
+                && let Some(bounds) = bounds
+                && let Some(hit_bounds) = hit_bounds
+                && (viewport_selector.is_none() || viewport.is_some())
+                && bounds.top() >= clip.top()
+                && bounds.bottom() <= clip.bottom()
+                && hit_bounds.size.width > px(0.0)
+                && hit_bounds.size.height > px(0.0)
             {
-                surface.simulate_click(bounds.center(), Modifiers::default());
+                // Sheet ingress can clip a button horizontally; target its painted portion.
+                surface.simulate_click(hit_bounds.center(), Modifiers::default());
                 surface.run_until_parked();
                 return;
             }
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
-                position: gpui_kit::point(px(600.0), px(250.0)),
-                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
+            let position = clip.center();
+            let delta = if bounds.is_some_and(|bounds| bounds.top() < clip.top()) {
+                3.0
+            } else {
+                -3.0
+            };
+            surface.simulate_event(gpui_kit::ScrollEvent {
+                position,
+                delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, delta)),
                 ..Default::default()
             });
         }
-        panic!("reachable action {selector}");
+        panic!("reachable action {selector}; bounds/viewport/clip={last_geometry:?}");
     }
     pub(super) fn idle(app: &Entity<ExtensionApplication>, surface: &mut VisualTestContext) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -941,7 +974,26 @@ mod package_tests {
         tests::click(surface, "extension-manage-fixture.python");
         extensions_settings::tests::select_page(surface, "运行环境");
         tests::click(surface, "environment-package-edit");
+        assert!(
+            surface.read(|cx| {
+                view.read(cx).environment.as_ref().is_some_and(|draft| {
+                    draft.target.as_deref() == Some("fixture.python") && draft.inherit
+                })
+            }),
+            "the visible package edit button opens the inherited draft"
+        );
         tests::click(surface, "environment-inherit");
+        assert!(
+            surface.read(|cx| {
+                !view
+                    .read(cx)
+                    .environment
+                    .as_ref()
+                    .expect("open draft")
+                    .inherit
+            }),
+            "the official inheritance button selects a package override"
+        );
         tests::set_path(&view, surface, "");
         tests::click(surface, "environment-save");
         assert!(surface.read(|cx| view.read(cx).draft_error.is_some()));
@@ -959,8 +1011,31 @@ mod package_tests {
             saved.extensions.runtime_defaults["python"],
             PathBuf::from("C:\\Synthetic\\default.exe")
         );
+        assert_eq!(
+            surface.read(|cx| view.read(cx).detail_initial_page),
+            4,
+            "saving returns to the package source page containing runtime settings"
+        );
         tests::click(surface, "environment-package-edit");
+        assert!(
+            surface.read(|cx| {
+                view.read(cx).environment.as_ref().is_some_and(|draft| {
+                    draft.target.as_deref() == Some("fixture.python") && !draft.inherit
+                })
+            }),
+            "the visible package edit button reopens the saved override"
+        );
         tests::click(surface, "environment-inherit");
+        assert!(
+            surface.read(|cx| {
+                view.read(cx)
+                    .environment
+                    .as_ref()
+                    .expect("open draft")
+                    .inherit
+            }),
+            "the official inheritance button restores the default source"
+        );
         assert_eq!(
             surface.read(|cx| view
                 .read(cx)
@@ -983,6 +1058,14 @@ mod package_tests {
                 .runtime_override
                 .is_none()
         );
+        let restored = nxtools_core::AppConfig::load_from(&path).expect("restored config");
+        assert!(restored.extensions.packages[0].trust.is_none());
+        assert!(!restored.extensions.packages[0].enabled);
+        assert_eq!(
+            restored.extensions.runtime_defaults,
+            saved.extensions.runtime_defaults
+        );
+        assert_eq!(surface.read(|cx| view.read(cx).detail_initial_page), 4);
     }
 }
 

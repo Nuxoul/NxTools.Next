@@ -37,8 +37,8 @@ with native255-UTF-16 component and32767-byte transport bounds, and requires str
 Selection uniqueness and real frame/resource limits remain; no fixed4096-ordinal Extract cap.
 See [selected output contract](../../nxtools-archive/backend/reusable-plans.md#scenario-selected-extraction-output-prefix).
 
-SetWindowBounds optional corner_radius carries device-pixel native outer corners without a new
-command/version: missing/null preserves the existing region and is omitted from old Rust requests;
-explicit0 resets, positive requests rounding after size/readback. Quick Launch alone opts in at
-semantic8DIP/current scale; other current callers use None. C# rejects malformed/negative/overflow
-integer values before native mutation. See [native corner contract](../../platformhost/native-contracts.md#scenario-optional-native-outer-window-corners) for HRGN ownership and actual boundary tests.
+SetWindowBounds carries handle, position and client size only; window corners are part of the
+material write (DWM33/34 on Windows 11, square on Windows 10, never a GDI region). See
+[native corner contract](../../platformhost/native-contracts.md#scenario-native-outer-window-corners).
+`window_material_v1` styles are `solid|acrylic`, surfaces `backdrop|transient|transparent`;
+capability facts add `system_backdrop` and `rounded_corners`.

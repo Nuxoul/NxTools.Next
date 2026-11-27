@@ -17,4 +17,15 @@ reverses the exact serializer fragment to its upstream hash and the callback for
 approved passive baseline SHA2562a44a51e00c803b278b9b4c925a2c0dbe0625cf94334c7c16658e9c2836660a8.
 No whole-vendor format sweep or further source change is authorized.
 
+## Kit 0.10.0 compatibility
+The approved 2026-11-20 migration updates normal/dev dependency bindings in Cargo.toml to Kit 0.10.0/pre =0.3.12 and the two link-click/link-hover event.modifiers.secondary(cx) calls in element.rs. New KeyBinding::new requires static strings:28 state.rs formatted keys use equivalent static cmd/alt-versus-ctrl branches with unchanged actions/contexts; rustfmt affects only those expressions. The direct.rs ListItem bridge adds task_marker: None, matching its existing span: None and the official model-built editor-host nodes. The original revision and all original file hashes remain. The provenance gate reverses these exact substitutions before comparing the manifest/state/direct hashes and prior passive baseline, and checks both platform shortcut mappings. Earlier passive, lowbit, serializer and formatting exceptions remain unchanged; no editor replacement, additional feature or whole-vendor formatting is included.
+Two link-click/hover fixtures in src/tests/view.rs obtain Modifiers::secondary_key(cx) through VisualTestContext before dispatch; the event values and assertions remain. Exact reversal restores the original test-file hash.
+
+## Approved Base editor-host geometry compatibility
+The editor revision, original model and all original fixtures/assertions remain fixed. Base0.10.0's separately approved five-file patch exposes LeafGeometry::table_cell_bounds() for actual column slack/dividers and row frames, plus table_cell_content_bounds() for content regions resolved from final Div style padding/border. Text position/index already reflect actual alignment. Its src/text/state.rs difference is only preserve_editor_whitespace:false in the complete NodeContext initializer; only editor_host::parse_markdown opts into whitespace fidelity. Ordinary TextView retains upstream0.10.0 behavior.
+
+src/frame.rs consumes real grid boxes, takes bounds' horizontal range from the actual content box while retaining the text box's vertical range, and removes old row_shift. src/element.rs removes only the geometry call's shape-aligns and padding/right reverse-inference parameters; other approved passive/API adaptations remain unchanged.
+
+`tests/architecture/markdown-editor-frame-0100.json` records six readable exact upstream/compatible replacement fragments. The editor gate reverses each fragment and compares the restored frame.rs digest with the original upstream value. The element call is also exactly reversed to the original approved passive baseline. No compatible-source replacement digest or opaque baseline is introduced. The original d20 suite and complete234-test editor library pass unchanged. Native/physical/visual acceptance remains separate.
+
 Source/provenance/compiledfixture/native/physical/useracceptance remain separate. This patch does not authorize package/install/runtime/service actions.

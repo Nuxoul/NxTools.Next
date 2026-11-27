@@ -45,7 +45,7 @@ pub(crate) fn fixture(
     let notifications = cx.update(|cx| cx.new(|_| NotificationCenter::default()));
     let app = cx.update(|cx| {
         cx.new(|cx| {
-            DownloadApplication::new(
+            super::ordinary_presentation_fixture::confirmed_application(
                 copy,
                 Rc::new(platform),
                 notifications,

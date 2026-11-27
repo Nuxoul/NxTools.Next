@@ -923,7 +923,8 @@ impl OperationForm {
         let close = confirm.clone();
         let correlation_id = self.id;
         tracing::info!(event="archive.reclamation.confirmation_shown", %correlation_id, "destructive reclamation acknowledgement requested");
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let confirm = confirm.clone();
             let cancel = cancel.clone();
             let close = close.clone();
@@ -1104,7 +1105,8 @@ impl OperationForm {
             let weak = cx.entity().downgrade();
             let cancel = weak.clone();
             let close = weak.clone();
-            window.open_dialog(cx, move |dialog, _, _| {
+            window.open_dialog(cx, move |dialog, _, cx| {
+                let dialog = dialog.bg(crate::theme::overlay_background(cx));
                 let weak = weak.clone();
                 let cancel = cancel.clone();
                 let close = close.clone();

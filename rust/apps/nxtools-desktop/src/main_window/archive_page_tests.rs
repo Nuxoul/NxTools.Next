@@ -81,7 +81,7 @@ fn select_page(window: &mut VisualTestContext, index: usize) {
             window.update(|window, cx| window.draw(cx).clear(cx));
             return;
         }
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: point(
                 viewport.left() + px(80.),
                 viewport.top() + viewport.size.height / 2.,
@@ -209,7 +209,7 @@ fn archive_settings_real_keyboard_scroll_and_themes_keep_controls_reachable(
                     reached = true;
                     break;
                 }
-                window.simulate_event(gpui_kit::ScrollWheelEvent {
+                window.simulate_event(gpui_kit::ScrollEvent {
                     position: point(dimensions.width - px(150.0), dimensions.height - px(90.0)),
                     delta: gpui_kit::ScrollDelta::Lines(point(0.0, -3.0)),
                     ..Default::default()
@@ -321,7 +321,7 @@ fn archive_settings_exclusion_editor_is_lossless_and_stream_levels_are_valid(
         {
             break;
         }
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: point(px(898.0), px(390.0)),
             delta: gpui_kit::ScrollDelta::Lines(point(0.0, -4.0)),
             ..Default::default()
@@ -419,7 +419,7 @@ fn archive_integration_page_saves_desired_revision_without_claiming_applied(
             found = true;
             break;
         }
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position: point(px(700.0), px(300.0)),
             delta: gpui_kit::ScrollDelta::Lines(point(0.0, -3.0)),
             ..Default::default()
@@ -471,7 +471,7 @@ fn reveal(window: &mut VisualTestContext, selector: &'static str) {
         viewport.right() - px(12.),
         viewport.top() + viewport.size.height / 2.,
     );
-    window.simulate_event(gpui_kit::ScrollWheelEvent {
+    window.simulate_event(gpui_kit::ScrollEvent {
         position,
         delta: gpui_kit::ScrollDelta::Lines(point(0., 100.)),
         ..Default::default()
@@ -483,7 +483,7 @@ fn reveal(window: &mut VisualTestContext, selector: &'static str) {
         }) {
             return;
         }
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position,
             delta: gpui_kit::ScrollDelta::Lines(point(0., -2.)),
             ..Default::default()

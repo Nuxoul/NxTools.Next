@@ -9,6 +9,13 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 
+OWNED_PREFIXES = ("vh-", "vf-", "package-build-", "rust-tests-")
+RUST_FIXTURE_ENV = (
+    "PI_SCRATCH_DIR", "TEMP", "TMP", "STORY_MD", "NXTOOLS_TAR_STREAM_CHAIN_CASES",
+    "NXTOOLS_TAR_STREAM_EVIDENCE_ROOT", "NXTOOLS_TAR_STREAM_FIXTURES", "NXTOOLS_TAR_STREAM_HOST",
+    "NXTOOLS_ARCHIVE_WORKER_FIXTURE", "NXTOOLS_ARCHIVE_AC_PROGRESS_WIRE", "NXTOOLS_OPT03_CREATE_WIRE",
+)
+
 TOOLS = r"""
 function Initialize-LowMemoryRustBuildEnvironment {
     $env:CARGO_BUILD_JOBS='1'; $env:CARGO_INCREMENTAL='0'; $env:RUSTFLAGS='-C codegen-units=256'
@@ -50,8 +57,11 @@ if ($env:CLEANUP_INSTALLER -eq '1') {
     }
 }
 function cargo {
-    Fail-Step 'cargo'
-    if (Native-Failed 'cargo') { return }
+    $step = if ($args[0] -eq 'test') { 'workspace-test' }
+        elseif ($args[0] -eq 'build' -and $args -contains 'isolated-codecs') { 'fixture-worker' }
+        else { 'cargo' }
+    Fail-Step $step
+    if (Native-Failed $step) { return }
     $global:LASTEXITCODE=0
 }
 function cmd.exe {
@@ -71,11 +81,22 @@ function python {
         [IO.Directory]::CreateDirectory((Split-Path -Parent $path)) | Out-Null
         [IO.File]::WriteAllText($path, 'synthetic source evidence')
         if (Native-Failed 'source') { return }
+    } elseif ($args[0] -like '*prepare-tar-stream-safety-fixtures.py') {
+        if ($args[1] -ne '--root' -or $args[3] -ne '--oracle' -or $args[4] -ne $env:NXTOOLS_TAR_STREAM_ORACLE -or
+            -not (Test-Path -LiteralPath $args[2] -PathType Container) -or
+            (Split-Path -Parent $args[2]) -ne $env:PI_SCRATCH_DIR -or
+            (Split-Path -Parent $env:PI_SCRATCH_DIR) -ne $env:CLEANUP_OWNED_BASE) { throw 'invalid TAR fixture producer inputs' }
+        $fixtures = [IO.Directory]::CreateDirectory((Join-Path $args[2] 'fixtures'))
+        [IO.File]::WriteAllText((Join-Path $fixtures.FullName 'plain.tar'), 'synthetic TAR fixture')
+        Fail-Step 'tar-fixtures'
+        if (Native-Failed 'tar-fixtures') { return }
     } else { Fail-Step 'python-gate' }
     $global:LASTEXITCODE=0
 }
 function dotnet {
     $arguments = @($args)
+    $testsProject = '.\csharp\NxTools.PlatformHost.Tests\NxTools.PlatformHost.Tests.csproj'
+    $apphost = Join-Path (Get-Location).Path 'csharp\NxTools.PlatformHost.Tests\bin\Debug\net8.0-windows\NxTools.PlatformHost.Tests.exe'
     if ($arguments[0] -eq 'publish') {
         $artifacts = $arguments[[Array]::IndexOf($arguments, '--artifacts-path') + 1]
         $output = $arguments[[Array]::IndexOf($arguments, '-o') + 1]
@@ -99,6 +120,11 @@ function dotnet {
         [IO.File]::AppendAllText($env:CLEANUP_TOOL_LOG, "publish-root:$([IO.Path]::GetFullPath((Split-Path -Parent $output)))`n")
         Fail-Step $step
         if (Native-Failed $step) { return }
+    } elseif (($arguments -join '|') -eq "build|$testsProject|-c|Debug") {
+        [IO.Directory]::CreateDirectory((Split-Path -Parent $apphost)) | Out-Null
+        [IO.File]::WriteAllText($apphost, 'synthetic apphost - never execute')
+        Fail-Step 'fixture-apphost'
+        if (Native-Failed 'fixture-apphost') { return }
     } elseif ($arguments[0] -eq 'build') {
         # The generated inputs must still exist until the consuming test build returns.
         foreach ($argument in $arguments) {
@@ -108,6 +134,21 @@ function dotnet {
         }
         Fail-Step 'test-build'
         if (Native-Failed 'test-build') { return }
+    } elseif ($arguments -contains 'archive OPT01 AC repair production progress wire') {
+        $expected = "run|--project|$testsProject|-c|Debug|--no-build|--fixtures|archive OPT01 AC repair production progress wire|OPT03 create actual native result locations"
+        if (($arguments -join '|') -ne $expected -or $env:NXTOOLS_TAR_STREAM_HOST -ne $apphost -or
+            -not (Test-Path -LiteralPath $apphost -PathType Leaf) -or
+            -not (Test-Path -LiteralPath $env:NXTOOLS_ARCHIVE_WORKER_FIXTURE -PathType Leaf) -or
+            $env:NXTOOLS_OPT03_CREATE_WIRE -ne $env:PI_SCRATCH_DIR -or
+            (Split-Path -Parent $env:NXTOOLS_ARCHIVE_AC_PROGRESS_WIRE) -ne $env:PI_SCRATCH_DIR) {
+            throw 'invalid wire fixture producer inputs'
+        }
+        [IO.File]::WriteAllText($env:NXTOOLS_ARCHIVE_AC_PROGRESS_WIRE, '{}')
+        foreach ($name in @('ordinary.zip.json', 'split.zip.json', 'split.7z.json')) {
+            [IO.File]::WriteAllText((Join-Path $env:NXTOOLS_OPT03_CREATE_WIRE $name), '{}')
+        }
+        Fail-Step 'fixture-wires'
+        if (Native-Failed 'fixture-wires') { return }
     } elseif ($arguments -contains 'Release') {
         Fail-Step 'release-gate'
         if (Native-Failed 'release-gate') { return }
@@ -219,7 +260,7 @@ class WrapperFixture:
         self.os_temp.mkdir()
         self.owned_base = self.scratch if mode == "scratch" else self.os_temp
         self.foreign = []
-        for prefix in ("vh-", "vf-", "package-build-"):
+        for prefix in OWNED_PREFIXES:
             directory = self.owned_base / (prefix + "foreign-owner")
             directory.mkdir()
             marker = directory / "keep.txt"
@@ -237,11 +278,23 @@ class WrapperFixture:
         self.env = os.environ.copy()
         self.env.update(TEMP=str(self.os_temp), TMP=str(self.os_temp), CLEANUP_FAIL=failure,
                         CLEANUP_TOOL_LOG=str(self.area / "tools.log"), NXTOOLS_RELEASE_SIGNING_KEY="")
-        self.env["PI_SCRATCH_DIR"] = str(self.scratch) if mode == "scratch" else ""
+        self.env["CLEANUP_OWNED_BASE"] = str(self.owned_base)
+        if mode == "scratch":
+            self.env["PI_SCRATCH_DIR"] = str(self.scratch)
+        else:
+            self.env.pop("PI_SCRATCH_DIR", None)
+        for variable in RUST_FIXTURE_ENV[3:]:
+            self.env[variable] = f"caller-{variable}"
+        oracle = self.area / "synthetic 7z.exe"
+        oracle.write_text("fixture marker - never execute", encoding="ascii")
+        self.env["NXTOOLS_TAR_STREAM_ORACLE"] = str(oracle)
         self.evidence_env = {}
         for variable in ("NXTOOLS_ARCHIVE_WORKER_FIXTURE", "NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT", "NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT"):
             value = str(self.area / variable) if custom_evidence else ""
-            self.env[variable] = value
+            if custom_evidence:
+                self.env[variable] = value
+            else:
+                self.env.pop(variable, None)
             self.evidence_env[variable] = value
         programs = self.area / "programs"
         programs.mkdir()
@@ -256,7 +309,7 @@ class WrapperFixture:
             tool.write_text("fixture marker - never execute")
             self.env["CLEANUP_INSTALLER"] = "1"
             self.env["CLEANUP_ISCC_PATH"] = str(tool)
-            self.env["CLEANUP_INSTALLER_OUTPUT"] = str(self.root / "artifacts/installer/NxTools.Next-setup-0.7.4.exe")
+            self.env["CLEANUP_INSTALLER_OUTPUT"] = str(self.root / "artifacts/installer/NxTools.Next-setup-0.7.5.exe")
             installer_script = self.root / "installer/nxtools-next.iss"
             installer_script.parent.mkdir()
             installer_script.write_text("synthetic compiler input - only tool stubs consume this")
@@ -267,15 +320,19 @@ class WrapperFixture:
     def run(self, name, arguments):
         status = self.area / "result.json"
         script = self.area / "run.ps1"
+        fixture_variables = ",".join(map(ps_quote, RUST_FIXTURE_ENV))
         script.write_text(
             "$ErrorActionPreference='Stop'\n"
             f". {ps_quote(self.scripts / 'windows-build-tools.ps1')}\n"
             "$before=(Get-Location).Path; $succeeded=$false; $failure=''\n"
+            f"$fixtureNames=@({fixture_variables}); $fixtureBefore=@{{}}\n"
+            "foreach ($name in $fixtureNames) { $fixtureBefore[$name]=[Environment]::GetEnvironmentVariable($name) }\n"
             "try { & " + ps_quote(self.scripts / name) + " " + arguments
             + "; $succeeded=$true } catch { $failure=$_.Exception.Message }\n"
             "$environment=@{}\n"
             "foreach ($name in @('NXTOOLS_ARCHIVE_WORKER_FIXTURE','NXTOOLS_ARCHIVE_CLI_LIFECYCLE_EVIDENCE_ROOT','NXTOOLS_ARCHIVE_VOLUME_FIXTURE_ROOT')) { $environment[$name]=[Environment]::GetEnvironmentVariable($name) }\n"
-            f"@{{succeeded=$succeeded;failure=$failure;location_restored=((Get-Location).Path -eq $before);environment=$environment}} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath {ps_quote(status)} -Encoding UTF8\n",
+            "$changedFixtureVariables=@(foreach ($name in $fixtureNames) { if ([Environment]::GetEnvironmentVariable($name) -cne $fixtureBefore[$name]) { $name } })\n"
+            f"@{{succeeded=$succeeded;failure=$failure;location_restored=((Get-Location).Path -eq $before);environment=$environment;changed_fixture_variables=$changedFixtureVariables}} | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath {ps_quote(status)} -Encoding UTF8\n",
             encoding="utf-8-sig",
         )
         process = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(script)],
@@ -287,7 +344,7 @@ class WrapperFixture:
 
     def remaining(self):
         return sorted(str(path.name) for path in self.owned_base.iterdir()
-                      if path.is_dir() and path.name.startswith(("vh-", "vf-", "package-build-"))
+                      if path.is_dir() and path.name.startswith(OWNED_PREFIXES)
                       and not path.name.endswith("foreign-owner"))
 
 
@@ -305,6 +362,7 @@ class BuildTreeCleanupTests(unittest.TestCase):
         elif failure:
             self.assertIn("fixture-failure:" + failure if failure != "copy" else "nxtools-desktop.exe", result["failure"])
         self.assertTrue(result["location_restored"])
+        self.assertEqual(result["changed_fixture_variables"], [], "caller Rust fixture environment must be restored")
         self.assertEqual((fixture.key.read_bytes(), fixture.ledger.read_bytes()), fixture.original_material)
         for marker in fixture.foreign:
             self.assertEqual(marker.read_text(), "foreign owner")
@@ -382,6 +440,11 @@ class BuildTreeCleanupTests(unittest.TestCase):
 
     def test_native_failure_codes_and_nested_verification_unwind(self):
         cases = (
+            ("build.ps1", "tar-fixtures", "independent TAR/stream fixture preparation failed with exit code 17", False),
+            ("build.ps1", "fixture-worker", "Debug isolated-codecs workspace fixture worker failed with exit code 17", False),
+            ("build.ps1", "fixture-apphost", "Debug workspace fixture apphost failed with exit code 17", False),
+            ("build.ps1", "fixture-wires", "Rust workspace C# wire fixture exports failed with exit code 17", False),
+            ("build.ps1", "workspace-test", "cargo test failed with exit code 17", False),
             ("build.ps1", "helper", "ShellSelectionHelper publish failed: 17", False),
             ("build.ps1", "test-build", "dotnet build failed with exit code 17", False),
             ("build.ps1", "release-gate", "C# Release fixture capability gates failed with exit code 17", False),
@@ -434,7 +497,7 @@ class BuildTreeCleanupTests(unittest.TestCase):
                     self.assertIn("alive:iscc", log)
                     if failure != "iscc":
                         self.assertIn("alive:distribution", log)
-                        self.assertTrue((fixture.root / "artifacts/installer/NxTools.Next-setup-0.7.4.exe").is_file())
+                        self.assertTrue((fixture.root / "artifacts/installer/NxTools.Next-setup-0.7.5.exe").is_file())
                     self.assertTrue((destination / "NxTools.release.sig").is_file())
 
     def test_publisher_borrows_outputs_until_its_caller_consumes_them(self):

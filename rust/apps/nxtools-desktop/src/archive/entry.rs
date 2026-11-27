@@ -115,7 +115,8 @@ impl ArchiveApplication {
             cx.defer(move |cx| {
                 let _ = source.update(cx, |_, window, cx| {
                     let owner = owner.clone();
-                    window.open_dialog(cx, move |dialog, _, _| {
+                    window.open_dialog(cx, move |dialog, _, cx| {
+                        let dialog = dialog.bg(crate::theme::overlay_background(cx));
                         let owner = owner.clone();
                         let close_owner = owner.clone();
                         dialog
@@ -455,7 +456,8 @@ impl ArchiveApplication {
             let window = slot.window;
             cx.defer(move |cx| {
                 let _ = window.update(cx, |_, window, cx| {
-                    window.open_dialog(cx, move |dialog, _, _| {
+                    window.open_dialog(cx, move |dialog, _, cx| {
+                        let dialog = dialog.bg(crate::theme::overlay_background(cx));
                         dialog
                             .title("压缩包操作")
                             .child(message.clone())
@@ -1197,6 +1199,7 @@ impl ArchiveApplication {
                 let dialog_owner = owner.clone();
                 let dialog_prompt = prompt.clone();
                 window.open_dialog(cx, move |dialog, window, cx| {
+                    let dialog = dialog.bg(crate::theme::overlay_background(cx));
                     // A covered cancelled prompt closes only when its own scope is top/focused.
                     if !dialog_alive.get()
                         && dialog_scope

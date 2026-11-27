@@ -39,13 +39,19 @@ mod entry_tests;
 #[path = "hz1_lifecycle_tests.rs"]
 mod hz1_lifecycle_tests;
 #[cfg(test)]
+#[path = "ordinary_material_tests.rs"]
+mod ordinary_material_tests;
+#[cfg(test)]
+#[path = "../../../../../tests/architecture/overlay_surfaces.rs"]
+mod overlay_surface_tests;
+#[cfg(test)]
 #[path = "application_tests.rs"]
 mod tests;
 use super::browser::ui_state::{UiState, UiStateLoad, UiStateStore};
 use super::browser::{ArchiveBrowser, BrowserStatus};
 use gpui_kit::component::Disableable as _;
 use gpui_kit::{
-    AnyWindowHandle, App, AppContext, Bounds, Context, Entity, Global, Task, WeakEntity,
+    AnyWindowHandle, App, AppContext, Bounds, Context, Entity, Global, Styled, Task, WeakEntity,
     WindowBounds, WindowOptions, px, size,
 };
 use nxtools_archive::product::{ArchiveReadClient, ArchiveReadOperation};
@@ -276,6 +282,8 @@ struct BrowserHostSlot {
     id: Uuid,
     view: WeakEntity<BrowserHost>,
     window: AnyWindowHandle,
+    material_pending: bool,
+    material_tab: Option<Uuid>,
     password_recovery: password::PasswordRecovery,
 }
 struct PendingRead {
@@ -525,7 +533,9 @@ impl ArchiveApplication {
                                 let _ = origin.window.update(cx, |_, window, cx| {
                                     use gpui_kit::ParentElement;
                                     use gpui_kit::component::{WindowExt, dialog::DialogClose};
-                                    window.open_dialog(cx, |dialog, _, _| {
+                                    window.open_dialog(cx, |dialog, _, cx| {
+                                        let dialog =
+                                            dialog.bg(crate::theme::overlay_background(cx));
                                         dialog
                                             .title("无法打开压缩包")
                                             .child("文件已不可用或没有访问权限，请重新选择。")
@@ -625,6 +635,8 @@ impl ArchiveApplication {
             let closing_owner = owner.clone();
             let opened = cx.open_window(
                 WindowOptions {
+                    show: false,
+                    focus: false,
                     window_bounds: Some(bounds),
                     window_min_size: Some(size(px(720.0), px(480.0))),
                     app_id: Some("NxTools.Archive".into()),
@@ -677,6 +689,25 @@ impl ArchiveApplication {
                     view,
                     window: window.into(),
                     password_recovery: password::PasswordRecovery::default(),
+                    material_pending: true,
+                    material_tab: None,
+                });
+                let platform = self.platform.clone();
+                let owner = cx.entity().downgrade();
+                let window = window.into();
+                cx.defer(move |cx| {
+                    crate::ui::material::runtime::when_ready(
+                        window,
+                        platform,
+                        nxtools_protocol::window_material::MaterialSurface::Backdrop,
+                        std::time::Duration::from_secs(8),
+                        move |result, cx| {
+                            let _ = owner.update(cx, |app, cx| {
+                                app.finish_browser_material(host_id, window, result, cx)
+                            });
+                        },
+                        cx,
+                    );
                 });
             }
         }
@@ -750,7 +781,38 @@ impl ArchiveApplication {
             })
             .map(|(_, id)| *id)
     }
+    fn finish_browser_material(
+        &mut self,
+        host_id: Uuid,
+        window: AnyWindowHandle,
+        result: Result<(), &'static str>,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(host) = self
+            .host
+            .as_mut()
+            .filter(|host| host.id == host_id && host.window == window && host.material_pending)
+        else {
+            return;
+        };
+        if let Err(reason) = result {
+            tracing::warn!(event="archive.browser.material_failed", correlation_id=%host_id, reason);
+            self.close_host(host_id, cx);
+            return;
+        }
+        host.material_pending = false;
+        let selected = host.material_tab.take();
+        // GPUI applies the constructor's retained placement, including maximized bounds.
+        let _ = window.update(cx, |_, window, _| window.activate_window());
+        if let Some(id) = selected.filter(|id| self.windows.contains_key(id)) {
+            self.activate_browser(id, cx);
+        }
+    }
     fn activate_browser(&mut self, id: Uuid, cx: &mut Context<Self>) {
+        if let Some(host) = self.host.as_mut().filter(|host| host.material_pending) {
+            host.material_tab = Some(id);
+            return;
+        }
         let Some(host) = &self.host else {
             return;
         };
@@ -1229,7 +1291,8 @@ impl ArchiveApplication {
                     .map(|path| path.to_str().expect("validated path").to_owned())
                     .collect::<Vec<_>>();
                 let open_path = paths[0].clone();
-                window.open_dialog(cx, move |dialog, _, _| {
+                window.open_dialog(cx, move |dialog, _, cx| {
+                    let dialog = dialog.bg(crate::theme::overlay_background(cx));
                     let owner_open = owner_open.clone();
                     let owner_add = owner_add.clone();
                     let owner_new = owner_new.clone();
@@ -1616,7 +1679,8 @@ fn picker_failure(source: AnyWindowHandle, cx: &mut App) {
         let _ = source.update(cx, |_, window, cx| {
             use gpui_kit::ParentElement;
             use gpui_kit::component::{WindowExt, dialog::DialogClose};
-            window.open_dialog(cx, |dialog, _, _| {
+            window.open_dialog(cx, |dialog, _, cx| {
+                let dialog = dialog.bg(crate::theme::overlay_background(cx));
                 dialog
                     .title("无法选择压缩包")
                     .child("原生文件选择器不可用或连接已断开，请重试。")

@@ -1,5 +1,7 @@
 # Configurable archive preview budgets
 
+Current framework source lookup follows [Kit0.10.0/defaultpre0.3.12](../../../../docs/reference-code/gpui-kit-0100.md). Earlier versioned evidence below remains historical; original Settings layout, preview budget, native/passive lifecycle and deferred-owner contracts are unchanged.
+
 ## Scenario: One frozen preview budget from settings to rendering
 
 ### 1. Scope / Trigger

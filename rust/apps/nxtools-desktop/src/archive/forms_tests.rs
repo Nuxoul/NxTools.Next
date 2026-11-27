@@ -628,7 +628,7 @@ fn create_rule_buttons_preserve_individual_rules_and_invalid_draft(cx: &mut Test
         {
             break;
         }
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(px(600.), px(450.)),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., -4.)),
             ..Default::default()
@@ -684,7 +684,7 @@ fn create_rule_buttons_preserve_individual_rules_and_invalid_draft(cx: &mut Test
                     -2.
                 }
             });
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., delta)),
             ..Default::default()
@@ -704,7 +704,7 @@ fn create_rule_buttons_preserve_individual_rules_and_invalid_draft(cx: &mut Test
     );
 }
 
-fn audit05_form_key(surface: &mut VisualTestContext, key: &str, down: bool, held: bool) {
+fn audit05_form_key(surface: &mut VisualTestContext, key: &'static str, down: bool, held: bool) {
     let keystroke = gpui_kit::Keystroke::parse(key).expect("form key");
     if down {
         surface.simulate_event(gpui_kit::KeyDownEvent {
@@ -1065,7 +1065,7 @@ fn extract_minimum_has_one_caption_and_reachable_path_browse_footer(cx: &mut Tes
         if target.top() >= viewport.top() && target.bottom() <= viewport.bottom() {
             break;
         }
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: viewport.center(),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., -3.)),
             ..Default::default()
@@ -2438,7 +2438,7 @@ fn ref17_actual_number_input_unit_keyboard_and_fixed_footer(cx: &mut TestAppCont
             }) {
                 break;
             }
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: viewport.center(),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., -2.)),
                 ..Default::default()
@@ -2465,7 +2465,7 @@ fn ref17_actual_number_input_unit_keyboard_and_fixed_footer(cx: &mut TestAppCont
                     -2.
                 }
             });
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
                 ..Default::default()
@@ -2550,7 +2550,7 @@ fn reveal_form_control(surface: &mut VisualTestContext, selector: &'static str) 
         } else {
             -2.
         };
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: gpui_kit::point(viewport.right() - px(12.), viewport.center().y),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., direction)),
             ..Default::default()

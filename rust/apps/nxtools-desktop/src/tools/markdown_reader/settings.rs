@@ -109,7 +109,7 @@ fn save_operation(change: Change, source: AnyWindowHandle, id: Uuid, cx: &mut Ap
     });
     cx.spawn(async move |cx| {
         let result = worker.await;
-        let _ = cx.update(|cx| {
+        cx.update(|cx| {
             if cx.try_global::<Settings>().and_then(|state| state.saving) != Some(id) { return; }
             let state = cx.global_mut::<Settings>();
             state.saving = None;

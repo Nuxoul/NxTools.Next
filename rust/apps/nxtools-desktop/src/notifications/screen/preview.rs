@@ -108,7 +108,24 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
         let mut waiting = None;
         let mut was_visible = false;
         let mut exit_started = false;
+        let mut material_facts_loaded = false;
         while Instant::now() < deadline {
+            if !material_facts_loaded
+                && let Ok(bytes) = std::fs::read(directory.join("material.facts.json"))
+                && let Ok(facts) = serde_json::from_slice::<
+                    nxtools_protocol::window_material::SystemMaterialCapabilitiesChanged,
+                >(&bytes)
+            {
+                material_facts_loaded = cx.update(|cx| {
+                    let mut state = crate::ui::material::UiMaterialCapabilities::default();
+                    state.connected();
+                    if !state.apply(facts) {
+                        return false;
+                    }
+                    cx.set_global(state);
+                    true
+                });
+            }
             if directory.join("cadence.finish").exists() {
                 if let Some(summary) = cx.update(|cx| super::preview_cadence::snapshot(cx)) {
                     let _ = std::fs::write(
@@ -210,13 +227,13 @@ pub(crate) fn open(cx: &mut App) -> anyhow::Result<()> {
                         serde_json::from_slice::<nxtools_protocol::PlatformCommandResult>(&bytes)
                     {
                         cx.update(|cx| {
-                            handle(
-                                PlatformNotification::CommandResult {
-                                    correlation_id: id,
-                                    result,
-                                },
-                                cx,
-                            )
+                            let notification = PlatformNotification::CommandResult {
+                                correlation_id: id,
+                                result: result.clone(),
+                            };
+                            let _ = endpoint.route_command_result_for_contract_test(id, result);
+                            crate::ui::material::runtime::handle_notification(&notification, cx);
+                            handle(notification, cx)
                         });
                     }
                     let _ = std::fs::remove_file(reply_path);

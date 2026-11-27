@@ -559,8 +559,6 @@ pub(crate) fn handle_notification(notification: &PlatformNotification, cx: &mut 
                 };
                 let handle = surface.window;
                 let view = surface.view.clone();
-                let hwnd = surface.hwnd;
-                let platform = pending.platform.clone();
                 let _ = handle.update(cx, |_, window, cx| {
                     if let Some(placement) = placement {
                         let scale = window.scale_factor();
@@ -583,42 +581,8 @@ pub(crate) fn handle_notification(notification: &PlatformNotification, cx: &mut 
                             )
                         });
                     }
-                    let show = move |cx: &mut App| {
-                        let Some(pending) = cx
-                            .try_global::<NativeMenuState>()
-                            .and_then(|state| state.pending.as_ref())
-                            .filter(|pending| pending.id == id && pending.command_id == command_id)
-                        else {
-                            return;
-                        };
-                        if !pending.trigger.upgrade().is_some_and(|token| token.get()) {
-                            finish(id, None, false, "trigger_retired", cx);
-                            return;
-                        }
-                        if cx
-                            .try_global::<crate::clipboard::ClipboardApplicationGlobal>()
-                            .is_some_and(|global| {
-                                global.context_menu_source_session(pending.window, cx)
-                                    != pending.source_session
-                            })
-                        {
-                            finish(id, None, false, "host_retired", cx);
-                            return;
-                        }
-                        let command = if step == 0 {
-                            PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
-                                window_handle: hwnd,
-                                visible: true,
-                            })
-                        } else {
-                            PlatformCommand::ActivateWindow(ActivateWindowCommand {
-                                window_handle: hwnd,
-                            })
-                        };
-                        if platform.send_command_with_id(command, command_id).is_err() {
-                            fail(id, "菜单显示失败，请重试。", cx);
-                        }
-                    };
+                    let show =
+                        move |cx: &mut App| advance_material_ready_phase(id, command_id, step, cx);
                     if step == 0 {
                         // Hidden Windows HWNDs do not deliver the ordinary next-frame callback.
                         // Build the confirmed-size scene after the source/view leases, then reveal
@@ -627,7 +591,7 @@ pub(crate) fn handle_notification(notification: &PlatformNotification, cx: &mut 
                         window.draw(cx).clear(cx);
                         cx.defer(show);
                     } else {
-                        show(cx);
+                        cx.defer(show);
                     }
                 });
             });
@@ -635,6 +599,89 @@ pub(crate) fn handle_notification(notification: &PlatformNotification, cx: &mut 
         _ => {}
     }
 }
+fn advance_material_ready_phase(id: Uuid, command_id: Uuid, step: u8, cx: &mut App) {
+    let Some(pending) = cx
+        .try_global::<NativeMenuState>()
+        .and_then(|state| state.pending.as_ref())
+        .filter(|pending| {
+            pending.id == id && pending.command_id == command_id && pending.step == step + 1
+        })
+    else {
+        return;
+    };
+    if !pending.trigger.upgrade().is_some_and(|token| token.get()) {
+        finish(id, None, false, "trigger_retired", cx);
+        return;
+    }
+    if cx
+        .try_global::<crate::clipboard::ClipboardApplicationGlobal>()
+        .is_some_and(|global| {
+            global.context_menu_source_session(pending.window, cx) != pending.source_session
+        })
+    {
+        finish(id, None, false, "host_retired", cx);
+        return;
+    }
+    let Some(surface) = pending.surface.as_ref() else {
+        return;
+    };
+    let handle = surface.window;
+    let hwnd = surface.hwnd;
+    let platform = pending.platform.clone();
+    if !cx.windows().contains(&handle) {
+        finish(id, None, false, "surface_retired", cx);
+        return;
+    }
+    let prepared = crate::ui::material::runtime::receipt(handle, cx).is_some_and(|receipt| {
+        receipt.window_handle == hwnd
+            && receipt.surface == nxtools_protocol::window_material::MaterialSurface::Transparent
+    });
+    if !prepared {
+        crate::ui::material::runtime::when_ready(
+            handle,
+            platform,
+            nxtools_protocol::window_material::MaterialSurface::Transparent,
+            std::time::Duration::from_secs(3),
+            move |result, cx| {
+                let current = cx
+                    .try_global::<NativeMenuState>()
+                    .and_then(|state| state.pending.as_ref())
+                    .is_some_and(|pending| {
+                        pending.id == id
+                            && pending.command_id == command_id
+                            && pending.step == step + 1
+                            && pending.surface.as_ref().is_some_and(|surface| {
+                                surface.window == handle && surface.hwnd == hwnd
+                            })
+                    });
+                if !current {
+                    return;
+                }
+                if result.is_ok() {
+                    advance_material_ready_phase(id, command_id, step, cx);
+                } else {
+                    fail(id, "菜单外观准备失败，请重试。", cx);
+                }
+            },
+            cx,
+        );
+        return;
+    }
+    let command = if step == 0 {
+        PlatformCommand::SetWindowVisibility(SetWindowVisibilityCommand {
+            window_handle: hwnd,
+            visible: true,
+        })
+    } else {
+        PlatformCommand::ActivateWindow(ActivateWindowCommand {
+            window_handle: hwnd,
+        })
+    };
+    if platform.send_command_with_id(command, command_id).is_err() {
+        fail(id, "菜单显示失败，请重试。", cx);
+    }
+}
+
 pub(super) fn prepare(window: &Window, cx: &mut App) {
     if let Some(pending) = cx
         .try_global::<NativeMenuState>()

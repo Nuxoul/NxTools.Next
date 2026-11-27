@@ -26,23 +26,35 @@ Licensed under the MIT License. A copy of that license is included in `LICENSE-M
 
 ## GPUI Kit and local Windows backend patch
 
-The desktop uses GPUI Kit0.8.0 and its matched default GPUI Windows backend0.3.9,
-published under Apache-2.0. The active repository-local backend retains its
-upstream license in `vendor/gpui-pre-windows-039/LICENSE-APACHE`.
+The desktop uses coherent GPUI Kit/Base/Component/Assets0.10.0 and its matched
+default GPUI core/Windows backend0.3.12, published under Apache-2.0. Active local
+snapshots retain their licenses in `vendor/gpui-pre-0312/LICENSE-APACHE`,
+`vendor/gpui-pre-windows-0312/LICENSE-APACHE`, `vendor/gpui-base-0100/LICENSE-APACHE`
+and `vendor/gpui-component-0100/LICENSE-APACHE`.
 
-NxTools modifies only `WM_MOUSEACTIVATE` handling to respect the live
-`WS_EX_NOACTIVATE` window style. Ordinary activating windows retain their original
-behavior. Source provenance and the narrow change are recorded in
-`vendor/gpui-pre-windows-039/NXTOOLS-PATCH.md`. A copy of Apache-2.0 is included in
-`LICENSE-APACHE`; no ShellRS GPL code or assets are included.
+Windows `events.rs` interprets live `WS_EX_NOACTIVATE` during WM_MOUSEACTIVATE;
+ordinary activating windows retain their original behavior. The approved whole-app
+material amendment also retains source-over destination alpha, UnderBorder coverage
+and actual client/frame/restored-cache consistency in exactly Windows
+`src/directx_renderer.rs`, `src/events.rs`, `src/shaders.hlsl`, `src/window.rs`
+and core `src/scene.rs`, `src/style.rs`. Provenance and exact scope are recorded in
+each snapshot's `NXTOOLS-PATCH.md` and `NXTOOLS-UPSTREAM.json`. A copy of Apache-2.0
+is included in `LICENSE-APACHE`; no ShellRS GPL code or assets are included.
 
-The active vendored `gpui-component`0.8.0 snapshot in
-`vendor/gpui-component-080/` retains its Apache-2.0 license. The original approved
-minimal notification duration builder forwards only into officialToastOptions;
-card/stack/clock/pause/close/animation ownership and raw5seconddefault remain.
-Provenance and exact boundary: `vendor/gpui-component-080/NXTOOLS-PATCH.md` and
-NXTOOLS-UPSTREAM.json. Both patches were carried by the explicit2026-10-21upgrade;
-old Component0.7.1/0.5.1 and Windows0.3.8vendors remain inactive historicalsources.
+The active `gpui-component`0.10.0 snapshot changes only notification.rs: duration
+forwards into official ToastOptions and optional header_action precedes Close,
+remains visible with header focus and is omitted during Ending. Official card/stack/
+clock/pause/close/animation ownership and raw5second default remain.
+The approved `gpui-base`0.10.0 editor-host amendment permits implementation changes
+only in this order: `src/text/editor_host.rs`, `src/text/editor_seam.rs`,
+`src/text/format/markdown.rs`, `src/text/node.rs`, `src/text/state.rs`.
+state.rs adds only preserve_editor_whitespace:false to its complete NodeContext
+initializer. Editor imports opt into whitespace fidelity separately.
+`LeafGeometry::table_cell_bounds()` exposes actual column slack/dividers and row
+frames; `table_cell_content_bounds()` resolves final Div padding/border to content
+boxes. Ordinary TextView keeps upstream0.10.0 behavior. The complete approved
+Component/Base/core/Windows union is1/5/2/4 implementation files; original published
+provenance remains the baseline. Older vendors remain inactive historical evidence.
 
 ## GPUI Kit Markdown Editor
 
@@ -51,10 +63,22 @@ The unified document surfaces use `gpui-kit-markdown-editor` v0.1.0, fixed revis
 https://github.com/wabzqem/gpui-kit-markdown-editor, licensed Apache-2.0.
 The original license is retained in `vendor/gpui-kit-markdown-editor-010/LICENSE-APACHE`.
 `NXTOOLS-UPSTREAM.json` records all 57 original file hashes. Approved local changes
-are restricted to passive display in `src/element.rs` and exactly three stable-Rust
-Fenwick lowbit substitutions in `src/cull.rs`; see `NXTOOLS-PATCH.md`.
-Default syntect/all-language features are not enabled. This is separate from the
-two existing GPUI Component/Windows framework patches.
+are passive display in `src/element.rs`, exactly three stable-Rust Fenwick lowbits
+in `src/cull.rs`, and exact equivalent serializer/formatting fragments. Compatibility
+changes are normal/dev Kit0.10.0/pre0.3.12 manifest bindings, two `secondary(cx)`
+calls in element.rs,28 equivalent static platform-key branches in state.rs::init,
+`task_marker: None` beside `span: None` in direct.rs's ListItem bridge, and two
+context-aware `secondary_key(cx)` link fixtures in src/tests/view.rs.
+Actions/contexts and the editor model remain unchanged. The provenance gate reverses
+exact adaptations to original hashes and checks all28 keys for both platform values.
+Approved src/frame.rs compatibility uses real grid/content boxes with text-box
+vertical bounds and removes row_shift; element.rs drops only shape-aligns and
+padding/right inference arguments from that geometry call. Six readable exact
+upstream/compatible fragments in `tests/architecture/markdown-editor-frame-0100.json`
+are individually reversed before the original frame.rs digest check; the element
+call is exactly reversed to the passive baseline. Original fixtures/assertions remain.
+See `NXTOOLS-PATCH.md` and `docs/reference-code/markdown-editor.md`. Default syntect/
+all-language features remain disabled. This is separate from the four framework path patches.
 
 The NxTools Graphite Light/Dark theme assets are original project configurations
 using public GPUI Kit theme APIs. The optional upstream Catppuccin, Gruvbox and
@@ -316,7 +340,7 @@ No original reference application code or proprietary archive backend is bundled
 ## Clipboard Markdown and code preview
 
 Markdown parsing uses the existing locked markdown-rs1.0.0 (MIT),
-https://github.com/wooorm/markdown-rs. Code highlighting uses GPUI Kit0.8.0's
+https://github.com/wooorm/markdown-rs. Code highlighting uses GPUI Kit0.10.0's
 official Tree-sitter0.26.13 feature and published grammar crates (all MIT):
 Bash0.23.3,C0.24.2,C++0.23.4,C#0.23.5,CSS0.23.2,Go0.23.4,HTML0.23.2,
 Java0.23.5,JavaScript0.23.1,JSON0.24.8,Markdown0.5.3,Python0.23.6,

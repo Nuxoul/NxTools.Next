@@ -555,6 +555,51 @@ fn input_followup_reveal_ack_requires_native_activation_before_search_focus(
     let popup = fixture.application.read_with(cx, |app, _| {
         app.popup.lifecycle.current().cloned().expect("popup")
     });
+    fixture.application.update(cx, |app, cx| {
+        use nxtools_protocol::window_material::{
+            AppliedWindowMaterial, EffectiveWindowMaterial, MaterialFallbackReason,
+            MaterialSurface, SystemMaterialCapabilitiesChanged, WindowMaterialStyle,
+        };
+        let facts = cx.default_global::<crate::ui::material::UiMaterialCapabilities>();
+        facts.connected();
+        assert!(facts.apply(SystemMaterialCapabilitiesChanged {
+            correlation_id: uuid::Uuid::new_v4(),
+            session_id: uuid::Uuid::new_v4(),
+            revision: 1,
+            supported: true,
+            transparency_enabled: true,
+            high_contrast: false,
+            energy_saver: false,
+            remote_session: false,
+            native_error_code: 0,
+            system_backdrop: true,
+            rounded_corners: true,
+        }));
+        let command = crate::ui::material::command(
+            popup.native_window_handle,
+            MaterialSurface::Transient,
+            cx,
+        )
+        .expect("synthetic current material identity");
+        let receipt = AppliedWindowMaterial {
+            session_id: command.session_id,
+            facts_revision: command.facts_revision,
+            window_handle: command.window_handle,
+            generation: command.generation,
+            style: command.style,
+            surface: command.surface,
+            dark: command.dark,
+            effective: match command.style {
+                WindowMaterialStyle::Solid => EffectiveWindowMaterial::Solid,
+                _ => EffectiveWindowMaterial::Acrylic,
+            },
+            fallback_reason: MaterialFallbackReason::None,
+            native_error_code: 0,
+        };
+        app.popup.material =
+            crate::ui::material::Preparation::confirmed(uuid::Uuid::new_v4(), command, receipt, cx)
+                .expect("activation fixture starts after material confirmation");
+    });
     surface.update(|window, cx| window.blur(cx));
     fixture.application.update(cx, |app, cx| {
         app.popup.pending_visibility.insert(

@@ -1,7 +1,9 @@
 use super::*;
+use crate::archive::ordinary_material_test_support as material_support;
 use crate::clipboard_worker::ClipboardCaptureWorkerHandle;
+use crate::ui::material::{UiMaterialCapabilities, runtime as material_runtime};
 use gpui_kit::TestAppContext;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 fn capture(text: Option<&str>) -> ClipboardCapture {
     ClipboardCapture {
@@ -62,9 +64,6 @@ fn fixture(
             )
         })
     });
-    owner.update(cx, |owner, _| {
-        owner.link_panel.test_native_window_handle = Some(9002)
-    });
     (directory, owner, worker, endpoint)
 }
 
@@ -73,37 +72,121 @@ fn drain_detection(
     owner: &Entity<ClipboardApplication>,
     endpoint: &nxtools_ipc::PlatformServerEndpoint,
 ) {
-    ClipboardApplication::wait_for_link_detection(cx, owner);
-    while let Ok(envelope) = endpoint.try_receive_command_for_contract_test() {
-        let data = matches!(
-            envelope.message,
-            nxtools_protocol::Message::PlatformCommand(PlatformCommand::QueryCursorMonitor)
-        )
-        .then(|| {
-            serde_json::to_string(&nxtools_protocol::CursorMonitorSnapshot {
-                display_id: 1,
-                work_left: 0,
-                work_top: 0,
-                work_width: 1920,
-                work_height: 1040,
-                dpi: 96,
-            })
-            .expect("monitor wire")
+    ClipboardApplication::drain_link_detection_fixture(cx, owner, endpoint);
+}
+
+impl ClipboardApplication {
+    /// Drive the connected TestWindow through the original material and passive-show barriers.
+    pub(crate) fn drain_link_detection_fixture(
+        cx: &mut TestAppContext,
+        owner: &Entity<Self>,
+        endpoint: &nxtools_ipc::PlatformServerEndpoint,
+    ) {
+        cx.update(|cx| {
+            if cx
+                .try_global::<UiMaterialCapabilities>()
+                .and_then(|state| state.snapshot())
+                .is_none()
+            {
+                material_support::facts(uuid::Uuid::new_v4(), 1, cx);
+            }
         });
-        owner.update(cx, |owner, cx| {
-            owner.handle_platform_notification(
-                PlatformNotification::CommandResult {
-                    correlation_id: envelope.id,
-                    result: nxtools_protocol::PlatformCommandResult {
-                        success: true,
-                        error: None,
-                        data,
-                        native_error_code: None,
+        Self::wait_for_link_detection(cx, owner);
+        loop {
+            cx.run_until_parked();
+            let Ok(envelope) = endpoint.try_receive_command_for_contract_test() else {
+                break;
+            };
+            let show = matches!(
+                &envelope.message,
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::SetWindowVisibility(
+                    SetWindowVisibilityCommand { visible: true, .. }
+                ))
+            );
+            let data = match envelope.message {
+                nxtools_protocol::Message::PlatformCommand(
+                    PlatformCommand::ApplyWindowMaterial(command),
+                ) => {
+                    assert_eq!(
+                        command.window_handle,
+                        owner.read_with(cx, |owner, _| owner.link_panel.native_window_handle)
+                    );
+                    cx.update(|cx| material_support::accept(endpoint, envelope.id, command, cx));
+                    continue;
+                }
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::QueryCursorMonitor) => {
+                    owner.update(cx, |owner, cx| {
+                        if owner
+                            .link_panel
+                            .window
+                            .is_none_or(|window| !cx.windows().contains(&window))
+                        {
+                            static NEXT_HWND: AtomicI64 = AtomicI64::new(-9002);
+                            owner.link_panel.test_native_window_handle =
+                                Some(NEXT_HWND.fetch_sub(1, Ordering::SeqCst));
+                        }
+                    });
+                    Some(
+                        serde_json::to_string(&nxtools_protocol::CursorMonitorSnapshot {
+                            display_id: 1,
+                            work_left: 0,
+                            work_top: 0,
+                            work_width: 1920,
+                            work_height: 1040,
+                            dpi: 96,
+                        })
+                        .expect("monitor wire"),
+                    )
+                }
+                nxtools_protocol::Message::PlatformCommand(PlatformCommand::OpenShellTarget(_)) => {
+                    panic!("captures must not auto-open targets");
+                }
+                _ => None,
+            };
+            let window = owner.update(cx, |owner, cx| {
+                if show {
+                    let window = owner.link_panel.window.expect("material-qualified panel");
+                    assert_eq!(
+                        material_runtime::receipt(window, cx)
+                            .expect("current material before original show")
+                            .window_handle,
+                        owner.link_panel.native_window_handle
+                    );
+                }
+                owner.handle_platform_notification(
+                    PlatformNotification::CommandResult {
+                        correlation_id: envelope.id,
+                        result: nxtools_protocol::PlatformCommandResult {
+                            success: true,
+                            error: None,
+                            data,
+                            native_error_code: None,
+                        },
                     },
-                },
-                cx,
-            )
-        });
+                    cx,
+                );
+                if let Some(window) = owner.link_panel.window {
+                    material_runtime::set_test_window_handle(
+                        window,
+                        owner.link_panel.native_window_handle,
+                        cx,
+                    );
+                }
+                owner.link_panel.window
+            });
+            if show {
+                cx.update(|cx| {
+                    window
+                        .expect("shown panel")
+                        .update(cx, |_, window, cx| {
+                            window.draw(cx).clear(cx);
+                            window.simulate_next_frame(cx);
+                        })
+                        .expect("submit original staged frame");
+                });
+            }
+        }
+        assert!(owner.read_with(cx, |owner, _| owner.pending_link_placement.is_none()));
     }
 }
 

@@ -318,6 +318,7 @@ impl ExtensionManagerView {
         cx.defer(move |cx|{let _=source.update(cx,|_,window,cx| {
             let submitted=Rc::new(Cell::new(false));
             window.open_dialog(cx,move |dialog,window,cx| {
+                let dialog = dialog.bg(crate::theme::overlay_background(cx));
                 let current=owner.upgrade().is_some_and(|owner|match &change {StorageChange::Restore(entry)|StorageChange::Clear(entry)=>owner.read(cx).storage_review_current(&reviewed,entry),StorageChange::RetryCleanup=>owner.read(cx).storage_registry_current(&reviewed)});
                 let confirm_owner=owner.clone();let confirm_review=reviewed.clone();let confirm_change=change.clone();let latch=submitted.clone();
                 let restore=matches!(change,StorageChange::Restore(_));

@@ -2,6 +2,8 @@
 
 Last verified: 2026-07-24.
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md): Component `vendor/gpui-component-0100`, Windows `vendor/gpui-pre-windows-0312`. Earlier versioned source coordinates/outcomes remain dated evidence. Requested layout/variants, primary input focus, passive preview staging/reuse, generations/cancellation and deferred-owner contracts are unchanged.
+
 ## Scope and use constraints
 
 This note records user-visible behavior, module seams and call chains for NxTools.Next's “速启”
@@ -52,25 +54,15 @@ and decorates it with WindowBorder; `window_border.rs:19-22` explicitly records
 rectangular child masks and zero wrapper radius. A rounded descendant is therefore
 not native-corner evidence.
 
-The existing `SetWindowBoundsCommand` gains optional `corner_radius` device pixels;
-missing/null preserves the window region, explicit0 removes it. Rust's main-popup
-factory (`quick_launch/monitor_presentation.rs::bounds`) and dynamic resize
-(`quick_launch.rs::resize_popup_content`) supply semantic8DIP at the current
-target/window scale. Previews and other surfaces omit the field. The existing C#
-`ParseSetWindowBounds` → `WindowsPlatformAdapter.SetWindowBounds` →
+Quick Launch is a transient material surface: on Windows 11 PlatformHost rounds it with DWM33
+ROUND and DWM34 `0xFFFFFFFE` as part of the material write, and GPUI draws the matching 8DIP
+contour on the Root surface. Windows 10 keeps it square. `SetWindowBoundsCommand` carries only
+position and client size; the `ParseSetWindowBounds` → `WindowsPlatformAdapter.SetWindowBounds` →
 `NativeMethods.SetWindowBounds` chain keeps live frame compensation, outer x/y,
-NOACTIVATE|NOZORDER and client readback, then applies a native rounded region
-derived from the resized outer bounds before success. Windows owns a successfully
-transferred HRGN; failure deletes the caller-owned HRGN and retains the native
-error. There is no retained HWND region registry or additional presentation owner.
-
-Owned-HWND fixture `WindowBoundsCornerTests.OwnedRegionResizeAndReset`
-uses that real parser/adapter chain and GetWindowRgn/PtInRegion to verify four
-excluded corners, retained center/bottom edge,60→530→60 resize, frame compensation,
-small-size clamp, missing/null preservation, zero reset and unchanged foreground
-through hidden preparation and visible non-activating resize.
-It neither starts the ordinary adapter nor injects input. Evidence and acceptance
-limits: `.trellis/tasks/11-20-settings-lifecycle-feedback/quick-search-corners.md`.
+NOACTIVATE|NOZORDER and client readback, and never installs a window region (a GDI region clips
+GPUI content but not the Windows 10 accent blur). Owned-HWND fixture `WindowBoundsTests` covers
+that chain; corner writes are covered by `WindowMaterialTests`. Contract:
+`.trellis/spec/platformhost/native-contracts.md#scenario-native-outer-window-corners`.
 
 ## Reference roots
 

@@ -59,6 +59,13 @@ const INDEX_FIRST_PUBLISH_DEADLINE: Duration = Duration::from_millis(150);
 const SEARCH_APPEAR_DURATION: Duration = Duration::from_millis(80);
 const FILE_DIALOG_SEARCH_GENERATION_MASK: u64 = 1 << 63;
 
+#[path = "file_dialog_material.rs"]
+mod material;
+
+#[cfg(test)]
+#[path = "file_dialog_material_tests.rs"]
+mod material_tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) struct FileDialogSearchNativeBounds {
     pub x: i32,
@@ -205,6 +212,7 @@ pub(super) struct FileDialogSearchSession {
     index: IndexSearchSession,
     pending_index_search: Option<IndexSearchCancel>,
     last_placement: Option<FileDialogSearchPlacementKey>,
+    material: material::MaterialAdmission,
 }
 
 impl FileDialogSearchSession {
@@ -1001,6 +1009,16 @@ impl QuickLaunchApplication {
         {
             return;
         }
+        if self
+            .file_dialog_search
+            .host
+            .as_ref()
+            .is_none_or(|previous| {
+                previous.window_handle != host.window_handle || previous.visible != host.visible
+            })
+        {
+            self.cancel_file_dialog_material();
+        }
         self.file_dialog_search.host = Some(host.clone());
         if !host.visible {
             self.hide_file_dialog_search_window(cx);
@@ -1008,12 +1026,23 @@ impl QuickLaunchApplication {
         }
         if self.file_dialog_search.window.is_none() {
             self.open_file_dialog_search_window(&host, cx);
-            let opened = self.file_dialog_search.window.as_ref().map(|window| window.window);
+            let opened = self
+                .file_dialog_search
+                .window
+                .as_ref()
+                .map(|window| window.window);
             let application = cx.entity().downgrade();
             schedule_application_update(
                 application,
                 move |application, cx| {
-                    if opened.is_some() && application.file_dialog_search.window.as_ref().map(|window| window.window) == opened {
+                    if opened.is_some()
+                        && application
+                            .file_dialog_search
+                            .window
+                            .as_ref()
+                            .map(|window| window.window)
+                            == opened
+                    {
                         application.initialize_file_dialog_search_window(cx);
                     }
                 },
@@ -1047,6 +1076,7 @@ impl QuickLaunchApplication {
         host: &QuickLaunchFileDialogSearchHost,
         cx: &mut Context<Self>,
     ) {
+        self.cancel_file_dialog_material();
         let native_bounds = file_dialog_search_bounds(host, false);
         let scale = host.monitor_dpi.max(96) as f32 / 96.0;
         let logical_bounds = Bounds::new(
@@ -1076,7 +1106,7 @@ impl QuickLaunchApplication {
                 is_resizable: false,
                 is_minimizable: false,
                 display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.FileDialogSearch".into()),
                 window_min_size: None,
                 window_decorations: Some(WindowDecorations::Client),
@@ -1084,6 +1114,7 @@ impl QuickLaunchApplication {
                 inactive_frame_interval: None,
                 icon: None,
                 tabbing_identifier: None,
+                ..Default::default()
             },
             move |window, cx| {
                 *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
@@ -1150,6 +1181,9 @@ impl QuickLaunchApplication {
         if self.file_dialog_search.last_placement == Some(placement_key) {
             return;
         }
+        if host.visible && !self.admit_file_dialog_material(cx) {
+            return;
+        }
         for command in [
             PlatformCommand::SetWindowOwner(SetWindowOwnerCommand {
                 window_handle: native_window_handle,
@@ -1199,6 +1233,7 @@ impl QuickLaunchApplication {
     }
 
     pub(super) fn retire_file_dialog_search(&mut self, cx: &mut Context<Self>) {
+        self.cancel_file_dialog_material();
         self.cancel_file_dialog_index_search("disabled", cx);
         self.file_dialog_search.invalidate_index();
         self.file_dialog_search.host = None;
@@ -1211,6 +1246,7 @@ impl QuickLaunchApplication {
     }
 
     pub(super) fn hide_file_dialog_search_window(&mut self, cx: &mut Context<Self>) {
+        self.cancel_file_dialog_material();
         let Some(search_window) = self.file_dialog_search.window.as_ref() else {
             return;
         };

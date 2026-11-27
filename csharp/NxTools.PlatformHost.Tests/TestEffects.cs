@@ -5,9 +5,24 @@ internal static class TestEffects
 {
     private static readonly HashSet<string> Fixtures = new(StringComparer.Ordinal)
     {
+        "MaterialPublicationTests.ActualPipeRouteUsesBoundOwner",
+        // Material native writes target only hidden self-owned HWNDs; other cases use injected facts/APIs.
+        "WindowMaterialTests.StrictWireAndReceipt",
+        "WindowMaterialTests.PreferenceAndSessionFacts",
+        "WindowMaterialTests.OrderedFallbackAndExemptSurfaces",
+        "WindowMaterialTests.RejectBeforeWritesAndRetireGenerations",
+        "WindowMaterialTests.NativeFailureRequiresSuccessfulReset",
+        "WindowMaterialTests.SerializedWritesAndMidFlightRetirement",
+        "WindowMaterialTests.BoundedWindowHistoryAndDiagnostics",
+        "WindowMaterialTests.NativePolicyAbi",
+        "WindowMaterialTests.OwnedHiddenNativeWindow",
+        // Synthetic material facts, bounded channels and original dispatcher only.
+        "MaterialPublicationTests.LatestOnlySessionAndStop",
+        "MaterialPublicationTests.NegotiatedEnvelopeAndSessionFilter",
+        "MaterialPublicationTests.DetachedCommandKeepsReaderResponsive",
         // Owned STATIC HWNDs/passive reveal/GDI readback; no adapter startup, hooks or global input.
-        "WindowBoundsCornerTests.StrictOptionalWire",
-        "WindowBoundsCornerTests.OwnedRegionResizeAndReset",
+        "WindowBoundsTests.StrictWire",
+        "WindowBoundsTests.OwnedClientBoundsWithoutRegion",
         // Injected hit/process/hook/style/clock facts, original router and GUID-owned pipe; no live windows/input.
         "ProcessWindowPickTests.StrictWire",
         "ProcessWindowPickTests.OwnershipAndStartupFailure",

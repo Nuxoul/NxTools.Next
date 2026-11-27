@@ -519,18 +519,29 @@ mod tests {
 
     #[test]
     fn markdown_reader_never_publishes_failed_or_superseded_export() {
-        let folder = tempfile::tempdir().unwrap();
+        let folder = tempfile::tempdir().expect("create export fixture directory");
         let target = folder.path().join("document.pdf");
-        std::fs::write(&target, b"original PDF").unwrap();
-        let failed = StagedOutput::new(target.clone()).unwrap();
-        std::fs::write(failed.pdf(), b"incomplete file").unwrap();
+        std::fs::write(&target, b"original PDF").expect("write original PDF target");
+        let failed = StagedOutput::new(target.clone()).expect("stage failed PDF export");
+        std::fs::write(failed.pdf(), b"incomplete file").expect("write incomplete staged PDF");
         assert!(failed.publish(MarkdownExportFormat::Pdf).is_err());
-        assert_eq!(std::fs::read(&target).unwrap(), b"original PDF");
-        let superseded = StagedOutput::new(target.clone()).unwrap();
-        std::fs::write(superseded.pdf(), b"%PDF-1.7\n").unwrap();
-        std::fs::write(&target, b"another writer's new PDF").unwrap();
+        assert_eq!(
+            std::fs::read(&target).expect("read target after failed export"),
+            b"original PDF"
+        );
+        let superseded = StagedOutput::new(target.clone()).expect("stage superseded PDF export");
+        std::fs::write(superseded.pdf(), b"%PDF-1.7\n").expect("write superseded staged PDF");
+        std::fs::write(&target, b"another writer's new PDF").expect("write competing PDF target");
         assert!(superseded.publish(MarkdownExportFormat::Pdf).is_err());
-        assert_eq!(std::fs::read(&target).unwrap(), b"another writer's new PDF");
-        assert_eq!(std::fs::read_dir(folder.path()).unwrap().count(), 1);
+        assert_eq!(
+            std::fs::read(&target).expect("read preserved competing PDF"),
+            b"another writer's new PDF"
+        );
+        assert_eq!(
+            std::fs::read_dir(folder.path())
+                .expect("list export fixture directory")
+                .count(),
+            1
+        );
     }
 }

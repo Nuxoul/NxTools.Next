@@ -1866,7 +1866,7 @@ pub(super) mod tests {
                 last_reachable = true;
                 break;
             }
-            window.simulate_event(gpui_kit::ScrollWheelEvent {
+            window.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(px(650.0), px(350.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
                 ..Default::default()
@@ -2689,6 +2689,14 @@ pub(super) mod tests {
             super::click_management(window, "下载解析链", false);
             return;
         }
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        window.run_until_parked();
+        window.update(|window, cx| window.draw(cx).clear(cx));
+        // Settle the official150ms Sheet and250ms Dialog transitions on the test clock.
+        window
+            .executor()
+            .advance_clock(std::time::Duration::from_millis(250));
+        window.update(|window, cx| window.draw(cx).clear(cx));
         // Real scrolling and current bounds, not mere cached selector presence.
         top(window);
         for _ in 0..40 {
@@ -2740,7 +2748,7 @@ pub(super) mod tests {
                 return;
             }
             let position = detail_scroll_point(window);
-            window.simulate_event(gpui_kit::ScrollWheelEvent {
+            window.simulate_event(gpui_kit::ScrollEvent {
                 position,
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
                 ..Default::default()
@@ -2760,7 +2768,7 @@ pub(super) mod tests {
 
     fn top(window: &mut VisualTestContext) {
         let position = detail_scroll_point(window);
-        window.simulate_event(gpui_kit::ScrollWheelEvent {
+        window.simulate_event(gpui_kit::ScrollEvent {
             position,
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, 100.0)),
             ..Default::default()
@@ -2807,7 +2815,7 @@ pub(super) mod tests {
             {
                 break;
             }
-            window.simulate_event(gpui_kit::ScrollWheelEvent {
+            window.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(px(650.0), px(350.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
                 ..Default::default()
@@ -3039,7 +3047,7 @@ pub(super) mod tests {
             {
                 break;
             }
-            window.simulate_event(gpui_kit::ScrollWheelEvent {
+            window.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(px(650.0), px(350.0)),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -3.0)),
                 ..Default::default()

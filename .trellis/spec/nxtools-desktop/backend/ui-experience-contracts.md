@@ -1,6 +1,6 @@
 # Unified document and experience contracts
 
-Authority: approved2026-10-22 six-item snapshot; framework remains Kit0.8.0/defaultpre0.3.9. This supersedes historical no-editor/built-in-default-only presentation restrictions, not existing action/native ownership. Evidence: `repo:rust/apps/nxtools-desktop/src/ui/markdown_document.rs`, `repo:rust/apps/nxtools-desktop/src/ui/markdown_edit.rs`, `repo:rust/apps/nxtools-desktop/src/ui/preview_image.rs`, `repo:rust/apps/nxtools-desktop/src/theme.rs`, `repo:rust/crates/nxtools-download/src/http.rs`.
+Authority: approved2026-10-22 six-item snapshot, retained on current Kit0.10.0/defaultpre0.3.12. [Current release](../../../../docs/reference-code/gpui-kit-0100.md) supersedes earlier version/source lookup pins, not the dated feature evidence, action/native ownership or layout/selection/lifecycle rules below. The same pinned editor permits only exact release adaptations enumerated in [editor provenance](../../../../docs/reference-code/markdown-editor.md) in addition to passive/lowbit/serializer exceptions; original hashes, actions/contexts/model remain authoritative. Evidence: `repo:rust/apps/nxtools-desktop/src/ui/markdown_document.rs`, `repo:rust/apps/nxtools-desktop/src/ui/markdown_edit.rs`, `repo:rust/apps/nxtools-desktop/src/ui/preview_image.rs`, `repo:rust/apps/nxtools-desktop/src/theme.rs`, `repo:rust/crates/nxtools-download/src/http.rs`.
 
 ## Scenario: Unified passive documents and explicit save
 ### 1. Scope / Trigger
@@ -165,7 +165,7 @@ Wrong: remove all labels including accessiblepurpose or close immediately afterc
 
 ## Scenario: Explicit notification header copy
 ### 1. Scope / Trigger
-User2026-10-23approves Copy immediately left of original Close and fork preservation. Evidence: `repo:rust/apps/nxtools-desktop/src/notifications/copy.rs`, `repo:rust/apps/nxtools-desktop/src/notifications/presentation.rs`, `repo:vendor/gpui-component-080/src/notification.rs`.
+User2026-10-23approves Copy immediately left of original Close and fork preservation. Evidence: `repo:rust/apps/nxtools-desktop/src/notifications/copy.rs`, `repo:rust/apps/nxtools-desktop/src/notifications/presentation.rs`, `repo:vendor/gpui-component-0100/src/notification.rs`.
 ### 2. Signatures
 `Notification::header_action(builder -> AnyElement) -> Self`; `NotificationCenter::{bind_copy_platform,request_copy,handle_copy}`; existing `PasteTextCommand { text,paste_after_write:false,target_window_handle:0,target_focus_window_handle:0 }`. Public slot is defaultNone, official XSmall ghost Button/Copy or Check; no new wire/hook/clipboard engine.
 ### 3. Contracts

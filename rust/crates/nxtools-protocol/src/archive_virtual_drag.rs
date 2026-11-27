@@ -719,7 +719,10 @@ mod tests {
         command.items.as_mut().expect("items").truncate(1);
         command.validate().expect("single wrapper locate");
         let wire = serde_json::to_value(&command).expect("wire");
-        assert!(wire.get("source").is_none(), "locate carries no shared source");
+        assert!(
+            wire.get("source").is_none(),
+            "locate carries no shared source"
+        );
         assert_eq!(
             serde_json::from_value::<ArchiveVirtualDragCommand>(wire).expect("roundtrip"),
             command
@@ -740,7 +743,10 @@ mod tests {
         assert!(many.validate().is_err(), "locate carries no member tree");
         let mut authorized = command.clone();
         authorized.authorization_id = Some(Uuid::new_v4());
-        assert!(authorized.validate().is_err(), "locate never consumes unlock");
+        assert!(
+            authorized.validate().is_err(),
+            "locate never consumes unlock"
+        );
         let mut windowless = command;
         windowless.source_window_handle = 0;
         assert!(windowless.validate().is_err());

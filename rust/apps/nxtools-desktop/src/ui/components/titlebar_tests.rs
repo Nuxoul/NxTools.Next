@@ -64,6 +64,14 @@ fn shared_caption_matches_browser_height_and_single_owner_click(cx: &mut TestApp
 #[test]
 fn custom_caption_options_disable_native_decoration_without_changing_visibility() {
     let options = caption_window_options();
+    assert!(matches!(
+        options.window_background,
+        gpui_kit::WindowBackgroundAppearance::Transparent
+    ));
+    assert!(
+        options.show && options.focus,
+        "creation alpha does not change presentation policy"
+    );
     assert!(
         options
             .titlebar

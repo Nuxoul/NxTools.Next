@@ -1,5 +1,7 @@
 # Archive creation commands and compact preferences
 
+Current framework source lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md), with active Component at `vendor/gpui-component-0100` and Windows at `vendor/gpui-pre-windows-0312`. Earlier versioned source coordinates below remain dated evidence; compact shape, official variants/parent adaptations and original draft/native/deferred owners are unchanged.
+
 ## Reference evidence
 
 Bandizip `D:\Tool\Bandizip\langs\SimpChinese.lang:480–502` defines the source list, add/remove, output name/destination, format/level, password, more options and Start controls. Lines677–708 distinguish filename ZIP, filename7z and editable creation, including selected-item naming for multi-selection. The indexed legacy NxTools search in [archive](archive.md) identified no general archive manager.

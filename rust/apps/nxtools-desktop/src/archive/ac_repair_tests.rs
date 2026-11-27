@@ -281,12 +281,55 @@ fn opt01_ac03_each_frozen_format_uses_its_own_serialized_phases(cx: &mut gpui_ki
     let rows = export["formats"].as_array().expect("four actual requests");
     assert_eq!(rows.len(), 4);
     let (owner, endpoint) = super::super::super::tests::setup(cx);
+    let notifications = owner.read_with(cx, |app, _| app.platform.notification_receiver());
+    // This fixture plays the pipe peer for all four jobs on the same bounded connection.
+    let service_commands = |start: Option<(Uuid, &str)>, cx: &mut gpui_kit::TestAppContext| {
+        cx.run_until_parked();
+        // `deliver` already applies each event to the original owner.
+        while notifications.try_recv().is_ok() {}
+        let mut pending_start = start;
+        while let Ok(wire) = endpoint.try_receive_command_for_contract_test() {
+            match wire.message {
+                Message::PlatformCommand(PlatformCommand::ArchiveJob(command)) => {
+                    let (id, format) = pending_start.take().expect("exactly one Start per format");
+                    assert_eq!(command.action, ArchiveJobAction::Start);
+                    assert_eq!(command.operation_id, id);
+                    assert_eq!(wire.correlation_id, Some(id));
+                    let request = command.request.expect("original Start request");
+                    assert_eq!(
+                        request.modify.expect("frozen edit request").browser.format,
+                        format
+                    );
+                }
+                Message::PlatformCommand(PlatformCommand::SetTaskbarProgress(_)) => {}
+                other => panic!("unexpected AC-03 command: {other:?}"),
+            }
+            endpoint
+                .route_command_result_for_contract_test(
+                    wire.id,
+                    nxtools_protocol::PlatformCommandResult {
+                        success: true,
+                        error: None,
+                        native_error_code: None,
+                        data: None,
+                    },
+                )
+                .expect("original command receipt");
+            let receipt = notifications.try_recv().expect("routed command result");
+            owner.update(cx, |app, cx| app.notification(receipt, cx));
+        }
+        assert!(
+            pending_start.is_none(),
+            "live edit must dispatch before phase playback"
+        );
+    };
     for row in rows {
         let format = row["format"].as_str().expect("exported format");
         let id = owner.update(cx, |app, cx| {
             app.submit_job(edit_request(format), completion(), cx)
                 .expect("edit job admitted")
         });
+        service_commands(Some((id, format)), cx);
         opt01_state(&owner, &endpoint, id, ArchiveJobState::Running, cx);
         let window = owner.read_with(cx, |app, _| {
             app.jobs.records[&id]
@@ -338,6 +381,7 @@ fn opt01_ac03_each_frozen_format_uses_its_own_serialized_phases(cx: &mut gpui_ki
             }
         }
         deliver(&owner, &endpoint, terminal(id, true), cx);
+        service_commands(None, cx);
     }
 }
 

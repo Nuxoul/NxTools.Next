@@ -167,7 +167,7 @@ impl Reader {
             let result = worker.await;
             let _ = owner.update_in(cx, |this, window, cx| {
                 this.history_work = None;
-                if !this.active_tab().is_some_and(|tab| tab.id == id) {
+                if this.active_tab().is_none_or(|tab| tab.id != id) {
                     return;
                 }
                 match result {
@@ -290,7 +290,8 @@ impl Reader {
         };
         let tab = tab.id;
         let owner = cx.weak_entity();
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let owner = owner.clone();
             dialog
                 .title("恢复所选版本？")

@@ -1,18 +1,27 @@
 use super::*;
+use gpui_kit::base::ElementExt as _;
 use gpui_kit::{Context, Render, TestAppContext, VisualTestContext, size};
 
 struct Source {
     focus: FocusHandle,
+    trigger: Rc<Cell<bool>>,
+    mounted: Rc<Cell<bool>>,
 }
 impl Render for Source {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().size_full().track_focus(&self.focus)
+        let trigger = self.trigger.clone();
+        div().size_full().track_focus(&self.focus).children(
+            self.mounted
+                .get()
+                .then(|| div().on_prepaint(move |_, _, _| trigger.set(true))),
+        )
     }
 }
 struct Fixture {
     id: Uuid,
     popup: AnyWindowHandle,
     trigger: Rc<Cell<bool>>,
+    mounted: Rc<Cell<bool>>,
     endpoint: nxtools_ipc::PlatformServerEndpoint,
     focus: FocusHandle,
     source: AnyWindowHandle,
@@ -22,19 +31,53 @@ fn fixture(cx: &mut TestAppContext) -> Fixture {
         cx.update(gpui_kit::init);
         cx.update(crate::theme::apply_component_theme);
     }
+    let trigger = Rc::new(Cell::new(true));
+    let mounted = Rc::new(Cell::new(true));
     let mut previous = None;
     let (_, source) = cx.add_window_view(|window, cx| {
         let focus = cx.focus_handle();
         previous = Some(focus.clone());
         focus.focus(window, cx);
-        gpui_kit::base::Root::new(cx.new(|_| Source { focus }), window, cx)
+        gpui_kit::base::Root::new(
+            cx.new(|_| Source {
+                focus,
+                trigger: trigger.clone(),
+                mounted: mounted.clone(),
+            }),
+            window,
+            cx,
+        )
     });
     let focus = previous.expect("actual source focus owner");
     let (platform, endpoint) = nxtools_ipc::platform_bridge(16);
     endpoint.set_connected_for_contract_test(true);
     let platform = Rc::new(platform);
+    source.update(|_, cx| {
+        if cx
+            .try_global::<crate::ui::material::UiMaterialCapabilities>()
+            .is_none()
+        {
+            let mut facts = crate::ui::material::UiMaterialCapabilities::default();
+            facts.connected();
+            assert!(facts.apply(
+                nxtools_protocol::window_material::SystemMaterialCapabilitiesChanged {
+                    correlation_id: Uuid::new_v4(),
+                    session_id: Uuid::new_v4(),
+                    revision: 1,
+                    supported: true,
+                    transparency_enabled: true,
+                    high_contrast: false,
+                    energy_saver: false,
+                    remote_session: false,
+                    native_error_code: 0,
+                    system_backdrop: true,
+                    rounded_corners: true,
+                }
+            ));
+            cx.set_global(facts);
+        }
+    });
     let id = Uuid::new_v4();
-    let trigger = Rc::new(Cell::new(true));
     let (popup, focus, source) = source.update(|window, cx| {
         focus.focus(window, cx);
         let surface = styled_menu_surface::open(
@@ -80,11 +123,46 @@ fn fixture(cx: &mut TestAppContext) -> Fixture {
         popup,
         trigger,
         endpoint,
+        mounted,
         focus,
         source,
     }
 }
 fn result(id: Uuid, data: Option<&str>, cx: &mut App) {
+    let surface = cx
+        .global::<NativeMenuState>()
+        .pending
+        .as_ref()
+        .and_then(|pending| {
+            pending
+                .surface
+                .as_ref()
+                .map(|surface| (surface.window, surface.hwnd, pending.platform.clone()))
+        });
+    if let Some((window, hwnd, platform)) = surface {
+        crate::ui::material::runtime::set_test_window_handle(window, hwnd, cx);
+        if crate::ui::material::runtime::receipt(window, cx).is_none() {
+            let command = crate::ui::material::command(
+                hwnd,
+                nxtools_protocol::window_material::MaterialSurface::Transparent,
+                cx,
+            )
+            .expect("synthetic native facts");
+            let preparation = crate::ui::material::Preparation::confirmed(
+                Uuid::new_v4(),
+                command,
+                transparent_receipt(command),
+                cx,
+            )
+            .expect("confirmed transparent fixture");
+            assert!(crate::ui::material::runtime::track_prepared(
+                window,
+                platform,
+                preparation,
+                cx
+            ));
+        }
+    }
     handle_notification(
         &PlatformNotification::CommandResult {
             correlation_id: id,
@@ -205,6 +283,7 @@ fn hidden_menu_retired_trigger_or_disconnect_cannot_reveal(cx: &mut TestAppConte
     for disconnect in [false, true] {
         let fixture = fixture(cx);
         let trigger = fixture.trigger.clone();
+        let mounted = fixture.mounted.clone();
         cx.update(|cx| {
             result(fixture.id, Some(PLACEMENT), cx);
             // This runs after hidden draw but before its deferred reveal.
@@ -219,6 +298,7 @@ fn hidden_menu_retired_trigger_or_disconnect_cannot_reveal(cx: &mut TestAppConte
                     );
                 } else {
                     trigger.set(false);
+                    mounted.set(false);
                 }
             });
         });
@@ -304,4 +384,105 @@ fn runtime_feedback_menu_overlay_click_inside_source_only_dismisses_menu(cx: &mu
         restored,
         "menu overlay point inside source restores panel instead of outside close"
     );
+}
+
+fn transparent_receipt(
+    command: nxtools_protocol::window_material::ApplyWindowMaterialCommand,
+) -> nxtools_protocol::window_material::AppliedWindowMaterial {
+    use nxtools_protocol::window_material::*;
+    AppliedWindowMaterial {
+        session_id: command.session_id,
+        facts_revision: command.facts_revision,
+        window_handle: command.window_handle,
+        generation: command.generation,
+        style: command.style,
+        surface: command.surface,
+        dark: command.dark,
+        effective: EffectiveWindowMaterial::Transparent,
+        fallback_reason: MaterialFallbackReason::None,
+        native_error_code: 0,
+    }
+}
+
+#[gpui_kit::test]
+fn material_menu_waits_for_transparent_policy_and_retired_trigger_cannot_reveal(
+    cx: &mut TestAppContext,
+) {
+    cx.executor().allow_parking();
+    let fixture = fixture(cx);
+    cx.update(|cx| {
+        crate::ui::material::runtime::set_test_window_handle(fixture.popup, -2, cx);
+        handle_notification(
+            &PlatformNotification::CommandResult {
+                correlation_id: fixture.id,
+                result: nxtools_protocol::PlatformCommandResult {
+                    success: true,
+                    error: None,
+                    native_error_code: None,
+                    data: Some(PLACEMENT.into()),
+                },
+            },
+            cx,
+        );
+    });
+    cx.run_until_parked();
+    let request = fixture
+        .endpoint
+        .try_receive_command_for_contract_test()
+        .expect("transparent policy before show");
+    let nxtools_protocol::Message::PlatformCommand(PlatformCommand::ApplyWindowMaterial(command)) =
+        request.message
+    else {
+        panic!(
+            "prepare/frame alone cannot show menu: {:?}",
+            request.message
+        );
+    };
+    assert_eq!(command.window_handle, -2);
+    assert_eq!(
+        command.surface,
+        nxtools_protocol::window_material::MaterialSurface::Transparent
+    );
+    fixture.trigger.set(false);
+    fixture.mounted.set(false);
+    let result = nxtools_protocol::PlatformCommandResult {
+        success: true,
+        error: None,
+        native_error_code: None,
+        data: Some(serde_json::to_string(&transparent_receipt(command)).expect("late receipt")),
+    };
+    fixture
+        .endpoint
+        .route_command_result_for_contract_test(request.id, result.clone())
+        .expect("real IPC terminal");
+    cx.update(|cx| {
+        assert!(crate::ui::material::runtime::handle_notification(
+            &PlatformNotification::CommandResult {
+                correlation_id: request.id,
+                result
+            },
+            cx
+        ))
+    });
+    cx.run_until_parked();
+    assert!(cx.read(|cx| cx.global::<NativeMenuState>().pending.is_none()));
+    assert!(!cx.read(|cx| cx.windows().contains(&fixture.popup)));
+    while let Ok(request) = fixture.endpoint.try_receive_command_for_contract_test() {
+        match request.message {
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::SetWindowVisibility(
+                command,
+            )) => {
+                assert!(!command.visible, "retired trigger cannot reveal the popup");
+            }
+            nxtools_protocol::Message::PlatformCommand(PlatformCommand::ActivateWindow(
+                command,
+            )) => {
+                assert_eq!(
+                    command.window_handle, 1,
+                    "only the original source may regain focus"
+                );
+            }
+            _ => {}
+        }
+    }
 }

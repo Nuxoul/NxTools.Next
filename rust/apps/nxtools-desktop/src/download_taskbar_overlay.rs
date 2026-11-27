@@ -1319,7 +1319,3 @@ mod tests {
         assert!(!visibility.complete_exit(exit_generation));
     }
 }
-
-#[cfg(test)]
-#[path = "ui/auxiliary_theme_tests.rs"]
-mod auxiliary_theme_tests;

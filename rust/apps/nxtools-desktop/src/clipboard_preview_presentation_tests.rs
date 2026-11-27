@@ -45,6 +45,27 @@ fn setup(cx: &mut TestAppContext) -> Fixture {
         application.preview.hovered_item_id = Some(7);
         application.preview.generation = 4;
     });
+    cx.update(|cx| {
+        let mut policy = crate::ui::material::UiMaterialCapabilities::default();
+        policy.connected();
+        assert!(policy.apply(
+            nxtools_protocol::window_material::SystemMaterialCapabilitiesChanged {
+                correlation_id: uuid::Uuid::new_v4(),
+                session_id: uuid::Uuid::new_v4(),
+                revision: 1,
+                supported: true,
+                transparency_enabled: true,
+                high_contrast: false,
+                energy_saver: false,
+                remote_session: false,
+                native_error_code: 0,
+                system_backdrop: true,
+                rounded_corners: true,
+            }
+        ));
+        cx.set_global(policy);
+    });
+    application.update(cx, |owner, cx| seed_prepared_material(owner, cx));
     Fixture {
         application,
         endpoint,
@@ -52,6 +73,33 @@ fn setup(cx: &mut TestAppContext) -> Fixture {
         _directory: directory,
     }
 }
+fn seed_prepared_material(owner: &mut ClipboardApplication, cx: &mut gpui_kit::App) {
+    use nxtools_protocol::window_material::{
+        AppliedWindowMaterial, EffectiveWindowMaterial, MaterialFallbackReason, MaterialSurface,
+    };
+    let command = crate::ui::material::command(
+        owner.preview.native_window_handle,
+        MaterialSurface::Transient,
+        cx,
+    )
+    .expect("qualified fixture facts");
+    let receipt = AppliedWindowMaterial {
+        session_id: command.session_id,
+        facts_revision: command.facts_revision,
+        window_handle: command.window_handle,
+        generation: command.generation,
+        style: command.style,
+        surface: command.surface,
+        dark: command.dark,
+        effective: EffectiveWindowMaterial::Solid,
+        fallback_reason: MaterialFallbackReason::None,
+        native_error_code: 0,
+    };
+    owner.preview.material =
+        crate::ui::material::Preparation::confirmed(uuid::Uuid::new_v4(), command, receipt, cx)
+            .expect("already prepared material");
+}
+
 fn stage() -> PendingPreviewStage {
     let item = ClipboardItem {
         id: 7,
@@ -96,10 +144,54 @@ fn stage() -> PendingPreviewStage {
     }
 }
 fn receive(fixture: &Fixture, cx: &mut TestAppContext) -> Envelope {
-    let envelope = fixture
+    cx.run_until_parked();
+    let mut envelope = fixture
         .endpoint
         .try_receive_command_for_contract_test()
         .expect("actual command queue");
+    if let Message::PlatformCommand(PlatformCommand::ApplyWindowMaterial(command)) =
+        &envelope.message
+    {
+        use nxtools_protocol::window_material::{
+            AppliedWindowMaterial, EffectiveWindowMaterial, MaterialFallbackReason,
+        };
+        let receipt = AppliedWindowMaterial {
+            session_id: command.session_id,
+            facts_revision: command.facts_revision,
+            window_handle: command.window_handle,
+            generation: command.generation,
+            style: command.style,
+            surface: command.surface,
+            dark: command.dark,
+            effective: EffectiveWindowMaterial::Solid,
+            fallback_reason: MaterialFallbackReason::None,
+            native_error_code: 0,
+        };
+        let result = nxtools_protocol::PlatformCommandResult {
+            success: true,
+            error: None,
+            native_error_code: None,
+            data: Some(serde_json::to_string(&receipt).expect("qualified material receipt")),
+        };
+        fixture
+            .endpoint
+            .route_command_result_for_contract_test(envelope.id, result.clone())
+            .expect("material terminal");
+        fixture.application.update(cx, |app, cx| {
+            app.handle_platform_notification(
+                PlatformNotification::CommandResult {
+                    correlation_id: envelope.id,
+                    result,
+                },
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        envelope = fixture
+            .endpoint
+            .try_receive_command_for_contract_test()
+            .expect("original native chain after material");
+    }
     assert_eq!(
         fixture.application.read_with(cx, |app, _| app
             .preview
@@ -155,7 +247,6 @@ fn first_preview_confirms_noactivate_bounds_topmost_then_show(cx: &mut TestAppCo
             y: 175,
             width: 500,
             height: 513,
-            corner_radius: None
         }))
     ));
     confirm(&fixture, &bounds, true, cx);
@@ -383,10 +474,12 @@ fn replaced_preview_hwnd_does_not_accept_old_presentation_result(cx: &mut TestAp
         fixture.application.update(cx, |app, cx| {
             app.preview.native_window_handle = 88;
             app.begin_initial_preview_presentation(stage(), cx);
+        });
+        let policy = receive(&fixture, cx);
+        fixture.application.update(cx, |app, _| {
             app.preview.native_window_handle = 99;
             app.preview.visible = true;
         });
-        let policy = receive(&fixture, cx);
         confirm(&fixture, &policy, success, cx);
         assert!(
             fixture
@@ -443,10 +536,12 @@ fn replaced_preview_hwnd_does_not_receive_old_presentation_timeout_hide(cx: &mut
     let fixture = setup(cx);
     fixture.application.update(cx, |app, cx| {
         app.begin_initial_preview_presentation(stage(), cx);
+    });
+    let _ = receive(&fixture, cx);
+    fixture.application.update(cx, |app, _| {
         app.preview.native_window_handle = 99;
         app.preview.visible = true;
     });
-    let _ = receive(&fixture, cx);
     cx.run_until_parked();
     cx.executor().advance_clock(PRESENTATION_STEP_TIMEOUT);
     cx.run_until_parked();
@@ -617,7 +712,6 @@ fn round2_reused_preview_confirms_new_native_size_before_render_reveal(cx: &mut 
                 window_handle: 88,
                 width: 238,
                 height: 95,
-                corner_radius: None,
                 ..
             }))
         ),
@@ -641,6 +735,7 @@ fn round2_reused_bounds_failure_timeout_cancel_and_old_hwnd_never_reveal(cx: &mu
             app.preview.generation = 4;
             app.preview.hovered_item_id = Some(7);
             app.preview.visible = true;
+            seed_prepared_material(app, cx);
             app.begin_reused_preview_presentation(stage(), cx);
         });
         let policy = receive(&fixture, cx);
@@ -795,8 +890,12 @@ fn height_feedback_measured_content_reaches_native_bounds_before_show(cx: &mut T
         ))
     ));
     confirm(&fixture, &show, true, cx);
+    cx.run_until_parked();
     fixture.application.update(cx, |owner, cx| {
         owner.preview.pending_stage = None;
+        owner.preview.material = crate::ui::material::runtime::take_preparation(window_handle, cx)
+            .expect("reuse checks out confirmed material");
+        owner.preview.material_presenting = true;
         let mut replacement = stage();
         replacement.item.text = "---".into();
         replacement.content_measured = false;

@@ -4,6 +4,7 @@
 // Split from downloads.rs — same type, separate impl block.
 
 use super::*;
+use nxtools_protocol::window_material::MaterialSurface;
 
 const FIXED_CONFIRMATION_IPC_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -19,6 +20,7 @@ pub(super) struct PendingNewDownloadHandoff {
     target_view: Entity<NewDownloadView>,
     source_native: i64,
     target_native: i64,
+    material_ready: bool,
 }
 
 impl DownloadApplication {
@@ -141,12 +143,9 @@ impl DownloadApplication {
             target_view,
             source_native,
             target_native,
+            material_ready: false,
         });
         info!(event = "download.fixed_confirmation.started", correlation_id = %operation_id, source_native, target_native, generation, "fixed confirmation handoff started");
-        if source_native == 0 && target_native == 0 {
-            self.finish_new_download_handoff(operation_id, true, "hwndless", cx);
-            return;
-        }
         let command = PlatformCommand::PresentFixedWindowOverAnchor(
             nxtools_protocol::PresentFixedWindowOverAnchorCommand {
                 window_handle: target_native,
@@ -155,21 +154,51 @@ impl DownloadApplication {
                 height: (window_size.height.as_f32() * scale).round() as i32,
             },
         );
-        #[cfg(test)]
-        if self.new_download_native_handles_override.is_some() {
-            self.new_download_handoff_commands.push(command);
-            self.schedule_fixed_confirmation_timeout(operation_id, cx);
-            return;
-        }
-        if self
-            .platform
-            .send_command_with_id(command, operation_id)
-            .is_err()
-        {
-            self.finish_new_download_handoff(operation_id, false, "dispatch_rejected", cx);
-            return;
-        }
         self.schedule_fixed_confirmation_timeout(operation_id, cx);
+        self.after_download_material(
+            target,
+            MaterialSurface::Backdrop,
+            FIXED_CONFIRMATION_IPC_TIMEOUT,
+            move |app, result, cx| {
+                let Some(pending) = app.pending_new_download_handoff.as_ref().filter(|pending| {
+                    pending.command_id == operation_id && pending.target == target
+                }) else {
+                    return;
+                };
+                if !app.fixed_source_is_current(
+                    pending.source,
+                    &pending.source_view,
+                    pending.generation,
+                    cx,
+                ) || !cx.windows().contains(&target)
+                    || pending.started_at.elapsed() >= FIXED_CONFIRMATION_IPC_TIMEOUT
+                {
+                    app.finish_new_download_handoff(operation_id, false, "retired", cx);
+                    return;
+                }
+                if let Err(reason) = result {
+                    app.finish_new_download_handoff(operation_id, false, reason, cx);
+                    return;
+                }
+                app.pending_new_download_handoff
+                    .as_mut()
+                    .expect("current handoff")
+                    .material_ready = true;
+                #[cfg(test)]
+                if app.new_download_native_handles_override.is_some() {
+                    app.new_download_handoff_commands.push(command);
+                    return;
+                }
+                if app
+                    .platform
+                    .send_command_with_id(command, operation_id)
+                    .is_err()
+                {
+                    app.finish_new_download_handoff(operation_id, false, "dispatch_rejected", cx);
+                }
+            },
+            cx,
+        );
     }
 
     fn schedule_fixed_confirmation_timeout(&self, command_id: uuid::Uuid, cx: &mut Context<Self>) {
@@ -231,7 +260,12 @@ impl DownloadApplication {
             pending.generation,
             cx,
         );
-        let mut ready = success && current && cx.windows().contains(&pending.target);
+        let mut ready = success
+            && current
+            && cx.windows().contains(&pending.target)
+            && pending.material_ready
+            && pending.started_at.elapsed() < FIXED_CONFIRMATION_IPC_TIMEOUT
+            && crate::ui::material::runtime::receipt(pending.target, cx).is_some();
         if ready {
             ready = pending
                 .target_view
@@ -860,16 +894,13 @@ impl DownloadApplication {
                 if explicit_url.is_some() {
                     self.retire_new_download_clipboard("explicit_url");
                 }
-                let native = window
-                    .update(cx, |_, window, _| {
-                        native_window_handle(window).unwrap_or_default()
-                    })
-                    .unwrap_or_default();
-                let _ = self.platform.send_command_correlated(
-                    PlatformCommand::ActivateWindow(ActivateWindowCommand {
-                        window_handle: native,
-                    }),
-                    intake_correlation.unwrap_or_else(uuid::Uuid::new_v4),
+                self.prepare_new_download_material(
+                    window,
+                    browser_context,
+                    intake_correlation,
+                    false,
+                    false,
+                    cx,
                 );
                 return Ok(());
             }
@@ -896,141 +927,74 @@ impl DownloadApplication {
             )
         );
         let prefill_clipboard = initial_source.is_none();
-        let native_slot = Rc::new(RefCell::new(0_i64));
-        let opened_native_slot = Rc::clone(&native_slot);
         #[cfg(test)]
         let view_slot = Rc::new(RefCell::new(None));
         #[cfg(test)]
         let opened_view_slot = Rc::clone(&view_slot);
         let window_size = initial_new_download_window_size(initial_source.as_ref());
         let window_bounds = WindowBounds::centered(window_size, cx);
-        let opened = cx.open_window(
-            new_download_window_options(window_bounds),
-            move |window, cx| {
-                let blob_cleanup = match initial_source.as_ref() {
-                    Some(NewDownloadInitialSource::Blob(context)) => Some(context.clone()),
-                    _ => None,
-                };
-                if let Some(blob_context) = blob_cleanup {
-                    let cleanup_application = application.clone();
-                    window.on_window_should_close(cx, move |_, cx| {
-                        cleanup_application
-                            .read(cx)
-                            .discard_browser_blob(&blob_context);
-                        true
-                    });
-                }
-                *opened_native_slot.borrow_mut() = native_window_handle(window).unwrap_or_default();
-                let clipboard_application = application.downgrade();
-                let view = cx.new(|cx| {
-                    NewDownloadView::new(
-                        NewDownloadViewInit {
-                            application,
-                            default_directory,
-                            default_connection_limit,
-                            default_adaptive_segment_policy,
-                            categories,
-                            initial_source,
-                        },
-                        window,
-                        cx,
-                    )
+        let mut options = new_download_window_options(window_bounds);
+        options.show = false;
+        options.focus = false;
+        let opened = cx.open_window(options, move |window, cx| {
+            let blob_cleanup = match initial_source.as_ref() {
+                Some(NewDownloadInitialSource::Blob(context)) => Some(context.clone()),
+                _ => None,
+            };
+            if let Some(blob_context) = blob_cleanup {
+                let cleanup_application = application.clone();
+                window.on_window_should_close(cx, move |_, cx| {
+                    cleanup_application
+                        .read(cx)
+                        .discard_browser_blob(&blob_context);
+                    true
                 });
-                #[cfg(test)]
-                {
-                    *opened_view_slot.borrow_mut() = Some(view.clone());
-                }
-                if prefill_clipboard {
-                    let clipboard_view = view.downgrade();
-                    let clipboard_window = window.window_handle();
-                    cx.defer(move |cx| {
-                        let _ = clipboard_application.update(cx, |app, cx| {
-                            app.request_new_download_clipboard(
-                                clipboard_window,
-                                clipboard_view,
-                                cx,
-                            );
-                        });
-                    });
-                }
-                // Focus the URL input one frame after the dialog is actually
-                // on screen; the constructor races the native first show.
-                let focus_view = view.downgrade();
-                let focus_window = window.window_handle();
+            }
+            let clipboard_application = application.downgrade();
+            let view = cx.new(|cx| {
+                NewDownloadView::new(
+                    NewDownloadViewInit {
+                        application,
+                        default_directory,
+                        default_connection_limit,
+                        default_adaptive_segment_policy,
+                        categories,
+                        initial_source,
+                    },
+                    window,
+                    cx,
+                )
+            });
+            #[cfg(test)]
+            {
+                *opened_view_slot.borrow_mut() = Some(view.clone());
+            }
+            if prefill_clipboard {
+                let clipboard_view = view.downgrade();
+                let clipboard_window = window.window_handle();
                 cx.defer(move |cx| {
-                    let _ = focus_window.update(cx, |_, window, cx| {
-                        if let Some(view) = focus_view.upgrade() {
-                            view.update(cx, |view, cx| view.focus_url_input(window, cx));
-                        }
+                    let _ = clipboard_application.update(cx, |app, cx| {
+                        app.request_new_download_clipboard(clipboard_window, clipboard_view, cx);
                     });
                 });
-                if auto_probe {
-                    let view = view.clone();
-                    let source_window = window.window_handle();
-                    cx.defer(move |cx| {
-                        let _ = source_window.update(cx, |_, window, cx| {
-                            view.update(cx, |view, cx| view.begin_probe(window, cx));
-                        });
-                    });
-                }
-                cx.new(|cx| Root::new(view, window, cx))
-            },
-        );
+            }
+            cx.new(|cx| Root::new(view, window, cx))
+        });
         match opened {
             Ok(window) => {
-                let native_window_handle = *native_slot.borrow();
-                let _ = window.update(cx, |_, window, _| window.activate_window());
-                let correlation_id = browser_context
-                    .map(|(correlation_id, _)| correlation_id)
-                    .or(intake_correlation)
-                    .unwrap_or_else(uuid::Uuid::new_v4);
-                let topmost_result = self.platform.send_command_correlated(
-                    PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
-                        window_handle: native_window_handle,
-                        enabled: true,
-                    }),
-                    correlation_id,
-                );
-                let activation_result = self.platform.send_command_correlated(
-                    PlatformCommand::ActivateWindow(ActivateWindowCommand {
-                        window_handle: native_window_handle,
-                    }),
-                    correlation_id,
-                );
                 self.new_download_window = Some(window.into());
                 #[cfg(test)]
                 {
                     self.new_download_view = view_slot.borrow().clone();
                 }
-                if let Some((correlation_id, handoff_id)) = browser_context {
-                    match (topmost_result, activation_result) {
-                        (Ok(topmost_command_id), Ok(activation_command_id)) => info!(
-                            event = "download.browser_dialog.foreground_requested",
-                            %correlation_id,
-                            %handoff_id,
-                            %topmost_command_id,
-                            %activation_command_id,
-                            window_handle = native_window_handle,
-                            "browser confirmation window opened and foreground commands queued"
-                        ),
-                        (topmost, activation) => warn!(
-                            event = "download.browser_dialog.foreground_request_failed",
-                            %correlation_id,
-                            %handoff_id,
-                            window_handle = native_window_handle,
-                            topmost_accepted = topmost.is_ok(),
-                            activation_accepted = activation.is_ok(),
-                            "browser confirmation window opened but foreground commands were not fully queued"
-                        ),
-                    }
-                } else {
-                    if let Err(error) = topmost_result {
-                        warn!(%error, window_handle = native_window_handle, "add-download window topmost request was not queued");
-                    }
-                    if let Err(error) = activation_result {
-                        warn!(%error, window_handle = native_window_handle, "add-download window activation request was not queued");
-                    }
-                }
+                self.prepare_new_download_material(
+                    window.into(),
+                    browser_context,
+                    intake_correlation,
+                    auto_probe,
+                    true,
+                    cx,
+                );
                 Ok(())
             }
             Err(error) => {
@@ -1059,13 +1023,8 @@ impl DownloadApplication {
 
     pub(crate) fn open_schedule_window(&mut self, cx: &mut Context<Self>) {
         if let Some(window) = self.schedule_window {
-            if window
-                .update(cx, |_, window, _| {
-                    window.activate_window();
-                    window.refresh();
-                })
-                .is_ok()
-            {
+            if cx.windows().contains(&window) {
+                self.prepare_schedule_material(window, false, cx);
                 return;
             }
             self.schedule_window = None;
@@ -1078,14 +1037,14 @@ impl DownloadApplication {
             WindowOptions {
                 window_bounds: Some(window_bounds),
                 titlebar: None,
-                focus: true,
-                show: true,
+                focus: false,
+                show: false,
                 kind: WindowKind::Normal,
                 is_movable: true,
                 is_resizable: false,
                 is_minimizable: false,
                 display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.DownloadSchedule".into()),
                 window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
@@ -1109,7 +1068,10 @@ impl DownloadApplication {
             },
         );
         match opened {
-            Ok(window) => self.schedule_window = Some(window.into()),
+            Ok(window) => {
+                self.schedule_window = Some(window.into());
+                self.prepare_schedule_material(window.into(), true, cx);
+            }
             Err(error) => {
                 self.notifications.update(cx, |notifications, cx| {
                     notifications.show_error(

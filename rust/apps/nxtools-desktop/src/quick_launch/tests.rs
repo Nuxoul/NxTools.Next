@@ -2995,7 +2995,7 @@ fn gpui_action_mode_handles_keyboard_mouse_and_parent_restoration(cx: &mut TestA
     application.update(cx, |application, _| {
         application.preview.visible = true;
     });
-    cx.simulate_event(gpui_kit::ScrollWheelEvent {
+    cx.simulate_event(gpui_kit::ScrollEvent {
         position: point(px(20.0), px(80.0)),
         delta: gpui_kit::ScrollDelta::Lines(point(0.0, -1.0)),
         ..Default::default()
@@ -4580,7 +4580,7 @@ fn every_result_scroll_path_suspends_the_hover_preview() {
         .nth(1)
         .and_then(|source| source.split("fn source_icon(").next())
         .expect("quick-launch panel render source");
-    assert!(render.contains(".on_scroll_wheel("));
+    assert!(render.contains(".on_scroll("));
     assert!(render.contains("suspend_quick_launch_preview_for_scroll"));
 
     let pointer_handler = source

@@ -2,6 +2,9 @@ use super::*;
 use gpui_kit::TestAppContext;
 use nxtools_protocol::{Envelope, Message};
 
+#[path = "link_material_tests.rs"]
+mod material_tests;
+
 fn links() -> Vec<crate::tools::link_panel::DetectedLinkRow> {
     crate::tools::link_detector::detect_links("https://example.invalid/file")
 }
@@ -77,6 +80,7 @@ fn multimonitor_link_first_show_and_reuse_use_current_work_area_without_activati
     cx: &mut TestAppContext,
 ) {
     let (_temporary, owner, endpoint) = fixture(cx);
+    material_tests::facts(cx, 1);
     let mut original = None;
     for (left, top, dpi) in [(-1920, -1080, 120), (2560, 40, 144)] {
         owner.update(cx, |owner, cx| owner.request_link_panel(links(), cx));
@@ -112,6 +116,7 @@ fn multimonitor_link_first_show_and_reuse_use_current_work_area_without_activati
         let window = owner.read_with(cx, |owner, _| {
             owner.link_panel.window.expect("hidden panel")
         });
+        cx.update(|cx| crate::ui::material::runtime::set_test_window_handle(window, 9001, cx));
         if let Some(original) = original {
             assert_eq!(window, original);
         } else {
@@ -130,7 +135,6 @@ fn multimonitor_link_first_show_and_reuse_use_current_work_area_without_activati
             stage.message,
             Message::PlatformCommand(PlatformCommand::SetWindowBounds(SetWindowBoundsCommand {
                 x: PREVIEW_STAGING_COORDINATE,
-                corner_radius: None,
                 ..
             }))
         ));
@@ -141,6 +145,7 @@ fn multimonitor_link_first_show_and_reuse_use_current_work_area_without_activati
             Message::PlatformCommand(PlatformCommand::SetWindowTopmost(_))
         ));
         reply(cx, &owner, &topmost, None);
+        material_tests::approve_stage(cx, &endpoint, window, left == -1920);
         let show = command(&endpoint);
         assert!(matches!(
             show.message,
@@ -186,6 +191,7 @@ fn multimonitor_link_first_show_and_reuse_use_current_work_area_without_activati
         assert_eq!(bounds.y, top + (24.0 * scale) as i32);
         assert_eq!(bounds.width, (420.0 * scale) as i32);
         reply(cx, &owner, &reveal, None);
+        cx.run_until_parked();
         let show = command(&endpoint);
         assert!(matches!(
             show.message,
@@ -194,6 +200,8 @@ fn multimonitor_link_first_show_and_reuse_use_current_work_area_without_activati
             ))
         ));
         reply(cx, &owner, &show, None);
+        cx.run_until_parked();
+        assert!(cx.update(|cx| crate::ui::material::runtime::receipt(window, cx).is_some()));
         assert!(owner.read_with(cx, |owner, _| owner.pending_link_placement.is_none()));
         assert!(endpoint.try_receive_command_for_contract_test().is_err());
     }

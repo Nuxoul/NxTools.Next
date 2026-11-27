@@ -167,7 +167,8 @@ pub(crate) fn show_run(
             _origin_subscription: origin_subscription,
         }
     });
-    window.open_dialog(cx, move |dialog, window, _| {
+    window.open_dialog(cx, move |dialog, window, cx| {
+        let dialog = dialog.bg(crate::theme::overlay_background(cx));
         let feedback = feedback.clone();
         dialog
             .title("扩展动作")

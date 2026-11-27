@@ -1,18 +1,11 @@
-//! Project defaults must not recolor the retained official optional configurations.
+//! Applying a theme must not recolor its bundled configuration.
 #[gpui_kit::test]
-fn graphite_defaults_preserve_every_optional_official_theme(cx: &mut gpui_kit::TestAppContext) {
+fn bundled_themes_apply_exactly_as_configured(cx: &mut gpui_kit::TestAppContext) {
     cx.update(gpui_kit::init);
     cx.update(crate::theme::apply_component_theme);
     for preference in nxtools_core::ThemePreference::ALL
         .into_iter()
-        .filter(|preference| {
-            !matches!(
-                preference,
-                nxtools_core::ThemePreference::System
-                    | nxtools_core::ThemePreference::Light
-                    | nxtools_core::ThemePreference::Dark
-            )
-        })
+        .filter(|preference| *preference != nxtools_core::ThemePreference::System)
     {
         let expected = cx.read(|cx| {
             let config = gpui_kit::component::ThemeRegistry::global(cx)
@@ -36,17 +29,17 @@ fn graphite_defaults_preserve_every_optional_official_theme(cx: &mut gpui_kit::T
 }
 
 #[gpui_kit::test]
-fn density_theme_default_aliases_are_exact_latte_frappe_and_system_pair(
+fn density_theme_defaults_are_exact_nxtools_schemes_and_system_pair(
     cx: &mut gpui_kit::TestAppContext,
 ) {
     use nxtools_core::ThemePreference;
     cx.update(gpui_kit::init);
     cx.update(crate::theme::apply_component_theme);
     for (preference, system_dark, expected_name) in [
-        (ThemePreference::Light, true, "Catppuccin Latte"),
-        (ThemePreference::Dark, false, "Catppuccin Frappe"),
-        (ThemePreference::System, false, "Catppuccin Latte"),
-        (ThemePreference::System, true, "Catppuccin Frappe"),
+        (ThemePreference::Light, true, "默认浅色"),
+        (ThemePreference::Dark, false, "默认深色"),
+        (ThemePreference::System, false, "默认浅色"),
+        (ThemePreference::System, true, "默认深色"),
     ] {
         cx.update(|cx| {
             crate::theme::apply_system_theme(system_dark, cx);

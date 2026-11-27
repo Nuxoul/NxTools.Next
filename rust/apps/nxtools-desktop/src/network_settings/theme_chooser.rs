@@ -3,13 +3,21 @@ use super::*;
 use gpui_kit::component::radio::{Radio, RadioGroup};
 use nxtools_core::ThemePreference;
 
-const LIGHT_CHOICES: [ThemePreference; 3] = [
+const LIGHT_CHOICES: [ThemePreference; 7] = [
     ThemePreference::Light,
+    ThemePreference::MistLight,
+    ThemePreference::PineLight,
+    ThemePreference::SandLight,
+    ThemePreference::CatppuccinLatte,
     ThemePreference::GruvboxLight,
     ThemePreference::SolarizedLight,
 ];
-const DARK_CHOICES: [ThemePreference; 5] = [
+const DARK_CHOICES: [ThemePreference; 9] = [
     ThemePreference::Dark,
+    ThemePreference::MistDark,
+    ThemePreference::PineDark,
+    ThemePreference::SandDark,
+    ThemePreference::CatppuccinFrappe,
     ThemePreference::CatppuccinMacchiato,
     ThemePreference::CatppuccinMocha,
     ThemePreference::GruvboxDark,
@@ -18,10 +26,8 @@ const DARK_CHOICES: [ThemePreference; 5] = [
 
 fn config_name(preference: ThemePreference, system_dark: bool) -> &'static str {
     match preference {
-        ThemePreference::Light => "Catppuccin Latte",
-        ThemePreference::Dark => "Catppuccin Frappe",
-        ThemePreference::System if system_dark => "Catppuccin Frappe",
-        ThemePreference::System => "Catppuccin Latte",
+        ThemePreference::System if system_dark => ThemePreference::Dark.label(),
+        ThemePreference::System => ThemePreference::Light.label(),
         explicit => explicit.label(),
     }
 }
@@ -97,8 +103,8 @@ fn preview(preference: ThemePreference, cx: &gpui_kit::App) -> gpui_kit::AnyElem
 
 fn radio(preference: ThemePreference, cx: &gpui_kit::App) -> Radio {
     let name = match preference {
-        ThemePreference::Light => "默认浅色 · Latte",
-        ThemePreference::Dark => "默认深色 · Frappe",
+        ThemePreference::Light => "默认浅色 · 石墨",
+        ThemePreference::Dark => "默认深色 · 石墨",
         _ => preference.label(),
     };
     Radio::new(gpui_kit::SharedString::from(preference.label()))
@@ -123,11 +129,7 @@ fn radio(preference: ThemePreference, cx: &gpui_kit::App) -> Radio {
 
 impl NetworkSettingsView {
     pub(super) fn render_theme_chooser(&self, cx: &mut Context<Self>) -> gpui_kit::AnyElement {
-        let selected = match self.theme_preference {
-            ThemePreference::CatppuccinLatte => ThemePreference::Light,
-            ThemePreference::CatppuccinFrappe => ThemePreference::Dark,
-            other => other,
-        };
+        let selected = self.theme_preference;
         let owner = cx.entity().downgrade();
         let system_owner = owner.clone();
         let mut columns = div().flex().items_start().gap_3().w_full().min_w_0();
@@ -186,7 +188,7 @@ impl NetworkSettingsView {
                 div()
                     .text_sm()
                     .text_color(self.theme.text_secondary)
-                    .child("选择预览，应用后统一生效。默认浅色为 Latte，默认深色为 Frappe。"),
+                    .child("选择预览，应用后统一生效。默认、雾蓝、松石、暖砂为 NxTools 配色。"),
             )
             .child(
                 Radio::new("global-theme-system")

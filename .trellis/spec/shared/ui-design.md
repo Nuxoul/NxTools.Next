@@ -3,6 +3,8 @@
 ## Authority and scope
 **Approved target:** [staged desktop design](../../tasks/10-02-staged-desktop-ui/design.md). **Observed implementation:** `repo:rust/apps/nxtools-desktop/src/theme.rs#Theme`, `repo:rust/apps/nxtools-desktop/src/ui/metrics.rs`, `repo:rust/apps/nxtools-desktop/src/ui/typography.rs`, `repo:rust/apps/nxtools-desktop/src/ui/motion.rs`. [Earlier remediation](../../../docs/ui-remediation-plan.md) and [GPUI reference](../../../docs/reference-code/gpui.md) remain historical source/behavior evidence, not numeric authority over the later approved brief. No product token consumer was changed by this standards task.
 
+Current framework pins and source lookup follow [Kit0.10.0/defaultpre0.3.12](../../../docs/reference-code/gpui-kit-0100.md). The upgrade amendment at the end supersedes earlier version claims only; dated UI evidence and approved behavior/layout rules remain.
+
 ## Approved target / current / exception matrix
 | Role | Approved target | Current evidence | Resolution / exception status |
 | --- | --- | --- | --- |
@@ -415,3 +417,33 @@ Buttons outside Toolbar.child adaptation. Immediate section saves, all four asso
 per-extension observed state, original enable/preview policy and deferred feedback remain.
 Actual Light/Dark layout/action/scroll regressions are separate from native/DPI/user visual approval.
 Owning scope: [settings feedback](../../tasks/11-20-settings-lifecycle-feedback/prd.md).
+
+## User-approved GPUI Kit0.10.0 upgrade
+Current Kit/Base/Component/Assets0.10.0/defaultpre0.3.12 supersedes earlier version pins only. [Current release/API authority](../../../docs/reference-code/gpui-kit-0100.md) governs active source lookup; dated0.8.0/0.7.1 review and outcomes above remain historical. Notification duration/header-action stay in notification.rs; live Windows noactivate stays in events.rs; Fast remains disabled. The approved whole-app material amendment retains core scene.rs/style.rs and Windows directx_renderer.rs/events.rs/shaders.hlsl/window.rs for UnderBorder, source-over alpha and actual client/frame/restored-cache consistency. The same pinned editor retains passive/lowbit/serializer provenance and only exact release adaptations in [editor provenance](../../../docs/reference-code/markdown-editor.md). Requested layouts, variants/sizes, Toolbar ghost+compact transformation, original state/native/deferred owners and all lifecycle rules remain. This is not a new catalog/visual audit or automatic adoption of new APIs; source, compiled, native, installed and user acceptance remain separate.
+
+### Hidden Windows first layout and ordinary frame
+Before `WindowsWindow::new` returns to GPUI, `logical_size`, client origin and renderer
+target must describe the actual created client, never `CREATESTRUCTW`'s `CW_USEDEFAULT`.
+The first Root render can cache viewport-derived `ListState` overdraw; resizing later
+must not be relied on to repair an invalid initial value. Preserve keyed Settings,
+Sidebar, inputs and drafts rather than recreating them after placement.
+Ordinary custom-caption windows requesting Client decorations use official WindowBorder;
+maximized/fullscreen edges are tiled. Server/native-caption/tool windows retain their
+existing frame or popup shell. Native styles, C# placement/visibility/focus and restored
+bounds ownership remain unchanged. Hidden first-show readiness uses explicit
+`Window::draw(cx).clear(cx)` after entity leases, then deferred identity-qualified
+continuation; `on_next_frame` plus refresh alone is not a hidden-window reveal gate.
+The opt-in `default_solid_settings_navigation_has_native_text_pixels` fixture uses
+`PI_SCRATCH_DIR`, a hidden owned HWND and disconnected/in-memory owners. It asserts a
+nonnegative initial viewport, Light/Dark actual navigation ink and official outer-frame
+pixels. `primary_hidden_first_show_draws_and_reveals_without_a_platform_frame` requires
+the original Show command without a synthetic frame, and activation only after Show ACK.
+Neither fixture accesses real Clipboard/history or certifies installed/user acceptance.
+
+## Explicitly approved Base editor-host compatibility amendment
+The user additionally approves the Base0.10.0 path patch `vendor/gpui-base-0100`, restricted to `src/text/editor_host.rs`, `src/text/editor_seam.rs`, `src/text/format/markdown.rs`, `src/text/node.rs`, `src/text/state.rs` in that modified_files order. The dedicated editor_host::parse_markdown NodeContext opts into preserve_editor_whitespace=true; state.rs adds only preserve_editor_whitespace:false to its complete NodeContext initializer. `LeafGeometry::table_cell_bounds()` supplies real column slack/divider and row boxes; `table_cell_content_bounds()` resolves final Div padding/border to content boxes. Text position/index already reflect actual alignment. Ordinary TextView keeps upstream0.10.0 behavior. Original published metadata, fixed editor revision and all original fixtures/assertions remain unchanged. [Release scope](../../../docs/reference-code/gpui-kit-0100.md) and [editor boundary](../../../docs/reference-code/markdown-editor.md) govern this narrow amendment and exact reversible frame/element compatibility; historical evidence above remains unchanged.
+
+## Frosted layers and NxTools schemes (2026-11-23)
+User feedback supersedes the Mica/Mica Alt choices and the clear-chrome Fluent neutral palette of `.trellis/tasks/11-23-acrylic-theme-rework/`. Theme style is Solid or Acrylic (Windows 10 label 磨砂); every framed frosted surface uses DWM38=3 on Windows 11 and the host backdrop on Windows 10 (Accent5, painted by a Composition visual in the GPUI process). Frosted surfaces are tinted by the selected scheme: one veil of the scheme canvas on every Root (0.50 light / 0.55 dark over acrylic: Windows 11 system acrylic, or on Windows 10 the host backdrop through the Fluent luminosity/tint recipe), secondary and muted text mixed 35% toward body ink, the content layer of persistent windows above it, opaque scheme popovers for menus/dialogs, and scheme body/accent/status colours unchanged. Content views must not floor cleared frosted roles into opaque planes (the Markdown reader page stays clear). Transient surfaces (Quick Launch, Clipboard, link and file-dialog panels) carry the veil, never a clear Root. The defaults are the NxTools 石墨 schemes plus 雾蓝/松石/暖砂 light and dark; Catppuccin/Gruvbox/Solarized remain optional. Contract details: [desktop materials](../../../docs/reference-code/desktop-materials.md), [theme reference](../../../docs/reference-code/graphite-theme.md). Physical Windows 10/11 visual acceptance remains the user's.
+
+Windows 10 additions: the host backdrop has no noise of its own, so frosted windows whose backdrop is confirmed carry a fine fixed-seed grain overlay (0.025 light / 0.03 dark, balanced white/black, no hitbox); system acrylic, `acrylic_opaque`, Solid and transparent overlays carry none. On every frosted panel (Windows 11 and 10) the Quick Launch search uses the official Large Input with `appearance(false)` so the panel is the field; Solid keeps the framed Input. Every framed window, Solid or frosted, has 8 DIP corners on Windows 10 too: a rounded window region plus a click-through companion shadow window with an antialiased rim (`ui/material/win10.rs`); the GPUI contour uses the same Component `window_radius`.

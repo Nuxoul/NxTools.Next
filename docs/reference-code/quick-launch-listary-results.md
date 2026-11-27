@@ -1,5 +1,7 @@
 # Listary 启动器：搜索内容、排序与呈现
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md). Earlier versioned component/API evidence remains dated; requested result hierarchy, official variants/parent adaptations, search/selection/focus and passive preview owners are unchanged. This upgrade is not new visual or native acceptance.
+
 ## 结论
 
 本次源码核对时，NxTools.Next 与 Listary 的差异同时存在于候选语义、历史学习和结果呈现，不只是颜色或间距。

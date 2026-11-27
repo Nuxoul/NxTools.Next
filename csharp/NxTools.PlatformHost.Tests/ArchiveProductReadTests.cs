@@ -67,6 +67,16 @@ internal static class ArchiveProductReadTests
     internal static string Root() => Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "archive-product-" + Guid.NewGuid())).FullName;
     public static Task HelperProtection()
     {
+        var sessionScratch = Environment.GetEnvironmentVariable("PI_SCRATCH_DIR") ?? Path.GetTempPath();
+        var sessionOwner = Path.Combine(sessionScratch, "archive-product-chain-" + Guid.NewGuid());
+        var sessionPackage = Directory.CreateDirectory(Path.Combine(sessionOwner, "package")).FullName;
+        try {
+            ArchiveReadHelper.GuardOwnedRoot(sessionPackage);
+            Check(ArchiveReadHelper.OwnedPackage(sessionPackage).Executable ==
+                Path.Combine(sessionPackage, ArchiveReadHelper.DeploymentName), "session scratch pipe fixture package");
+            try { ArchiveReadHelper.GuardOwnedRoot(sessionScratch); throw new InvalidOperationException("unowned scratch root accepted"); }
+            catch (ArgumentException) { }
+        } finally { Directory.Delete(sessionOwner, true); }
         var root = Root();
         try {
             var helper = ArchiveReadHelper.OwnedPackage(root);

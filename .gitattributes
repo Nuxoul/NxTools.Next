@@ -16,3 +16,9 @@ docs/reference-code/gpui-kit-component-catalog.json -text
 rust/apps/nxtools-desktop/assets/currency-catalog.json -text
 rust/apps/nxtools-desktop/src/tools/currency-fixtures/*.json -text
 rust/crates/nxtools-archive/tests/fixtures/** -text
+
+# Project-owned provenance metadata uses canonical text line endings.
+vendor/gpui-base-0100/NXTOOLS-UPSTREAM.json text eol=lf
+vendor/gpui-component-0100/NXTOOLS-UPSTREAM.json text eol=lf
+vendor/gpui-pre-0312/NXTOOLS-UPSTREAM.json text eol=lf
+vendor/gpui-pre-windows-0312/NXTOOLS-UPSTREAM.json text eol=lf

@@ -151,7 +151,7 @@ fn fixture_with_search_focus(cx: &mut TestAppContext, focus_search: bool) -> Fix
         _directory: directory,
     }
 }
-fn press(surface: &mut VisualTestContext, key: &str) {
+fn press(surface: &mut VisualTestContext, key: &'static str) {
     let keystroke = Keystroke::parse(key).expect("test keystroke");
     surface.simulate_event(KeyDownEvent {
         keystroke: keystroke.clone(),
@@ -2687,4 +2687,49 @@ fn audit06_shared_clipboard_fixed_card_caps_gap_and_feather_do_not_scale(cx: &mu
         }
     }
     surface.update(|_, cx| gpui_kit::component::Theme::update(cx, |theme| *theme = original));
+}
+
+#[gpui_kit::test]
+fn material_feather_preserves_translucent_card_coverage(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut surface = VisualTestContext::from_window(f.window, cx);
+    surface.update(|_, cx| {
+        crate::theme::set_appearance_preferences(
+            nxtools_core::ThemePreference::Dark,
+            nxtools_core::MaterialStyle::Acrylic,
+            cx,
+        )
+    });
+    f.panel.update(&mut surface, |panel, cx| {
+        panel.entries.borrow_mut().truncate(1);
+        panel.entries.borrow_mut()[0].text = "正文段落\n\n".repeat(30);
+        panel.selected_entry_index = None;
+        panel.list_scroll.reset(1);
+        cx.notify();
+    });
+    surface.simulate_mouse_move(point(px(0.0), px(0.0)), None, Default::default());
+    surface.run_until_parked();
+    surface.update(|window, cx| {
+        window.refresh();
+        window.draw(cx).clear(cx);
+    });
+    let fades = body_feather_quads(&mut surface);
+    assert_eq!(fades.len(), 1, "one original clipped-body feather");
+    let serialized =
+        serde_json::to_value(fades[0].background).expect("serialize actual feather background");
+    let end: gpui_kit::Hsla = serde_json::from_value(serialized["colors"][1]["color"].clone())
+        .expect("decode actual feather endpoint");
+    let expected = surface.read(|cx| Theme::active(cx).surface);
+    let expected: gpui_kit::Hsla = serde_json::from_value(
+        serde_json::to_value(expected).expect("serialize expected surface role"),
+    )
+    .expect("decode expected surface role");
+    assert!(
+        end.a > 0.0 && end.a < 1.0,
+        "no invisible fade or opaque strip"
+    );
+    assert_eq!(
+        end, expected,
+        "serialized feather preserves the public card role"
+    );
 }

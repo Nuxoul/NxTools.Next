@@ -554,9 +554,22 @@ fn opt03_ac01_add_submit_rejects_replacement_before_disconnect_delivery(
 fn opt03_ac01_add_intake_rejects_replacement_before_disconnect_delivery(
     cx: &mut gpui_kit::TestAppContext,
 ) {
-    for action in ["粘贴文件", "添加文件…", "添加文件夹…"] {
-        add_draft_connection_case(cx, action, true);
-    }
+    add_draft_connection_case(cx, "粘贴文件", true);
+}
+
+// Each replacement case owns one bridge for the lifetime of GPUI's material runtime.
+#[gpui_kit::test]
+fn opt03_ac01_add_file_picker_rejects_replacement_before_disconnect_delivery(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    add_draft_connection_case(cx, "添加文件…", true);
+}
+
+#[gpui_kit::test]
+fn opt03_ac01_add_folder_picker_rejects_replacement_before_disconnect_delivery(
+    cx: &mut gpui_kit::TestAppContext,
+) {
+    add_draft_connection_case(cx, "添加文件夹…", true);
 }
 
 #[gpui_kit::test]

@@ -227,7 +227,7 @@ fn audit06_new_long_content_scrolls_without_moving_fixed_actions(cx: &mut TestAp
             };
             let before = f.surface.debug_bounds(selector).expect("full error layout");
             for _ in 0..60 {
-                f.surface.simulate_event(gpui_kit::ScrollWheelEvent {
+                f.surface.simulate_event(gpui_kit::ScrollEvent {
                     position: viewport.center(),
                     delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -8.0)),
                     ..Default::default()

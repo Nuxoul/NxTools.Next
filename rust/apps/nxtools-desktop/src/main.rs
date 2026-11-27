@@ -282,7 +282,12 @@ fn run(
             //Unknown native animation preference is conservative until PlatformHost's snapshot.
             cx.set_reduce_motion(true);
             crate::theme::apply_component_theme(cx);
-            crate::theme::set_theme_preference(app_config.system.theme, cx);
+            crate::theme::set_appearance(
+                app_config.system.theme,
+                app_config.system.material_style,
+                app_config.system.material_tuning,
+                cx,
+            );
             crate::theme::set_ui_font_family(&app_config.system.ui_font_family, cx);
             crate::tools::markdown_reader::install_settings(&app_config, config_path.clone(), cx);
 
@@ -323,6 +328,8 @@ fn run(
                 start_on_login_silently: false,
                 close_to_tray: false,
                 theme: app_config.system.theme,
+                material_style: app_config.system.material_style,
+                material_tuning: app_config.system.material_tuning,
                 ui_font_family: app_config.system.ui_font_family.clone(),
                 notification_position: app_config.system.notification_position,
                 notification_duration_seconds: app_config.system.notification_duration_seconds,
@@ -434,7 +441,7 @@ fn run(
                     is_resizable: true,
                     is_minimizable: true,
                     display_id: placement.display_id,
-                    window_background: WindowBackgroundAppearance::Opaque,
+                    window_background: WindowBackgroundAppearance::Transparent,
                     app_id: Some("NxTools.Next".into()),
                     window_min_size: Some(size(px(920.0), px(480.0))),
                     window_decorations: Some(WindowDecorations::Client),
@@ -442,6 +449,7 @@ fn run(
                     inactive_frame_interval: None,
                     icon: None,
                     tabbing_identifier: None,
+                    ..Default::default()
                 },
                 move |window, cx| {
                     let close_platform = Rc::clone(&close_platform);
@@ -581,9 +589,13 @@ fn run(
                 crate::tools::floating_assistant::register(assistant.clone(), cx);
                 cx.defer(move |cx| assistant.update(cx, |assistant, cx| assistant.start(cx)));
             };
+            // The main window's content area paints the content layer; its title bar and
+            // sidebar show the system material directly.
+            crate::ui::material::paint::mark_layered(main_window_handle, cx);
             let main_preparation = if !main_show {
                 let preparation =
-                    platform_events::MainWindowPreparation::new(main_window_handle, publish_main);
+                    platform_events::MainWindowPreparation::new(main_window_handle, publish_main)
+                        .with_material_window(main_source);
                 Some(if markdown_origin {
                     preparation.keep_application_on_failure()
                 } else {
@@ -591,6 +603,21 @@ fn run(
                 })
             } else {
                 cx.defer(publish_main);
+                // A window shown at launch has no hidden preparation; it still follows the material.
+                if let Some(source) = main_source
+                    && main_window_handle != 0
+                {
+                    let platform = Rc::clone(&platform_bridge);
+                    cx.defer(move |cx| {
+                        crate::ui::material::runtime::watch(
+                            source,
+                            platform,
+                            main_window_handle,
+                            nxtools_protocol::window_material::MaterialSurface::Backdrop,
+                            cx,
+                        )
+                    });
+                }
                 None
             };
             let dispatcher = cx.new(|cx| {

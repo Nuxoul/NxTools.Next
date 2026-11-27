@@ -2,6 +2,8 @@
 
 Last verified: 2026-07-20.
 
+Current framework authority: [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md), with duration/header-action in `vendor/gpui-component-0100/src/notification.rs` and live noactivate in `vendor/gpui-pre-windows-0312/src/events.rs`. Earlier versioned source checks and outcomes below remain dated evidence; official clock/pause/stack/exit, explicit Copy, passive staging and deferred owner rules remain unchanged.
+
 ## Zed reference
 
 Root: `D:\Code\zed-main`

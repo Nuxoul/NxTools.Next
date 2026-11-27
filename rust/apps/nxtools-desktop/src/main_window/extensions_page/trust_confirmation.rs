@@ -120,6 +120,7 @@ impl ExtensionManagerView {
                     return;
                 }
                 window.open_dialog(cx, move |dialog, _, cx| {
+                    let dialog = dialog.bg(crate::theme::overlay_background(cx));
                     let state = draft.borrow();
                     let app = owner.upgrade();
                     let app = app.as_ref().map(|app| app.read(cx));
@@ -562,6 +563,10 @@ mod tests {
     fn draw(surface: &mut VisualTestContext) {
         surface.update(|window, cx| window.draw(cx).clear(cx));
         surface.run_until_parked();
+        surface.update(|window, cx| window.draw(cx).clear(cx));
+        surface
+            .executor()
+            .advance_clock(std::time::Duration::from_millis(250));
         surface.update(|window, cx| window.draw(cx).clear(cx));
     }
     fn click(surface: &mut VisualTestContext, selector: &'static str) {

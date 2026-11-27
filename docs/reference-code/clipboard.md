@@ -2,6 +2,8 @@
 
 Last verified: 2026-07-18.
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md): Component `vendor/gpui-component-0100`, Windows `vendor/gpui-pre-windows-0312`. Earlier versioned source coordinates and outcomes below are dated evidence. Original layout, passive preview reuse/staging, immutable payload, focus/IME, cancellation and deferred entity ownership remain unchanged; no new visual/native acceptance is implied.
+
 Additional references inspected2026-10-19: [ClipKeep and TieZ source index](clipboard-clipkeep-tiez.md), with [current comparison and proposed candidates](../audits/2026-10-19-clipboard-reference-comparison.md). These supplement legacy behavior; no UI/feature/lifecycle change or phase reorder is approved by the research.
 
 ## Behavioral contract
@@ -301,13 +303,14 @@ Showing the HWND before the replacement frame is submitted exposes the window's 
 buffer and briefly displays the previous image. A delayed show callback must also be generation
 guarded so scrolling or a newer hover cannot resurrect stale content.
 
-The clipboard panel and preview use transparent native windows, but their outer GPUI shells are
-deliberately rectangular and fill the complete native client bounds. A rounded transparent root
-reveals the rectangular HWND at its corners on Windows 10, so rounded styling is reserved for inner
-cards and controls. Generic GPUI drop shadows are also not used on the root shells because they
-render into transparent Windows surfaces as visible rectangular blocks; compact borders provide the
-surface separation instead. C# owns topmost, position, visibility, move and resize Win32 calls only;
-it does not own visual shape policy or apply a native window region.
+The clipboard panel and passive preview use transparent native render targets. The approved
+whole-application material design gives the primary Clipboard shell an8DIP rounded exterior,
+with matching Root/touching-child paint and a C# native window region. The passive preview keeps
+its separate existing shape and no-activate lifecycle. No generic root drop shadow or frame-style
+stripping is introduced. C# applies the primary region through the original bounds command and
+maintains only registered corner policies from existing geometry/destroy events; Rust still owns
+the requested shape and layout. Material readiness, exact bounds, topmost/frame/reveal/activation
+ordering and saved user size remain unchanged. See [material boundary](desktop-materials.md).
 Reverified popup creation on 2026-09-18: a hidden GPUI clipboard window can expose a native HWND with the monitor-sized default rectangle even when `WindowOptions.window_bounds` and the Rust open log both report `300×440`. The clipboard creation path must therefore send `SetWindowBoundsCommand` with the final popup rectangle before the topmost confirmation can reveal the HWND. The command is handled by `WindowsPlatformAdapter.SetWindowBounds`/`SetWindowPos`; this native resize is part of popup lifecycle correctness, not a visual-only adjustment.
 
 Preview appearance motion follows the Zed/GPUI one-shot animation model. Each requested item update
@@ -1087,3 +1090,29 @@ uses a stable elastic lane while feature_configuration_status still reports pend
 The real page/Switch/worker-barrier regression checks intermediate and terminal frames, original
 entity/command ownership and normal/reduced motion. No native capture/pause/zero-baseline behavior
 or shared animation framework changes. [Current boundary](../../.trellis/tasks/11-21-launcher-surface-clipboard-flicker/design.md).
+
+## Primary popup first-show frame
+
+Legacy `D:\Code\NxTools\Views\MainWindow.axaml.cs:859–913` creates or reuses the popup,
+clamps its size and places it before `PrepareForPopupShow`, inherited `Window.Show`, and activation.
+`Views\ClipboardHistoryPopupWindow.axaml.cs:61–74,127–167,206–259` defines constructor setup,
+search focus on open/activation, and preview/menu retirement before inherited `Window.Hide`.
+The Avalonia native implementation is outside the checkout.
+
+In Next, `clipboard.rs::open_panel` creates the primary window hidden, queues final device-pixel
+bounds before topmost, and stages the original popup session. `clipboard/popup_material.rs`
+owns readiness: after topmost resolution and a current Backdrop receipt, build the GPUI scene
+explicitly while hidden, following `clipboard_preview_presentation.rs:671–709`. The constructor
+draw (`gpui-pre-0312/src/app.rs:1621–1626`) precedes async preparation; Windows vsync invalidation
+does not guarantee `WM_PAINT` for a hidden HWND (`gpui-pre-windows-0312/src/platform.rs:466–480`).
+An ordinary `on_next_frame` callback is not a first-show barrier here.
+
+The draw runs after the application-owner lease. Its next-turn continuation runs after the window
+lease, checks the same preparation token, GPUI window, session, HWND and qualified receipt, then
+releases the original Show command. `WindowsPlatformAdapter.NativeMethods.cs:566–576` uses
+`SW_SHOWNOACTIVATE` and verifies native visibility. Only a successful current Show ACK starts
+`clipboard/popup_activation.rs`'s native activation; the matching activation ACK restores search
+focus on a deferred turn. The 20-second material deadline, retirement on hide/disable/replacement/
+disconnect, stale-result rejection, and passive preview ownership remain unchanged.
+`primary_hidden_first_show_draws_and_reveals_without_a_platform_frame` drives the in-memory IPC
+receipts, checks the hidden scene, and requires Show without a simulated frame or clock advance.

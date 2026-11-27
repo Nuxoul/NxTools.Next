@@ -904,19 +904,69 @@ Owned SendInput probes use a fresh nonzero31-bit ExtraInfo marker and full nativ
 Wrong: eligibility fails inside hook -> CallNext -> target application handles click.
 Correct: own down/up immediately -> next owner turn validates first clicked target -> selected or explicit failed -> drain releases -> unhook.
 
-## Scenario: Optional native outer-window corners
+## Scenario: Native outer-window corners
 ### 1. Scope / Trigger
-Quick Launch bounds application on Windows10/11, including compact/results/action transitions and monitor DPI changes.
+Every material-managed backdrop and transient window on Windows10/11, including Quick Launch and
+the Clipboard popup; maximize, restore and monitor DPI changes.
 ### 2. Signatures
-Original SetWindowBoundsCommand adds optional corner_radius device pixels: Rust Option<u32> defaults/omits None; C# nullable int defaults null. NativeMethods.SetWindowBounds uses the existing same-HWND size owner and original correlated result. Evidence: `repo:rust/apps/nxtools-desktop/src/quick_launch/monitor_presentation.rs`, `repo:csharp/NxTools.PlatformHost.Tests/WindowBoundsCornerTests.cs`.
+SetWindowBoundsCommand carries only handle, position and client size; there is no corner field.
+Corner shape is part of the material write. Evidence:
+`repo:csharp/NxTools.PlatformHost/Windows/WindowMaterialOwner.cs`,
+`repo:csharp/NxTools.PlatformHost.Tests/WindowMaterialTests.cs`,
+`repo:csharp/NxTools.PlatformHost.Tests/WindowBoundsTests.cs`.
 ### 3. Contracts
-Absent/null preserves the region; explicit0 restores rectangular shape; positive applies only after exact client readback. Rust Quick Launch supplies semantic8DIP scaled to the current monitor/device scale for every staging/final/dynamic size. Other consumers supply None. C# reads current resized outer bounds, uses widened arithmetic and a clamped ellipse diameter, and transfers HRGN ownership only on successful SetWindowRgn. Failed transfer deletes the caller-owned region after capturing the native error. Keep outer placement, NOACTIVATE/NOZORDER, original input/state/IME and passive preview owners; no HWND registry, polling, duplicate resize, vendor patch or rounded-child substitute.
+Build22000+: DWM33 ROUND and DWM34 0xFFFFFFFE (no system border) after the backdrop writes; DWM
+clips the window to the system radius (8DIP at every DPI) and drops rounding while maximized.
+GPUI draws the matching 8DIP contour on the Root surface as one fill+border element. Windows10:
+no rounding at all; GDI window regions clip GPUI content but never the WCA blur, so no HRGN is
+ever installed. Corner writes never position, activate, show or change frame styles.
 ### 4. Validation & Error Matrix
-Malformed/negative/fractional/overflow radius -> parser reject before effects. Invalid HWND/size/client mismatch or native region failure -> original typed failure/native code. None never resets an existing region. Accepted size alone is insufficient when a region was requested.
+A failed33/34 write follows the material failure path; Windows10 skips both attributes.
 ### 5. Good/Base/Bad Cases
-Good: actual HWND corners excluded and center/current bottom retained after60->530->60 resize. Base: old commands omit the field and retain behavior. Bad: round only a GPUI child while an opaque root or descendants still fill square HWND corners.
+Good: DWM-rounded window with a GPUI contour on the same arc. Base: Windows10 square window with a
+1px contour. Bad: a GDI region on a frosted window leaves blur in the clipped corners.
 ### 6. Tests Required
-Actual parse->adapter owned HWND/GDI fixture checks GetWindowRgn/PtInRegion/GetRgnBox, resize, frame compensation, reset/preservation, tiny dimensions, exact client size/position and unchanged foreground. Rust protocol omission/reset/roundtrip and96/120/144DPI main-popup factory regressions. Compiled fixtures are separate from actual GPUI/Win10/mixed-DPI/physical/user acceptance.
+Owned-HWND bounds fixture proves client size, frame compensation and that no window region is
+installed. Material fixtures prove33/34 order on build22000+ and their absence on Windows10.
 ### 7. Wrong vs Correct
-Wrong: rounded parent plus rectangular child content masks -> claim native corners.
-Correct: original bounds owner -> exact client readback -> requested native region -> correlated result; preserve official input frame and behavior.
+Wrong: SetWindowRgn rounded corners on an accent-blur window.
+Correct: DWM33/34 on Windows11, square on Windows10.
+
+## Native window material session
+
+`repo:csharp/NxTools.PlatformHost/Windows/WindowMaterialOwner.cs` is the single native material writer.
+Original pipe HelloAck negotiates window_material_v1; GetNamedPipeServerProcessId binds a fresh
+session GUID, finally retires it. Session/fact state never waits on the serialized native-write lock.
+Before writes, require current session/revision/generation, actual peer PID, root nonchild HWND and
+matching interactive Windows session. EventWindow's existing root-destroy callback retires HWND
+history; no cumulative window-count limit or replacement placement/visibility owner exists.
+
+System facts are sampled on the existing EventWindow STA and coalesced in a latest-only slot using
+its original250ms preference retry timer. Power/session callbacks only post that refresh message;
+Stop unsubscribes and clears pending publication. Handshake sends a fresh retained snapshot;
+Connected alone is not capability readiness. Ordinary command reader dispatch detaches material work
+through the original bounded STA runner, whose timeout retains the actual in-flight slot.
+
+Backdrop/transient writes: DWM20 dark first. Effective frosted with system backdrops (build22621):
+WCA19 Accent0 reset (GPUI Transparent leaves the transparent-gradient Accent2), then
+DwmExtendFrameIntoClientArea(0,0,0,32767) with the top margin kept0 (a top margin makes DWM draw
+its own caption buttons), then DWM38 = 3 (system acrylic) for every framed frosted surface. Without system backdrops (Windows10) frosted is Accent3/flags0/gradient0x01000000 with a
+zero frame and no DWM38; Accent4 is never written (it lags behind a dragged window). Solid and
+acrylic_opaque write DWM38None where supported, Accent0 and a zero frame. Build22000 then writes
+DWM33 ROUND and DWM34 0xFFFFFFFE; Windows10 never writes33/34. No Accent getter or visual-success
+claim exists. Frosted native failure requires successful reset (DWM38None, Accent0, zero frame)
+before opaque fallback; failed reset, Solid/transparent native failure and stale ownership fail
+without receipt authority. Transparent hosts keep DWM20/DWM38None/Accent0 only. Capability facts
+carry system_backdrop and rounded_corners derived from the RtlGetVersion build. Capability/native
+errors retain scalar codes and fixed categories, never exception payload. Tests use synthetic
+facts/native callbacks and hidden self-owned HWNDs, not settings mutation or ordinary
+adapter/clipboard startup. DWMWA_CLOAK is owner-process only (cross-process writes return
+0x80070005), so first-frame cloaking lives in the approved GPUI Windows `events.rs` patch. The same
+patch reports WM_MOVE inside the native size/move loop once at WM_EXITSIZEMOVE (origin and display
+still update per message): a per-step `moved` refresh re-presents the swapchain and makes Windows 10
+DWM recompose the accent blur on every drag step, so frosted windows lagged behind the cursor.
+Wire and fallback order: [material rework](../../tasks/11-23-acrylic-theme-rework/implement.md).
+Regression entries: `repo:csharp/NxTools.PlatformHost.Tests/WindowMaterialTests.cs`,
+`repo:csharp/NxTools.PlatformHost.Tests/MaterialPublicationTests.cs`; run exact fixture filter
+`window material`. Native acceptance here proves setter/reset and unchanged hidden HWND policy,
+not GPUI renderer pixels, physical focus/resize or whole-product theme completion.

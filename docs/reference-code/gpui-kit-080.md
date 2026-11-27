@@ -1,4 +1,6 @@
-# GPUI Kit0.8.0 current release and migration index
+# GPUI Kit0.8.0 historical release and migration index
+
+Current authority: [GPUI Kit 0.10.0 / pre0.3.12](gpui-kit-0100.md). The versions, archive identities, source review and outcomes below describe the 2026-10-21 upgrade and its dated amendments; they are not current dependency pins or a new acceptance result.
 
 ## Authority and scope
 User explicitly authorized the product upgrade2026-10-21. Current root pins `gpui-kit = "=0.8.0"`, coherent Base/Component/Assets0.8.0, default gpui-pre0.3.9. No GPUI Fast/new Markdown editor/JS Shell/WebView feature is enabled by this upgrade. Historical0.7.1 API index and2026-10-15website0.7.3catalog/page hashes remain historical evidence; they are not rewritten as a fresh79page audit. Read this release delta before those tables, then exact current released source for each implementation.
@@ -28,10 +30,11 @@ The currentWindows target `cargo tree -p nxtools-desktop --locked --target x86_6
 | Scrolling | Kitrelease nested gesture ownership, Textarea/Editor/scrollableTextView | One existing scrollowner per viewport; verify longcontent/end/footer and no unintended parent gesture behavior. Windows does not adopt macOS bounce default. |
 | Native / input | gpui-pre0.3.9 Window::handle_input/intercept_keystrokes/observe_window_activation; InputState.input_bounds/markedrange retained | OriginalClipboardtype-anywhere bridge, nofocusCtrl-digit, IME/editor/dialog/menu, samewindow and original actioncorrelation survive. Primarypanel activates; passive previews do not. |
 
-## Exactly two carried source exceptions
+## Carried source exceptions and approved material amendment
 - `repo:vendor/gpui-component-080/NXTOOLS-PATCH.md`: optional notification duration forwards into official ToastOptions.timeout. User2026-10-23 also authorizes additive `Notification::header_action` in the same notification.rs, for a compact Copy button left of original Close; optional/defaultNone/officialEnding omitted, no extra clock/globalCtrlC/clipboard transport. Unconfigured5s, product1–60/default6 and original lifecycle remain. Fork preservation: https://github.com/Nuxoul/gpui-kit; current task `.trellis/tasks/10-23-notification-copy-button/` records commits/limits.
 - `repo:vendor/gpui-pre-windows-039/NXTOOLS-PATCH.md`: `WM_MOUSEACTIVATE` reads live `WS_EX_NOACTIVATE` -> `MA_NOACTIVATE`, otherwise `MA_ACTIVATE`. C# owns the style; original Rust staging/GPUI rendering is preserved. Published 0.3.9 did not contain this fix.
-- Perfile upstream hashes in eachNXTOOLS-UPSTREAM.json; oldvendor0.7.1/0.5.1/Windows0.3.8keptinactive/unmodified. No registry sources edited. Only approvednotification.rs/events.rs implementation deltas.
+- User2026-11-21 additionally approves the exact six-file [whole-app material amendment](../../.trellis/tasks/11-21-desktop-motion-acrylic-style/implement.md): pinned local core `scene.rs`/`style.rs`, Windows `directx_renderer.rs`/`shaders.hlsl`/`window.rs`/`events.rs`. UnderBorder and source-over alpha retain foreground/masks/children; real client margins/cache retain resize, native caption, saved bounds, maximize/restore and passive policy. The notification exception is unchanged.
+- Perfile upstream hashes in eachNXTOOLS-UPSTREAM.json; oldvendor0.7.1/0.5.1/Windows0.3.8keptinactive/unmodified. No registry sources edited. The release gate allows only the exact approved files and verifies all other published bytes.
 
 ## Verification and limitations
 `python tests/architecture/gpui-release-contracts.py` verifies lock/source/provenance; optional --upstream compares independently extractedarchive hashes and --active-tree checks actual enabledtree. `python tests/architecture/gpui-component-catalog.py` retains historicalpage/table/viewer equality and now checks currentrelease authority separately. Neither validates nativeactivation, screenshots or useracceptance.

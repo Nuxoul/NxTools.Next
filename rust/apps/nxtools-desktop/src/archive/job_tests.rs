@@ -1146,7 +1146,7 @@ fn audit04_long_unicode_body_scroll_keeps_fixed_footer_and_complete_identifier(
             .origin
             .y;
         for _ in 0..80 {
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: gpui_kit::point(px(240.), px(90.)),
                 delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.), px(-1000.))),
                 ..Default::default()
@@ -1374,7 +1374,7 @@ fn audit05_create_keyboard_release_and_missing_object_cancel_are_once_only(
 
 fn audit05_prompt_key(
     surface: &mut gpui_kit::VisualTestContext,
-    key: &str,
+    key: &'static str,
     down: bool,
     held: bool,
 ) {
@@ -2138,7 +2138,7 @@ fn cancelled_real_extract_form_never_writes_draft_preferences(cx: &mut gpui_kit:
             } else {
                 -3.
             };
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: viewport.center(),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., delta)),
                 ..Default::default()
@@ -2212,7 +2212,7 @@ fn accepted_real_extract_submit_is_the_only_preference_disk_boundary(
             } else {
                 -3.
             };
-            surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            surface.simulate_event(gpui_kit::ScrollEvent {
                 position: viewport.center(),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., delta)),
                 ..Default::default()
@@ -2519,6 +2519,7 @@ fn fb_ac02_actual_queue_full_recovers_pause_and_keeps_cancel_reserved(
         ArchiveReadClient::new(bridge.archive_client_bridge()).expect("original read client"),
     );
     let owner = cx.new(|cx| ArchiveApplication::new(bridge, Some(client), cx));
+    super::super::tests::prepare_presentations(&owner, cx);
     let (id, mut surface) = fb_control_surface(&owner, &endpoint, cx);
     owner.read_with(cx, |app, _| {
         for _ in 0..64 {
@@ -4527,7 +4528,7 @@ fn object_scroll_to(surface: &mut gpui_kit::VisualTestContext, label: &str) {
         } else {
             -3.
         };
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: viewport.center(),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0., delta)),
             ..Default::default()
@@ -5781,12 +5782,22 @@ fn r3_archive_timeout_disconnect_background_and_auto_close_do_not_reactivate(
 
     let background = owner.update(cx, |app, cx| {
         let id = app.submit_job(request(3), completion(), cx).expect("job");
+        assert!(app.jobs.material_pending.contains_key(&id));
+        assert!(!app.jobs.activations.contains_key(&id));
+        id
+    });
+    cx.run_until_parked();
+    let [shown] = r3_activations(&endpoint)[..] else {
+        panic!("material-ready first show requests one activation");
+    };
+    r3_receipt(&owner, &endpoint, r3_result(shown, None, None), cx);
+    owner.update(cx, |app, cx| {
+        app.show_job(background, cx);
         assert!(
-            app.jobs.activations.contains_key(&id),
+            app.jobs.activations.contains_key(&background),
             "pending before dispatch"
         );
-        app.background_job(id, cx);
-        id
+        app.background_job(background, cx);
     });
     cx.run_until_parked();
     assert!(

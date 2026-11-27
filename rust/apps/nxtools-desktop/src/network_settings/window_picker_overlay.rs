@@ -1,6 +1,6 @@
 use super::*;
 use gpui_kit::component::label::Label;
-use gpui_kit::{Bounds, Pixels, Point, rgb, transparent_black};
+use gpui_kit::{Bounds, Pixels, Point, transparent_black};
 use nxtools_protocol::process_window_pick::{WindowPickCandidate, WindowPickRect};
 
 pub(super) struct WindowPickerOverlay {
@@ -92,11 +92,12 @@ pub(super) fn highlight_bounds(
 }
 
 impl Render for WindowPickerOverlayView {
-    fn render(&mut self, window: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut surface = div().size_full().relative().bg(transparent_black());
         if let (Some(viewport), Some(target)) = (self.viewport, self.candidate.as_ref()) {
             let bounds = highlight_bounds(viewport, target, window.scale_factor());
-            let accent = rgb(0x2f8cff);
+            let colors = &gpui_kit::component::Theme::global(cx).colors;
+            let accent = colors.primary;
             surface = surface.child(
                 div()
                     .debug_selector(|| "blacklist-window-picker-highlight".into())
@@ -116,7 +117,7 @@ impl Render for WindowPickerOverlayView {
                             .max_w_full()
                             .px_2()
                             .bg(accent)
-                            .text_color(rgb(0xffffff))
+                            .text_color(colors.primary_foreground)
                             .child(
                                 Label::new(format!(
                                     "{}  {} × {} · 左键选取，Esc 取消",
@@ -128,5 +129,59 @@ impl Render for WindowPickerOverlayView {
             );
         }
         surface
+    }
+}
+
+#[cfg(test)]
+mod material_tests {
+    use super::*;
+
+    #[gpui_kit::test]
+    fn material_picker_highlight_uses_public_accent_without_desktop_fill(
+        cx: &mut gpui_kit::TestAppContext,
+    ) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        let (_, surface) = cx.add_window_view(|window, cx| {
+            let view = cx.new(|_| WindowPickerOverlayView {
+                viewport: Some(WindowPickRect {
+                    left: 0,
+                    top: 0,
+                    width: 400,
+                    height: 300,
+                }),
+                candidate: Some(WindowPickCandidate {
+                    window_handle: 201,
+                    process_id: 900,
+                    process_name: "fixture.exe".into(),
+                    left: 20,
+                    top: 40,
+                    width: 200,
+                    height: 120,
+                }),
+            });
+            Root::new(view, window, cx).bg(transparent_black())
+        });
+        surface.simulate_resize(size(px(400.0), px(300.0)));
+        for style in nxtools_core::MaterialStyle::ALL {
+            surface.update(|window, cx| {
+                crate::theme::set_appearance_preferences(
+                    nxtools_core::ThemePreference::Dark,
+                    style,
+                    cx,
+                );
+                window.refresh();
+                window.draw(cx).clear(cx);
+                let accent = gpui_kit::component::Theme::global(cx).colors.primary;
+                let quads = window.painted_quads();
+                assert!(quads.iter().any(|quad| quad.border_color == accent));
+                assert!(
+                    quads.iter().all(|quad| quad.background.is_transparent()
+                        || quad.bounds.size.width.0 < 400.0 * window.scale_factor()
+                        || quad.bounds.size.height.0 < 300.0 * window.scale_factor()),
+                    "sparse host never paints the desktop-sized canvas"
+                );
+            });
+        }
     }
 }

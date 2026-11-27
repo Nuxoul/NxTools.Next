@@ -1,5 +1,7 @@
 # Global UI font settings
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md): Component `vendor/gpui-component-0100`, Windows `vendor/gpui-pre-windows-0312`. Earlier versioned API/source coordinates below remain dated evidence. Font preferences, inherited typography, fallback, draft/focus/native ownership and acceptance limits are unchanged.
+
 ## Reference and lifecycle
 
 User authorizes an available English/Chinese UI-family choice. The approved app-private default is Sarasa UI SC Regular; explicit saved choices, diagnostic/code Consolas, font sizes and the selected theme graph remain unchanged.

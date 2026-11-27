@@ -297,9 +297,10 @@ impl crate::AppConfig {
 #[cfg(test)]
 #[test]
 fn archive_install_preserves_saved_custom_and_opted_out_intent() {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = tempfile::tempdir().expect("owned archive install configuration directory");
     let path = temp.path().join("config.json");
-    let off = crate::AppConfig::archive_integration_for_install(&path, false).unwrap();
+    let off = crate::AppConfig::archive_integration_for_install(&path, false)
+        .expect("read absent upgrade intent");
     assert_eq!(
         off.archive.shell_integration,
         ArchiveShellIntegrationSettings::default()
@@ -308,7 +309,8 @@ fn archive_install_preserves_saved_custom_and_opted_out_intent() {
         !path.exists(),
         "upgrade does not manufacture a fresh configuration"
     );
-    let fresh = crate::AppConfig::archive_integration_for_install(&path, true).unwrap();
+    let fresh = crate::AppConfig::archive_integration_for_install(&path, true)
+        .expect("create fresh integration intent");
     let intent = fresh.archive.shell_integration.clone();
     assert!(intent.classic_cascade && intent.open_with && intent.set_default);
     assert_eq!(
@@ -319,7 +321,7 @@ fn archive_install_preserves_saved_custom_and_opted_out_intent() {
     assert_eq!(intent.desired_revision, 1);
     assert_eq!(
         crate::AppConfig::load_from(&path)
-            .unwrap()
+            .expect("read persisted fresh intent")
             .archive
             .shell_integration,
         intent
@@ -333,15 +335,21 @@ fn archive_install_preserves_saved_custom_and_opted_out_intent() {
         menu_commands: vec![],
         ..ArchiveShellIntegrationSettings::default()
     };
-    config.save_to(&path).unwrap();
-    let before = std::fs::read(&path).unwrap();
+    config
+        .save_to(&path)
+        .expect("save custom integration intent");
+    let before = std::fs::read(&path).expect("read saved custom bytes");
     for fresh in [false, true] {
-        let actual = crate::AppConfig::archive_integration_for_install(&path, fresh).unwrap();
+        let actual = crate::AppConfig::archive_integration_for_install(&path, fresh)
+            .expect("preserve saved installation intent");
         assert_eq!(
             actual.archive.shell_integration,
             config.archive.shell_integration
         );
-        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(
+            std::fs::read(&path).expect("read unchanged custom bytes"),
+            before
+        );
     }
 }
 

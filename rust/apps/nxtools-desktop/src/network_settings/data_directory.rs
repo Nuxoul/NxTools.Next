@@ -288,7 +288,6 @@ mod tests {
         let (bridge, endpoint) = nxtools_ipc::platform_bridge(16);
         endpoint.set_connected_for_contract_test(true);
         app.update(cx, |app, cx| {
-            app.platform = Some(Rc::new(bridge));
             app.data_paths = Some(nxtools_core::AppPaths {
                 config_dir: root.clone(),
                 data_dir: root.join("data"),
@@ -296,6 +295,7 @@ mod tests {
                 log_dir: root.join("logs"),
             });
             app.open_window(cx);
+            app.platform = Some(Rc::new(bridge));
         });
         cx.run_until_parked();
         let (handle, view) = cx.read(|cx| {

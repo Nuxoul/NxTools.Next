@@ -3,7 +3,7 @@
 
 use super::*;
 use gpui_kit::base::Root;
-use gpui_kit::{ScrollDelta, ScrollWheelEvent, TestAppContext};
+use gpui_kit::{ScrollDelta, ScrollEvent, TestAppContext};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -382,6 +382,7 @@ fn panel_shell_fills_the_native_window_without_a_uniform_transparent_gutter(
                     .on_mouse_down(gpui_kit::MouseButton::Left, move |_event, _window, _cx| {
                         presses.set(presses.get() + 1)
                     }),
+                gpui_kit::Corners::all(px(8.0)),
             )
         }
     }
@@ -437,6 +438,7 @@ fn inset_sections_leave_safe_edges_and_resize_stays_on_the_native_corner(cx: &mu
                             resize_presses.set(resize_presses.get() + 1);
                         },
                     ))),
+                gpui_kit::Corners::all(px(8.0)),
             )
         }
     }
@@ -521,7 +523,7 @@ fn rendered_category_bar_moves_on_vertical_wheel(cx: &mut TestAppContext) {
                 .h(px(26.0))
                 .overflow_x_scroll()
                 .track_scroll(&rendered_handle)
-                .on_scroll_wheel(move |event, window, app| {
+                .on_scroll(move |event, window, app| {
                     app.stop_propagation();
                     let delta = event.delta.pixel_delta(px(48.0));
                     let update = resolve_category_wheel_offset(
@@ -567,7 +569,7 @@ fn rendered_category_bar_moves_on_vertical_wheel(cx: &mut TestAppContext) {
     );
 
     assert!(handle.max_offset().x > px(0.0));
-    window.simulate_event(ScrollWheelEvent {
+    window.simulate_event(ScrollEvent {
         position: point(px(10.0), px(10.0)),
         delta: ScrollDelta::Lines(point(0.0, -1.0)),
         ..Default::default()

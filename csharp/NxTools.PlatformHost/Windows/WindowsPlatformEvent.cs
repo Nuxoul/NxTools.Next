@@ -7,6 +7,10 @@ internal sealed record SystemMotionPreferenceChangedEvent(
     Guid CorrelationId, bool ReducedMotion, int NativeErrorCode) : WindowsPlatformEvent;
 internal sealed record SystemThemePreferenceChangedEvent(
     Guid CorrelationId, bool Dark, int NativeErrorCode) : WindowsPlatformEvent;
+internal sealed record SystemMaterialCapabilitiesChangedEvent(
+    Guid CorrelationId, Guid SessionId, ulong Revision, bool Supported, bool TransparencyEnabled,
+    bool HighContrast, bool EnergySaver, bool RemoteSession, int NativeErrorCode,
+    bool SystemBackdrop, bool RoundedCorners) : WindowsPlatformEvent;
 
 internal enum QuickLaunchKeyboardHealthState { InstallFailed, ThreadExited, Reinstalled }
 internal sealed record QuickLaunchKeyboardHealthChangedEvent(

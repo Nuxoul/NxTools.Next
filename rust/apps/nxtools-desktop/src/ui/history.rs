@@ -925,14 +925,14 @@ fn body_feather(
     cx: &App,
 ) -> impl IntoElement {
     let kit = gpui_kit::component::Theme::global(cx);
-    let backdrop = Theme::active(cx).canvas;
+    let theme = Theme::active(cx);
     let surface = Theme::active(cx).surface;
     let selected_background = if kit.list.active_highlight {
         kit.colors.list_active
     } else {
         kit.colors.accent
     };
-    let normal = backdrop.blend(if selected {
+    let normal = theme.surface_on_canvas(if selected {
         selected_background.to_rgb()
     } else {
         surface
@@ -940,7 +940,7 @@ fn body_feather(
     let hovered = if selected {
         normal
     } else {
-        backdrop.blend(kit.tokens.list_hover.to_rgb())
+        theme.surface_on_canvas(kit.tokens.list_hover.to_rgb())
     };
     div()
         .absolute()

@@ -663,7 +663,11 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
     application.update(cx, |application, cx| {
         application.handle_link_detector_capture("https://first.invalid", cx)
     });
-    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
+    crate::clipboard::ClipboardApplication::drain_link_detection_fixture(
+        cx,
+        &application,
+        &endpoint,
+    );
     let first = *cx.windows().last().expect("first capture panel");
     cx.run_until_parked();
     executor.advance_clock(Duration::from_secs(4));
@@ -671,7 +675,11 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
     application.update(cx, |application, cx| {
         application.handle_link_detector_capture("https://second.invalid", cx)
     });
-    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
+    crate::clipboard::ClipboardApplication::drain_link_detection_fixture(
+        cx,
+        &application,
+        &endpoint,
+    );
     assert_eq!(
         cx.windows(),
         vec![first],
@@ -714,7 +722,11 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
     application.update(cx, |application, cx| {
         application.handle_link_detector_capture("https://third.invalid", cx);
     });
-    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
+    crate::clipboard::ClipboardApplication::drain_link_detection_fixture(
+        cx,
+        &application,
+        &endpoint,
+    );
     cx.run_until_parked();
     let third = *cx.windows().last().expect("capture after timer close");
     assert_ne!(third, first);
@@ -730,7 +742,11 @@ fn r6_capture_reuses_one_window_and_retires_superseded_six_second_timer(cx: &mut
         application.forget_link_panel();
         application.handle_link_detector_capture("https://fourth.invalid", cx);
     });
-    crate::clipboard::ClipboardApplication::wait_for_link_detection(cx, &application);
+    crate::clipboard::ClipboardApplication::drain_link_detection_fixture(
+        cx,
+        &application,
+        &endpoint,
+    );
     cx.run_until_parked();
     let fourth = *cx.windows().last().expect("capture after explicit forget");
     assert_ne!(fourth, third);
@@ -854,11 +870,12 @@ fn link_panel_expanded_list_scrolls_to_every_row_with_footer_visible(cx: &mut Te
             .bottom()
             > viewport.bottom()
     );
-    window.simulate_event(gpui_kit::ScrollWheelEvent {
+    window.simulate_event(gpui_kit::ScrollEvent {
         position: viewport.center(),
         delta: gpui_kit::ScrollDelta::Pixels(gpui_kit::point(px(0.0), px(-2_000.0))),
         modifiers: gpui_kit::Modifiers::default(),
         touch_phase: gpui_kit::TouchPhase::Moved,
+        source: Default::default(),
     });
     window.run_until_parked();
     window.refresh().expect("scroll to last retained link");

@@ -12,7 +12,7 @@ fn captured(view: &Entity<OperationForm>, surface: &mut VisualTestContext) -> Ar
     })
 }
 
-fn press(surface: &mut VisualTestContext, key: &str) {
+fn press(surface: &mut VisualTestContext, key: &'static str) {
     audit05_form_key(surface, key, true, false);
     audit05_form_key(surface, key, false, false);
     draw(surface);

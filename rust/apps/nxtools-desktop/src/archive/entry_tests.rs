@@ -81,6 +81,7 @@ fn ready_browser(
     let (bridge, endpoint) = nxtools_ipc::platform_bridge(32);
     endpoint.set_connected_for_contract_test(true);
     let owner = cx.new(|cx| ArchiveApplication::new(Rc::new(bridge), None, cx));
+    super::tests::prepare_presentations(&owner, cx);
     owner.update(cx, |app, cx| {
         app.open_canonical(PathBuf::from(r"C:\owned\fixture.zip"), 0, vec![], cx)
     });

@@ -219,7 +219,7 @@ fn menu_fixture(
     let engine_for_app = engine.clone();
     let root = directory.path().to_path_buf();
     let application = cx.new(|cx| {
-        DownloadApplication::new(
+        crate::downloads::ordinary_presentation_fixture::confirmed_application(
             engine_for_app,
             Rc::new(platform),
             notices,

@@ -38,7 +38,7 @@ struct Pending {
     cancelled: bool,
     started: Instant,
     drop: LocatedDrop,
-    members: Rc<[Option<Uuid>]>,
+    members: Option<Rc<[Option<Uuid>]>>,
 }
 #[derive(Default)]
 pub(super) struct DragState {
@@ -249,13 +249,16 @@ impl ArchiveBrowser {
                     cancelled: false,
                     started: Instant::now(),
                     drop,
-                    members: command
-                        .items
-                        .as_ref()
-                        .expect("validated drag items")
-                        .iter()
-                        .map(|item| (!item.directory).then_some(item.entry.operation_id))
-                        .collect(),
+                    // A locate descriptor identifies the marker, not a native content demand.
+                    members: (command.action == "start").then(|| {
+                        command
+                            .items
+                            .as_ref()
+                            .expect("validated drag items")
+                            .iter()
+                            .map(|item| (!item.directory).then_some(item.entry.operation_id))
+                            .collect()
+                    }),
                 });
                 // Still-pressed MOVE callback: no await/defer/application entity update here.
                 let submitted = self.drag.platform.as_ref().is_some_and(|platform| {
@@ -446,7 +449,7 @@ impl ArchiveBrowser {
             .pending
             .as_ref()
             .filter(|pending| pending.operation == operation && pending.generation == generation)
-            .map(|pending| pending.members.clone())
+            .and_then(|pending| pending.members.clone())
     }
     pub(crate) fn native_drag_active(&self) -> bool {
         self.drag.pending.is_some()

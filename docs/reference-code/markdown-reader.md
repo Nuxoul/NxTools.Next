@@ -1,5 +1,7 @@
 # Markdown Reader reference
 
+Current framework lookup follows [Kit0.10.0/defaultpre0.3.12](gpui-kit-0100.md): Component `vendor/gpui-component-0100`, Windows `vendor/gpui-pre-windows-0312`. Earlier versioned examples/source lines below are dated evidence, not active pins. Reader layout, source bytes, selection/focus, deferred owners and native lifecycle remain unchanged; API availability is not adoption or acceptance.
+
 ## Behavior source: mdview Pro 2.0.21
 
 Local input: `D:\Program Files (x86)\mdview\mdview.exe`, PE32+ x64, version resource mdview Pro 2.0.21, no CLR directory. Read-only binary inspection identified Rust/Tauri/Wry/WebView2 markers, resources and source-path strings, not reconstructed proprietary source. The local welcome window exposed single-document and multi-tab modes; runtime evidence is limited to that window.

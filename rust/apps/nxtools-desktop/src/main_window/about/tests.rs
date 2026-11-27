@@ -338,3 +338,228 @@ fn window_feedback_about_creation_keeps_main_window_outside_modal_lifecycle(
     assert!(!options.is_minimizable && !options.is_resizable);
     assert_eq!(options.window_min_size, Some(size(px(420.), px(480.))));
 }
+
+#[gpui_kit::test]
+fn material_about_production_options_start_hidden_without_changing_modeless_geometry(
+    cx: &mut TestAppContext,
+) {
+    let options = cx.update(|cx| about_material_window_options(true, cx));
+    assert!(!options.show && !options.focus);
+    assert!(matches!(options.kind, WindowKind::Normal));
+    assert!(matches!(
+        options.window_background,
+        gpui_kit::WindowBackgroundAppearance::Transparent
+    ));
+    assert_eq!(options.window_min_size, Some(size(px(420.), px(480.))));
+    assert!(!options.is_resizable && !options.is_minimizable);
+    let isolated = cx.update(|cx| about_material_window_options(false, cx));
+    assert!(isolated.show && isolated.focus);
+}
+
+fn material_about_fixture(
+    cx: &mut TestAppContext,
+) -> (
+    Entity<MainWindow>,
+    gpui_kit::AnyWindowHandle,
+    std::rc::Rc<nxtools_ipc::PlatformBridge>,
+    nxtools_ipc::PlatformServerEndpoint,
+) {
+    use std::{cell::RefCell, rc::Rc};
+    cx.update(gpui_kit::init);
+    cx.executor().allow_parking();
+    let (bridge, endpoint) = nxtools_ipc::platform_bridge(16);
+    endpoint.set_connected_for_contract_test(true);
+    let bridge = Rc::new(bridge);
+    let platform = bridge.clone();
+    let notifications =
+        cx.update(|cx| cx.new(|_| crate::notifications::NotificationCenter::default()));
+    let owner = cx
+        .add_window_view(move |window, cx| {
+            MainWindow::new(
+                gpui_kit::WeakEntity::new_invalid(),
+                gpui_kit::WeakEntity::new_invalid(),
+                gpui_kit::WeakEntity::new_invalid(),
+                crate::main_window::MainWindowShellContext {
+                    settings: None,
+                    platform: Some(platform),
+                    system_settings: Rc::new(RefCell::new(nxtools_core::SystemSettings::default())),
+                },
+                notifications,
+                window,
+                cx,
+            )
+        })
+        .0;
+    let handle = cx.update(|cx| {
+        owner.update(cx, |owner, cx| {
+            owner.open_about(cx);
+            let handle = owner.about_window.expect("hidden About");
+            crate::ui::material::runtime::set_test_window_handle(handle, 4242, cx);
+            handle
+        })
+    });
+    cx.update(|cx| {
+        let mut facts = crate::ui::material::UiMaterialCapabilities::default();
+        facts.connected();
+        assert!(facts.apply(
+            nxtools_protocol::window_material::SystemMaterialCapabilitiesChanged {
+                correlation_id: Uuid::new_v4(),
+                session_id: Uuid::new_v4(),
+                revision: 1,
+                supported: true,
+                transparency_enabled: true,
+                high_contrast: false,
+                energy_saver: false,
+                remote_session: false,
+                native_error_code: 0,
+                system_backdrop: true,
+                rounded_corners: true,
+            }
+        ));
+        cx.set_global(facts);
+    });
+    cx.run_until_parked();
+    (owner, handle, bridge, endpoint)
+}
+
+pub(super) fn material_about_next(
+    endpoint: &nxtools_ipc::PlatformServerEndpoint,
+) -> (
+    Uuid,
+    nxtools_protocol::window_material::ApplyWindowMaterialCommand,
+) {
+    let request = endpoint
+        .try_receive_command_for_contract_test()
+        .expect("material request");
+    let nxtools_protocol::Message::PlatformCommand(
+        nxtools_protocol::PlatformCommand::ApplyWindowMaterial(command),
+    ) = request.message
+    else {
+        panic!("About readiness must not replace the original native presentation owner");
+    };
+    (request.id, command)
+}
+
+pub(super) fn material_about_result(
+    cx: &mut TestAppContext,
+    endpoint: &nxtools_ipc::PlatformServerEndpoint,
+    id: Uuid,
+    command: nxtools_protocol::window_material::ApplyWindowMaterialCommand,
+    success: bool,
+) {
+    use nxtools_protocol::window_material::{
+        AppliedWindowMaterial, EffectiveWindowMaterial, MaterialFallbackReason,
+    };
+    let result = nxtools_protocol::PlatformCommandResult {
+        success,
+        error: (!success).then(|| "window_material_failed".into()),
+        native_error_code: None,
+        data: success.then(|| {
+            serde_json::to_string(&AppliedWindowMaterial {
+                session_id: command.session_id,
+                facts_revision: command.facts_revision,
+                window_handle: command.window_handle,
+                generation: command.generation,
+                style: command.style,
+                surface: command.surface,
+                dark: command.dark,
+                effective: EffectiveWindowMaterial::Solid,
+                fallback_reason: MaterialFallbackReason::None,
+                native_error_code: 0,
+            })
+            .expect("synthetic receipt")
+        }),
+    };
+    endpoint
+        .route_command_result_for_contract_test(id, result.clone())
+        .expect("original IPC terminal");
+    cx.update(|cx| {
+        crate::ui::material::runtime::handle_notification(
+            &nxtools_ipc::PlatformNotification::CommandResult {
+                correlation_id: id,
+                result,
+            },
+            cx,
+        );
+    });
+    cx.run_until_parked();
+}
+
+#[gpui_kit::test]
+fn material_about_reuse_waits_for_current_receipt_then_activates_same_window(
+    cx: &mut TestAppContext,
+) {
+    let (owner, handle, _, endpoint) = material_about_fixture(cx);
+    let (id, command) = material_about_next(&endpoint);
+    assert_ne!(cx.read(|cx| cx.active_window()), Some(handle));
+    cx.update(|cx| owner.update(cx, |owner, cx| owner.open_about(cx)));
+    cx.run_until_parked();
+    assert_eq!(cx.read(|cx| owner.read(cx).about_window), Some(handle));
+    assert_ne!(cx.read(|cx| cx.active_window()), Some(handle));
+    assert!(
+        endpoint.try_receive_command_for_contract_test().is_err(),
+        "reuse retains in-flight preparation"
+    );
+    material_about_result(cx, &endpoint, id, command, true);
+    assert_eq!(cx.read(|cx| cx.active_window()), Some(handle));
+    assert!(cx.read(|cx| crate::ui::material::runtime::receipt(handle, cx).is_some()));
+}
+
+#[gpui_kit::test]
+fn material_about_failure_removes_hidden_window_and_close_rejects_late_receipt(
+    cx: &mut TestAppContext,
+) {
+    let (owner, handle, _, endpoint) = material_about_fixture(cx);
+    let (id, command) = material_about_next(&endpoint);
+    material_about_result(cx, &endpoint, id, command, false);
+    assert!(cx.read(|cx| owner.read(cx).about_window.is_none()));
+    assert!(!cx.read(|cx| cx.windows().contains(&handle)));
+
+    cx.update(|cx| {
+        owner.update(cx, |owner, cx| {
+            owner.open_about(cx);
+            crate::ui::material::runtime::set_test_window_handle(
+                owner.about_window.expect("replacement"),
+                4243,
+                cx,
+            );
+        })
+    });
+    cx.run_until_parked();
+    let replacement = cx.read(|cx| owner.read(cx).about_window.expect("replacement"));
+    let (id, command) = material_about_next(&endpoint);
+    cx.update(|cx| {
+        replacement
+            .update(cx, |_, window, _| window.remove_window())
+            .expect("close");
+    });
+    cx.run_until_parked();
+    material_about_result(cx, &endpoint, id, command, true);
+    assert!(!cx.read(|cx| cx.windows().contains(&replacement)));
+    assert_ne!(cx.read(|cx| cx.active_window()), Some(replacement));
+}
+
+#[gpui_kit::test]
+fn material_about_uses_selected_public_surface_roles(cx: &mut gpui_kit::TestAppContext) {
+    cx.update(gpui_kit::init);
+    cx.update(crate::theme::apply_component_theme);
+    for preference in [
+        nxtools_core::ThemePreference::Light,
+        nxtools_core::ThemePreference::Dark,
+    ] {
+        for style in [
+            nxtools_core::MaterialStyle::Solid,
+            nxtools_core::MaterialStyle::Acrylic,
+        ] {
+            cx.update(|cx| crate::theme::set_appearance_preferences(preference, style, cx));
+            cx.read(|cx| {
+                let palette = Palette::new(cx);
+                let colors = &gpui_kit::component::Theme::global(cx).colors;
+                assert_eq!(palette.canvas, colors.background);
+                assert_eq!(palette.card, colors.group_box);
+                assert_eq!(palette.text, colors.foreground);
+                assert_eq!(palette.accent_fill, colors.accent);
+            });
+        }
+    }
+}

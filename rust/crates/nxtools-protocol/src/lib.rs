@@ -17,6 +17,7 @@ pub mod main_window;
 pub mod process_window_pick;
 pub mod raw_numbered_join;
 pub mod system_proxy;
+pub mod window_material;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
@@ -137,6 +138,7 @@ pub enum PlatformEvent {
     TrayActionRequested(TrayActionRequest),
     SystemMotionPreferenceChanged(SystemMotionPreferenceChanged),
     SystemThemePreferenceChanged(SystemThemePreferenceChanged),
+    SystemMaterialCapabilitiesChanged(window_material::SystemMaterialCapabilitiesChanged),
     ForegroundChanged(ForegroundContext),
     GlobalPointerPressed(PointerPressContext),
     ClipboardCaptured(ClipboardCapture),
@@ -510,6 +512,7 @@ pub enum PlatformCommand {
     ArchiveSpace(archive_space::ArchiveSpaceCommand),
     ArchiveRecoveryInspect(archive_recovery::ArchiveRecoveryInspectCommand),
     PrepareMainWindow(main_window::PrepareMainWindowCommand),
+    ApplyWindowMaterial(window_material::ApplyWindowMaterialCommand),
     ConfigureDesktopShell(ConfigureDesktopShellCommand),
     ReadClipboardText,
     QueryCursorMonitor,
@@ -992,10 +995,6 @@ pub struct SetWindowBoundsCommand {
     pub y: i32,
     pub width: i32,
     pub height: i32,
-    /// Optional outer-window radius in device pixels; None preserves the native
-    /// region, while Some(0) restores the ordinary rectangular window.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub corner_radius: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -1641,45 +1640,12 @@ mod tests {
                 y: 240,
                 width: 400,
                 height: 410,
-                corner_radius: None,
             },
         )));
 
         let decoded = Envelope::decode_line(&envelope.encode_line().expect("encode"))
             .expect("window-bounds command must decode");
         assert_eq!(decoded, envelope);
-    }
-
-    #[test]
-    fn bounds_corner_radius_is_optional_and_round_trips_device_pixels() {
-        let legacy = serde_json::json!({
-            "window_handle": 780, "x": 120, "y": 240, "width": 620, "height": 60
-        });
-        let mut command: SetWindowBoundsCommand =
-            serde_json::from_value(legacy.clone()).expect("legacy bounds");
-        assert_eq!(command.corner_radius, None);
-        assert_eq!(
-            serde_json::to_value(&command).expect("legacy encode"),
-            legacy
-        );
-        for radius in [0, 8, 10, 12] {
-            command.corner_radius = Some(radius);
-            let value = serde_json::to_value(&command).expect("rounded encode");
-            assert_eq!(value["corner_radius"], radius);
-            assert_eq!(
-                serde_json::from_value::<SetWindowBoundsCommand>(value).expect("rounded decode"),
-                command
-            );
-        }
-        for radius in [
-            serde_json::json!(-1),
-            serde_json::json!(1.5),
-            serde_json::json!("8"),
-        ] {
-            let mut invalid = legacy.clone();
-            invalid["corner_radius"] = radius;
-            assert!(serde_json::from_value::<SetWindowBoundsCommand>(invalid).is_err());
-        }
     }
 
     #[test]

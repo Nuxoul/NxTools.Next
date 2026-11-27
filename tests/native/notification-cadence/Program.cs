@@ -61,6 +61,13 @@ internal static class Program
         start.Environment["NXTOOLS_PREVIEW_NOTIFICATION_LEGACY_CAP"] = mode == "legacy" ? "1" : "0";
         start.Environment["NXTOOLS_PREVIEW_NOTIFICATION_REDUCED"] = mode == "reduced" ? "1" : "0";
         start.Environment["NXTOOLS_PREVIEW_THEME"] = theme;
+        var materialType = assembly.GetType("NxTools.PlatformHost.Windows.WindowMaterialOwner", true)!;
+        var materialOwner = Activator.CreateInstance(materialType,
+            BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, new object?[] { null, null }, null)!;
+        var readerType = assembly.GetType("NxTools.PlatformHost.Windows.WindowsSystemMaterialReader", true)!;
+        var reader = Activator.CreateInstance(readerType, true)!;
+        var materialCommandType = assembly.GetType("NxTools.PlatformHost.Protocol.ApplyWindowMaterialCommand", true)!;
+        var applyMaterial = adapter.GetMethod("ApplyWindowMaterialCoreAsync", BindingFlags.NonPublic | BindingFlags.Static)!;
         using var child = Process.Start(start) ?? throw new Exception("Fixture start failed.");
         var stdout = new StringBuilder();
         var stderr = new StringBuilder();
@@ -74,6 +81,11 @@ internal static class Program
         bool dismissed = false, finish = false;
         try
         {
+            materialType.GetMethod("BindPeer")!.Invoke(materialOwner, new object[] { (uint)child.Id });
+            var materialFacts = readerType.GetMethod("Read")!.Invoke(reader, null)!;
+            var snapshot = materialType.GetMethod("UpdateCapabilities")!.Invoke(materialOwner, new[] { materialFacts })!;
+            File.WriteAllText(Path.Combine(directory, "material.facts.json"),
+                JsonSerializer.Serialize(snapshot, snapshot.GetType(), new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower }));
             while (clock.Elapsed < TimeSpan.FromSeconds(18) && !child.HasExited)
             {
                 foreach (var path in Directory.GetFiles(directory, "*.command.json"))
@@ -97,6 +109,18 @@ internal static class Program
                             data.GetProperty("position").GetString()!, data.GetProperty("width").GetInt32(),
                             data.GetProperty("height").GetInt32(), data.TryGetProperty("keep_visible", out var keep) && keep.GetBoolean())!;
                         result = prepare.Invoke(null, new[] { command })!;
+                    }
+                    else if (kind == "apply_window_material")
+                    {
+                        if (data.GetProperty("surface").GetString() != "transparent") throw new Exception("Ordinary material target rejected.");
+                        var command = Activator.CreateInstance(materialCommandType,
+                            data.GetProperty("session_id").GetGuid(), data.GetProperty("facts_revision").GetUInt64(),
+                            hwnd, data.GetProperty("generation").GetUInt64(), data.GetProperty("style").GetString()!,
+                            "transparent", data.GetProperty("dark").GetBoolean())!;
+                        var pending = (Task)applyMaterial.Invoke(null, new object[] {
+                            materialOwner, command, root.GetProperty("id").GetGuid(), CancellationToken.None })!;
+                        pending.GetAwaiter().GetResult();
+                        result = pending.GetType().GetProperty("Result")!.GetValue(pending)!;
                     }
                     else if (kind == "set_window_visibility")
                     {
@@ -139,6 +163,7 @@ internal static class Program
         }
         finally
         {
+            materialType.GetMethod("BindPeer")!.Invoke(materialOwner, new object[] { 0u });
             if (!child.HasExited) { child.Kill(); child.WaitForExit(); }
             File.WriteAllText(Path.Combine(directory, "stdout.log"), stdout.ToString());
             File.WriteAllText(Path.Combine(directory, "stderr.log"), stderr.ToString());

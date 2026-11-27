@@ -4,7 +4,7 @@
 ; deploy themselves on first run via the in-app installer (IndexerServiceInstaller).
 
 #define MyAppName "NxTools"
-#define MyAppVersion "0.7.4"
+#define MyAppVersion "0.7.5"
 #define MyAppPublisher "NxTools"
 #define MyAppExeName "NxTools.exe"
 #define PackageDir "..\artifacts\win-x64"

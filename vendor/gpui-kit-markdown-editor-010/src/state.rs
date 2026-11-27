@@ -112,20 +112,76 @@ pub(crate) fn init(cx: &mut App) {
         KeyBinding::new("down", MoveDown, ctx),
         KeyBinding::new("home", MoveHome, ctx),
         KeyBinding::new("end", MoveEnd, ctx),
-        KeyBinding::new(&format!("{w}-left"), MoveWordLeft, ctx),
-        KeyBinding::new(&format!("{w}-right"), MoveWordRight, ctx),
-        KeyBinding::new(&format!("{w}-shift-left"), SelectWordLeft, ctx),
-        KeyBinding::new(&format!("{w}-shift-right"), SelectWordRight, ctx),
+        KeyBinding::new(
+            if w == "alt" { "alt-left" } else { "ctrl-left" },
+            MoveWordLeft,
+            ctx,
+        ),
+        KeyBinding::new(
+            if w == "alt" {
+                "alt-right"
+            } else {
+                "ctrl-right"
+            },
+            MoveWordRight,
+            ctx,
+        ),
+        KeyBinding::new(
+            if w == "alt" {
+                "alt-shift-left"
+            } else {
+                "ctrl-shift-left"
+            },
+            SelectWordLeft,
+            ctx,
+        ),
+        KeyBinding::new(
+            if w == "alt" {
+                "alt-shift-right"
+            } else {
+                "ctrl-shift-right"
+            },
+            SelectWordRight,
+            ctx,
+        ),
         KeyBinding::new("shift-left", SelectLeft, ctx),
         KeyBinding::new("shift-right", SelectRight, ctx),
         KeyBinding::new("shift-up", SelectUp, ctx),
         KeyBinding::new("shift-down", SelectDown, ctx),
         KeyBinding::new("shift-home", SelectHome, ctx),
         KeyBinding::new("shift-end", SelectEnd, ctx),
-        KeyBinding::new(&format!("{doc}-home"), MoveDocStart, ctx),
-        KeyBinding::new(&format!("{doc}-end"), MoveDocEnd, ctx),
-        KeyBinding::new(&format!("{doc}-shift-home"), SelectDocStart, ctx),
-        KeyBinding::new(&format!("{doc}-shift-end"), SelectDocEnd, ctx),
+        KeyBinding::new(
+            if doc == "cmd" {
+                "cmd-home"
+            } else {
+                "ctrl-home"
+            },
+            MoveDocStart,
+            ctx,
+        ),
+        KeyBinding::new(
+            if doc == "cmd" { "cmd-end" } else { "ctrl-end" },
+            MoveDocEnd,
+            ctx,
+        ),
+        KeyBinding::new(
+            if doc == "cmd" {
+                "cmd-shift-home"
+            } else {
+                "ctrl-shift-home"
+            },
+            SelectDocStart,
+            ctx,
+        ),
+        KeyBinding::new(
+            if doc == "cmd" {
+                "cmd-shift-end"
+            } else {
+                "ctrl-shift-end"
+            },
+            SelectDocEnd,
+            ctx,
+        ),
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-up", MoveDocStart, ctx),
         #[cfg(target_os = "macos")]
@@ -135,8 +191,24 @@ pub(crate) fn init(cx: &mut App) {
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-shift-down", SelectDocEnd, ctx),
         // D21: word deletes (Option on macOS, Ctrl elsewhere).
-        KeyBinding::new(&format!("{w}-backspace"), DeleteWordLeft, ctx),
-        KeyBinding::new(&format!("{w}-delete"), DeleteWordRight, ctx),
+        KeyBinding::new(
+            if w == "alt" {
+                "alt-backspace"
+            } else {
+                "ctrl-backspace"
+            },
+            DeleteWordLeft,
+            ctx,
+        ),
+        KeyBinding::new(
+            if w == "alt" {
+                "alt-delete"
+            } else {
+                "ctrl-delete"
+            },
+            DeleteWordRight,
+            ctx,
+        ),
         // D21: macOS line keys and the emacs bindings of Cocoa text fields.
         #[cfg(target_os = "macos")]
         KeyBinding::new("cmd-backspace", DeleteToLineStart, ctx),
@@ -184,31 +256,107 @@ pub(crate) fn init(cx: &mut App) {
         KeyBinding::new("ctrl-shift-down", SelectParagraphEnd, ctx),
         KeyBinding::new("tab", Indent, ctx),
         KeyBinding::new("shift-tab", Outdent, ctx),
-        KeyBinding::new(&format!("{m}-a"), SelectAll, ctx),
-        KeyBinding::new(&format!("{m}-z"), Undo, ctx),
-        KeyBinding::new(&format!("{m}-shift-z"), Redo, ctx),
+        KeyBinding::new(if m == "cmd" { "cmd-a" } else { "ctrl-a" }, SelectAll, ctx),
+        KeyBinding::new(if m == "cmd" { "cmd-z" } else { "ctrl-z" }, Undo, ctx),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-shift-z"
+            } else {
+                "ctrl-shift-z"
+            },
+            Redo,
+            ctx,
+        ),
         #[cfg(not(target_os = "macos"))]
         KeyBinding::new("ctrl-y", Redo, ctx),
-        KeyBinding::new(&format!("{m}-b"), ToggleBold, ctx),
-        KeyBinding::new(&format!("{m}-i"), ToggleItalic, ctx),
-        KeyBinding::new(&format!("{m}-e"), ToggleCode, ctx),
-        KeyBinding::new(&format!("{m}-k"), EditLink, ctx),
+        KeyBinding::new(if m == "cmd" { "cmd-b" } else { "ctrl-b" }, ToggleBold, ctx),
+        KeyBinding::new(
+            if m == "cmd" { "cmd-i" } else { "ctrl-i" },
+            ToggleItalic,
+            ctx,
+        ),
+        KeyBinding::new(if m == "cmd" { "cmd-e" } else { "ctrl-e" }, ToggleCode, ctx),
+        KeyBinding::new(if m == "cmd" { "cmd-k" } else { "ctrl-k" }, EditLink, ctx),
         // "Normal text": the block (or each selected block) becomes a paragraph.
-        KeyBinding::new(&format!("{m}-alt-0"), NormalText, ctx),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-alt-0"
+            } else {
+                "ctrl-alt-0"
+            },
+            NormalText,
+            ctx,
+        ),
         // Tables (D20): only act with the caret or a cell selection in a
         // table; elsewhere the keystroke propagates.
-        KeyBinding::new(&format!("{m}-alt-left"), TableInsertColumnLeft, ctx),
-        KeyBinding::new(&format!("{m}-alt-right"), TableInsertColumnRight, ctx),
-        KeyBinding::new(&format!("{m}-alt-up"), TableInsertRowAbove, ctx),
-        KeyBinding::new(&format!("{m}-alt-down"), TableInsertRowBelow, ctx),
-        KeyBinding::new(&format!("{m}-alt-backspace"), TableDeleteLine, ctx),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-alt-left"
+            } else {
+                "ctrl-alt-left"
+            },
+            TableInsertColumnLeft,
+            ctx,
+        ),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-alt-right"
+            } else {
+                "ctrl-alt-right"
+            },
+            TableInsertColumnRight,
+            ctx,
+        ),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-alt-up"
+            } else {
+                "ctrl-alt-up"
+            },
+            TableInsertRowAbove,
+            ctx,
+        ),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-alt-down"
+            } else {
+                "ctrl-alt-down"
+            },
+            TableInsertRowBelow,
+            ctx,
+        ),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-alt-backspace"
+            } else {
+                "ctrl-alt-backspace"
+            },
+            TableDeleteLine,
+            ctx,
+        ),
         KeyBinding::new("escape", CloseTableMenu, Some("BlockEditor && table_menu")),
         KeyBinding::new("shift-enter", SoftBreak, ctx),
-        KeyBinding::new(&format!("{m}-enter"), ExitBlock, ctx),
-        KeyBinding::new(&format!("{m}-c"), Copy, ctx),
-        KeyBinding::new(&format!("{m}-x"), Cut, ctx),
-        KeyBinding::new(&format!("{m}-v"), Paste, ctx),
-        KeyBinding::new(&format!("{m}-shift-v"), PastePlain, ctx),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-enter"
+            } else {
+                "ctrl-enter"
+            },
+            ExitBlock,
+            ctx,
+        ),
+        KeyBinding::new(if m == "cmd" { "cmd-c" } else { "ctrl-c" }, Copy, ctx),
+        KeyBinding::new(if m == "cmd" { "cmd-x" } else { "ctrl-x" }, Cut, ctx),
+        KeyBinding::new(if m == "cmd" { "cmd-v" } else { "ctrl-v" }, Paste, ctx),
+        KeyBinding::new(
+            if m == "cmd" {
+                "cmd-shift-v"
+            } else {
+                "ctrl-shift-v"
+            },
+            PastePlain,
+            ctx,
+        ),
         // Composer overrides only; standalone Newline/ModifiedEnter keep
         // Shift+Enter soft breaks and the platform secondary-Enter command.
         KeyBinding::new(

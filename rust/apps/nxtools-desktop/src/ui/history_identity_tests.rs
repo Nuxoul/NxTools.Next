@@ -168,7 +168,7 @@ fn fixture_page(
     }
 }
 
-fn key(surface: &mut VisualTestContext, key: &str, down: bool) {
+fn key(surface: &mut VisualTestContext, key: &'static str, down: bool) {
     let keystroke = Keystroke::parse(key).expect("identity key");
     if down {
         surface.simulate_event(KeyDownEvent {

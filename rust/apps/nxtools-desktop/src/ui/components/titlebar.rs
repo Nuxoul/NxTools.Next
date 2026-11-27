@@ -112,6 +112,7 @@ pub(crate) fn caption_window_options() -> WindowOptions {
     WindowOptions {
         titlebar: Some(gpui_kit::component::TitleBar::title_bar_options()),
         window_decorations: Some(gpui_kit::WindowDecorations::Client),
+        window_background: gpui_kit::WindowBackgroundAppearance::Transparent,
         app_owns_titlebar_drag: false,
         ..Default::default()
     }

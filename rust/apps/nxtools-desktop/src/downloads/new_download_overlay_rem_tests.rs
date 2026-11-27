@@ -125,7 +125,7 @@ fn click(surface: &mut VisualTestContext, selector: &'static str) {
     draw(surface);
 }
 
-fn key(surface: &mut VisualTestContext, key: &str) {
+fn key(surface: &mut VisualTestContext, key: &'static str) {
     surface.simulate_event(gpui_kit::KeyDownEvent {
         keystroke: gpui_kit::Keystroke::parse(key).expect("test key"),
         is_held: false,
@@ -201,7 +201,7 @@ fn audit06_overlay_category_rows_and_search_follow_root(cx: &mut TestAppContext)
             px(0.0)
         );
         for _ in 0..24 {
-            f.surface.simulate_event(gpui_kit::ScrollWheelEvent {
+            f.surface.simulate_event(gpui_kit::ScrollEvent {
                 position: list.center(),
                 delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -8.0)),
                 ..Default::default()
@@ -446,7 +446,7 @@ fn tab_button(surface: &mut VisualTestContext, id: &'static str) {
 
 fn wheel_end(surface: &mut VisualTestContext, viewport: gpui_kit::Bounds<gpui_kit::Pixels>) {
     for _ in 0..30 {
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: viewport.center(),
             delta: gpui_kit::ScrollDelta::Lines(gpui_kit::point(0.0, -8.0)),
             ..Default::default()

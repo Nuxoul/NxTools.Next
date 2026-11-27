@@ -67,20 +67,30 @@ pub(super) struct Paper {
     table_head: gpui_kit::Hsla,
 }
 
+/// Long-form text keeps a nearly solid plane on a solid palette.
+const READING_FLOOR: f32 = 0.9;
+
+/// Solid palettes read on the table plane. A frosted window's Root already paints the
+/// content layer over the veil, so the page stays clear and the reader shows that material;
+/// the cleared table roles must not be floored into a dark wash.
 pub(super) fn paper(cx: &App) -> Paper {
-    let colors = if cx.theme().is_dark() {
-        [0x1b1e24, 0xd5d8df, 0x858e9d, 0x3b3f46, 0x30353c, 0x25282e]
+    let colors = &gpui_kit::component::Theme::global(cx).colors;
+    let frosted = cx
+        .try_global::<crate::theme::UiThemeState>()
+        .is_some_and(|state| state.material_style.is_frosted());
+    let (background, table_head) = if frosted {
+        (gpui_kit::transparent_black(), colors.muted)
     } else {
-        [0xfafafa, 0x252a32, 0x626b79, 0xd4d7dc, 0xeceef0, 0xf0f1f3]
+        let mut background = colors.table;
+        background.a = background.a.max(READING_FLOOR);
+        (background, colors.table_head)
     };
-    let [background, ink, muted, border, code, table_head] =
-        colors.map(|color| gpui_kit::rgb(color).into());
     Paper {
         background,
-        ink,
-        muted,
-        border,
-        code,
+        ink: colors.foreground,
+        muted: colors.muted_foreground,
+        border: colors.border,
+        code: colors.secondary,
         table_head,
     }
 }
@@ -187,4 +197,47 @@ pub(super) fn code_actions(
                 }),
         )
         .into_any_element()
+}
+
+#[cfg(test)]
+mod material_tests {
+    use super::*;
+
+    #[gpui_kit::test]
+    fn material_reader_paper_tracks_public_reading_roles(cx: &mut gpui_kit::TestAppContext) {
+        cx.update(gpui_kit::init);
+        cx.update(crate::theme::apply_component_theme);
+        for preference in [
+            nxtools_core::ThemePreference::Light,
+            nxtools_core::ThemePreference::Dark,
+        ] {
+            for style in [
+                nxtools_core::MaterialStyle::Solid,
+                nxtools_core::MaterialStyle::Acrylic,
+            ] {
+                cx.update(|cx| crate::theme::set_appearance_preferences(preference, style, cx));
+                cx.read(|cx| {
+                    let page = paper(cx);
+                    let colors = &gpui_kit::component::Theme::global(cx).colors;
+                    assert_eq!(page.ink, colors.foreground);
+                    assert_eq!(page.muted, colors.muted_foreground);
+                    assert_eq!(page.border, colors.border);
+                    if style.is_frosted() {
+                        // The window's frosted Root shows through; never a floored dark wash.
+                        assert_eq!(page.background.a, 0.0);
+                        assert_eq!(page.table_head, colors.muted);
+                    } else {
+                        assert_eq!(
+                            (page.background.h, page.background.s, page.background.l),
+                            (colors.table.h, colors.table.s, colors.table.l)
+                        );
+                        assert!(
+                            page.background.a >= READING_FLOOR,
+                            "reading remains a solid-enough plane"
+                        );
+                    }
+                });
+            }
+        }
+    }
 }

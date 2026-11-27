@@ -266,6 +266,7 @@ mod tests {
 
         let (application, directory) = fixture(cx, "floating-add");
         application.update(cx, |app, cx| {
+            app.new_download_native_handles_override = Some((701, 702));
             app.open_floating_download(None, cx).expect("blank form")
         });
         let (first_window, view) = application.read_with(cx, |app, _| {
@@ -338,6 +339,31 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(4);
         let (target, view) = loop {
             cx.run_until_parked();
+            let presentation_id = application.read_with(cx, |app, _| {
+                if app.new_download_handoff_commands.is_empty() {
+                    return None;
+                }
+                app.pending_new_download_handoff
+                    .as_ref()
+                    .map(|pending| pending.command_id)
+            });
+            if let Some(command_id) = presentation_id {
+                application.update(cx, |app, cx| {
+                    app.handle_platform_notification(
+                        PlatformNotification::CommandResult {
+                            correlation_id: command_id,
+                            result: nxtools_protocol::PlatformCommandResult {
+                                success: true,
+                                error: None,
+                                native_error_code: None,
+                                data: None,
+                            },
+                        },
+                        cx,
+                    );
+                });
+                cx.run_until_parked();
+            }
             let intake = application.read_with(cx, |app, _| {
                 app.new_download_window.zip(app.new_download_view.clone())
             });

@@ -23,6 +23,9 @@ use std::{rc::Rc, time::Instant};
 use uuid::Uuid;
 
 mod layout;
+mod material;
+#[cfg(test)]
+mod material_tests;
 #[cfg(test)]
 mod tests;
 
@@ -49,40 +52,65 @@ pub(crate) fn open(
     cx: &mut App,
 ) -> Option<AnyWindowHandle> {
     let existing = existing.or_else(|| cx.try_global::<Target>().map(|target| target.1));
+    let material_pending = existing.is_some_and(|window| {
+        cx.try_global::<Target>()
+            .filter(|target| target.1 == window)
+            .is_some_and(|target| {
+                target
+                    .0
+                    .read_with(cx, |view, _| view.material_pending)
+                    .unwrap_or(false)
+            })
+    });
     if let Some(existing) = existing
         && existing
             .update(cx, |_, window, _| {
-                window.activate_window();
+                if !material_pending {
+                    window.activate_window();
+                }
                 window.refresh();
             })
             .is_ok()
     {
         return Some(existing);
     }
-    cx.open_window(
-        WindowOptions {
-            window_bounds: Some(WindowBounds::centered(size(px(680.), px(600.)), cx)),
-            window_min_size: Some(size(px(480.), px(360.))),
-            app_id: Some("NxTools.RawNumberedJoin".into()),
-            ..crate::ui::components::titlebar::caption_window_options()
-        },
-        move |window, cx| {
-            let view = cx.new(|cx| JoinWindow::new(platform, window, cx));
-            let closing = view.downgrade();
-            window.on_window_should_close(cx, move |window, cx| {
-                let closing = closing.clone();
-                window.defer(cx, move |window, cx| {
-                    let _ = closing.update(cx, |view, cx| view.close(window, cx));
+    let material_platform = platform.clone();
+    let material_pending = material_platform.is_some();
+    let handle = cx
+        .open_window(
+            WindowOptions {
+                show: !material_pending,
+                focus: !material_pending,
+                window_bounds: Some(WindowBounds::centered(size(px(680.), px(600.)), cx)),
+                window_min_size: Some(size(px(480.), px(360.))),
+                app_id: Some("NxTools.RawNumberedJoin".into()),
+                ..crate::ui::components::titlebar::caption_window_options()
+            },
+            move |window, cx| {
+                let view = cx.new(|cx| {
+                    let mut view = JoinWindow::new(platform, window, cx);
+                    view.material_pending = material_pending;
+                    view
                 });
-                false
-            });
-            cx.set_global(Target(view.downgrade(), window.window_handle()));
-            cx.new(|cx| gpui_kit::base::Root::new(view, window, cx))
-        },
-    )
-    .map(Into::into)
-    .map_err(|_| tracing::warn!(event = "tools.raw_numbered_join.window_failed"))
-    .ok()
+                let closing = view.downgrade();
+                window.on_window_should_close(cx, move |window, cx| {
+                    let closing = closing.clone();
+                    window.defer(cx, move |window, cx| {
+                        let _ = closing.update(cx, |view, cx| view.close(window, cx));
+                    });
+                    false
+                });
+                cx.set_global(Target(view.downgrade(), window.window_handle()));
+                cx.new(|cx| gpui_kit::base::Root::new(view, window, cx))
+            },
+        )
+        .map(Into::into)
+        .map_err(|_| tracing::warn!(event = "tools.raw_numbered_join.window_failed"))
+        .ok();
+    if let (Some(handle), Some(platform)) = (handle, material_platform) {
+        material::prepare(handle, platform, cx);
+    }
+    handle
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,6 +127,7 @@ enum Phase {
 
 struct JoinWindow {
     platform: Option<Rc<PlatformBridge>>,
+    material_pending: bool,
     source: Entity<InputState>,
     output: Entity<InputState>,
     session: Uuid,
@@ -156,6 +185,7 @@ impl JoinWindow {
         });
         Self {
             platform,
+            material_pending: false,
             source,
             output,
             session: Uuid::new_v4(),
@@ -265,7 +295,8 @@ impl JoinWindow {
         let weak = cx.entity().downgrade();
         let decline = weak.clone();
         let closed = weak.clone();
-        window.open_dialog(cx, move |dialog, _, _| {
+        window.open_dialog(cx, move |dialog, _, cx| {
+            let dialog = dialog.bg(crate::theme::overlay_background(cx));
             let weak = weak.clone();
             let decline = decline.clone();
             let closed = closed.clone();

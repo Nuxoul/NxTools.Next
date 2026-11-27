@@ -288,6 +288,12 @@ pub enum ThemePreference {
     System,
     Light,
     Dark,
+    MistLight,
+    MistDark,
+    PineLight,
+    PineDark,
+    SandLight,
+    SandDark,
     CatppuccinLatte,
     CatppuccinFrappe,
     CatppuccinMacchiato,
@@ -299,10 +305,16 @@ pub enum ThemePreference {
 }
 
 impl ThemePreference {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 17] = [
         Self::System,
         Self::Light,
         Self::Dark,
+        Self::MistLight,
+        Self::MistDark,
+        Self::PineLight,
+        Self::PineDark,
+        Self::SandLight,
+        Self::SandDark,
         Self::CatppuccinLatte,
         Self::CatppuccinFrappe,
         Self::CatppuccinMacchiato,
@@ -313,11 +325,18 @@ impl ThemePreference {
         Self::SolarizedDark,
     ];
 
+    /// Also the bundled theme config name, except `System`, which resolves to the defaults.
     pub const fn label(self) -> &'static str {
         match self {
             Self::System => "跟随系统",
             Self::Light => "默认浅色",
             Self::Dark => "默认深色",
+            Self::MistLight => "雾蓝浅色",
+            Self::MistDark => "雾蓝深色",
+            Self::PineLight => "松石浅色",
+            Self::PineDark => "松石深色",
+            Self::SandLight => "暖砂浅色",
+            Self::SandDark => "暖砂深色",
             Self::CatppuccinLatte => "Catppuccin Latte",
             Self::CatppuccinFrappe => "Catppuccin Frappe",
             Self::CatppuccinMacchiato => "Catppuccin Macchiato",
@@ -332,9 +351,13 @@ impl ThemePreference {
     pub const fn is_dark(self, system_dark: bool) -> bool {
         match self {
             Self::System => system_dark,
-            Self::Light | Self::CatppuccinLatte | Self::GruvboxLight | Self::SolarizedLight => {
-                false
-            }
+            Self::Light
+            | Self::MistLight
+            | Self::PineLight
+            | Self::SandLight
+            | Self::CatppuccinLatte
+            | Self::GruvboxLight
+            | Self::SolarizedLight => false,
             _ => true,
         }
     }
@@ -394,6 +417,87 @@ impl NotificationPosition {
     }
 }
 
+/// Global theme style. `Acrylic` is frosted: Windows 11 shows the system acrylic backdrop and
+/// Windows 10 the accent blur, labelled "磨砂" there. Configs saved with the former Mica styles
+/// read as acrylic.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MaterialStyle {
+    #[default]
+    Solid,
+    #[serde(alias = "mica", alias = "mica_alt")]
+    Acrylic,
+}
+
+impl MaterialStyle {
+    pub const ALL: [Self; 2] = [Self::Solid, Self::Acrylic];
+
+    pub const fn is_frosted(self) -> bool {
+        matches!(self, Self::Acrylic)
+    }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Solid => "实底",
+            Self::Acrylic => "亚克力",
+        }
+    }
+
+    /// Label on the running system; the Windows 10 accent blur is "磨砂".
+    pub const fn label_for(self, system_backdrop: bool) -> &'static str {
+        if !system_backdrop && self.is_frosted() {
+            "磨砂"
+        } else {
+            self.label()
+        }
+    }
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Solid => "solid",
+            Self::Acrylic => "acrylic",
+        }
+    }
+}
+
+/// Frosted content layer opacity in percent. Title bar and sidebar always show the system
+/// material directly; only the content layer is tunable.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MaterialTuning {
+    #[serde(
+        default = "default_material_content_percent",
+        deserialize_with = "deserialize_material_percent"
+    )]
+    pub content_percent: u8,
+}
+
+impl MaterialTuning {
+    pub const MIN_PERCENT: u8 = 50;
+    pub const MAX_PERCENT: u8 = 100;
+}
+
+impl Default for MaterialTuning {
+    fn default() -> Self {
+        Self {
+            content_percent: default_material_content_percent(),
+        }
+    }
+}
+
+const fn default_material_content_percent() -> u8 {
+    50
+}
+fn deserialize_material_percent<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<u8, D::Error> {
+    u32::deserialize(deserializer).map(|value| {
+        value.clamp(
+            u32::from(MaterialTuning::MIN_PERCENT),
+            u32::from(MaterialTuning::MAX_PERCENT),
+        ) as u8
+    })
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SystemSettings {
     #[serde(default)]
@@ -402,6 +506,10 @@ pub struct SystemSettings {
     pub close_to_tray: bool,
     #[serde(default)]
     pub theme: ThemePreference,
+    #[serde(default)]
+    pub material_style: MaterialStyle,
+    #[serde(default)]
+    pub material_tuning: MaterialTuning,
     #[serde(default = "default_ui_font_family")]
     pub ui_font_family: String,
     #[serde(default)]
@@ -419,6 +527,8 @@ impl Default for SystemSettings {
             start_on_login_silently: false,
             close_to_tray: default_close_to_tray(),
             theme: ThemePreference::default(),
+            material_style: MaterialStyle::default(),
+            material_tuning: MaterialTuning::default(),
             ui_font_family: default_ui_font_family(),
             notification_position: NotificationPosition::default(),
             notification_duration_seconds: default_notification_duration(),
@@ -1797,6 +1907,38 @@ impl AppConfig {
             config.set_process_blacklist_settings(blacklist);
         })
     }
+    /// Merge the System leaves edited from the opened global-settings draft.
+    /// Network and blacklist retain their original atomic section ownership.
+    pub fn merge_global_settings_with_blacklist(
+        path: &Path,
+        mut network: NetworkSettings,
+        baseline: &SystemSettings,
+        desired: SystemSettings,
+        blacklist: ProcessBlacklistSettings,
+    ) -> Result<Self> {
+        validate_ui_font_family(&desired.ui_font_family).map_err(anyhow::Error::msg)?;
+        network.normalize();
+        network.validate().map_err(anyhow::Error::msg)?;
+        Self::update_section(path, |config| {
+            macro_rules! merge {
+                ($field:ident) => {
+                    if desired.$field != baseline.$field {
+                        config.system.$field = desired.$field.clone();
+                    }
+                };
+            }
+            merge!(start_on_login_silently);
+            merge!(close_to_tray);
+            merge!(theme);
+            merge!(material_style);
+            merge!(material_tuning);
+            merge!(ui_font_family);
+            merge!(notification_position);
+            merge!(notification_duration_seconds);
+            config.network = network;
+            config.set_process_blacklist_settings(blacklist);
+        })
+    }
 
     pub fn update_quick_launch_settings(
         path: &Path,
@@ -2146,6 +2288,8 @@ mod tests {
                 start_on_login_silently: true,
                 close_to_tray: false,
                 theme: ThemePreference::Dark,
+                material_style: MaterialStyle::Solid,
+                material_tuning: MaterialTuning::default(),
                 ui_font_family: default_ui_font_family(),
                 notification_position: NotificationPosition::TopCenter,
                 notification_duration_seconds: default_notification_duration(),

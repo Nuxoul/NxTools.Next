@@ -125,6 +125,7 @@ impl NewDownloadView {
         let weak = cx.entity().downgrade();
         window.defer(cx, move |window, cx| {
             window.open_dialog(cx, move |dialog, _, cx| {
+                let dialog = dialog.bg(crate::theme::overlay_background(cx));
                 let Some(view) = weak.upgrade() else {
                     return dialog;
                 };

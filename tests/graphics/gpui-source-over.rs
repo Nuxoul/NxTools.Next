@@ -1,4 +1,4 @@
-//! Included only in the temporary backend used by the standalone preview.
+//! Regression tests included by the pinned Windows renderer.
 use super::*;
 
 #[::core::prelude::v1::test]
@@ -19,3 +19,6 @@ fn transparent_surface_blend_states_use_source_over_alpha() {
         assert_eq!(target.BlendOpAlpha, D3D11_BLEND_OP_ADD);
     }
 }
+
+#[path = "gpui-under-border.rs"]
+mod under_border;

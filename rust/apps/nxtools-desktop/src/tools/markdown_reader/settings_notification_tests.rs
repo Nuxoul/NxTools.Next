@@ -16,36 +16,40 @@ fn open_settings(
     });
     surface.simulate_resize(size(px(460.), px(640.)));
     surface.run_until_parked();
-    surface.refresh().unwrap();
+    surface.refresh().expect("render settings fixture");
     (center, surface)
 }
 
 #[gpui_kit::test]
 fn markdown_reader_settings_button_notifies_durable_save_and_failure(cx: &mut TestAppContext) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create settings save fixture directory");
     let path = directory.path().join("config.json");
     let config = AppConfig::default();
-    config.save_to(&path).unwrap();
+    config
+        .save_to(&path)
+        .expect("save initial settings fixture");
     cx.update(|cx| install_settings(&config, path.clone(), cx));
     let (center, surface) = open_settings(cx, None);
     assert!(center.read_with(surface, |center, _| center.items().is_empty()));
     let source = surface.update(|window, _| window.window_handle());
     let original_bounds = surface
         .debug_bounds("markdown-font-default-larger")
-        .unwrap();
+        .expect("initial font increase button bounds");
     let click_larger = |surface: &mut VisualTestContext| {
-        surface.refresh().unwrap();
+        surface.refresh().expect("render font increase button");
         let bounds = surface
             .debug_bounds("markdown-font-default-larger")
-            .unwrap();
+            .expect("font increase button bounds");
         surface.simulate_click(bounds.center(), Default::default());
         surface.run_until_parked();
     };
-    surface.refresh().unwrap();
+    surface
+        .refresh()
+        .expect("render settings before font change");
     click_larger(surface);
     assert_eq!(
         AppConfig::load_from(&path)
-            .unwrap()
+            .expect("load durably saved font preference")
             .markdown_reader
             .font_size,
         21
@@ -61,7 +65,7 @@ fn markdown_reader_settings_button_notifies_durable_save_and_failure(cx: &mut Te
         assert_eq!(notice.target, Some(source));
         notice.id.clone()
     });
-    std::fs::write(&path, b"broken").unwrap();
+    std::fs::write(&path, b"broken").expect("write corrupt settings fixture");
     click_larger(surface);
     center.read_with(surface, |center, _| {
         assert_eq!(center.items().len(), 2);
@@ -69,18 +73,23 @@ fn markdown_reader_settings_button_notifies_durable_save_and_failure(cx: &mut Te
             .items()
             .iter()
             .find(|notice| notice.id != first)
-            .unwrap();
+            .expect("error notification for failed settings save");
         assert_eq!(notice.level, NotificationLevel::Error);
         assert_eq!(notice.target, Some(source));
         assert!(notice.message.contains("原设置仍然有效"));
     });
     surface.read(|cx| assert_eq!(preferences(cx).font_size, 21));
-    assert_eq!(std::fs::read(&path).unwrap(), b"broken");
-    surface.refresh().unwrap();
+    assert_eq!(
+        std::fs::read(&path).expect("read preserved corrupt settings"),
+        b"broken"
+    );
+    surface
+        .refresh()
+        .expect("render settings after save failure");
     assert_eq!(
         surface
             .debug_bounds("markdown-font-default-larger")
-            .unwrap(),
+            .expect("font increase button bounds after notification"),
         original_bounds,
         "operation feedback must not insert a banner or move settings rows"
     );
@@ -111,7 +120,10 @@ fn markdown_reader_settings_association_buttons_notify_once_and_keep_source(
     let (center, surface) = open_settings(cx, Some(Rc::new(platform)));
     let source = surface.update(|window, _| window.window_handle());
     surface.update(|_, cx| {
-        let pending = cx.global::<Settings>().request.unwrap();
+        let pending = cx
+            .global::<Settings>()
+            .request
+            .expect("initial association query");
         platform_notification(&reply(pending.id, true, REGISTERED), cx);
     });
     surface.run_until_parked();
@@ -142,11 +154,18 @@ fn markdown_reader_settings_association_buttons_notify_once_and_keep_source(
             "已移除",
         ),
     ] {
-        surface.refresh().unwrap();
-        let bounds = surface.debug_bounds(selector).unwrap();
+        surface.refresh().expect("render association action");
+        let bounds = surface
+            .debug_bounds(selector)
+            .expect("association action bounds");
         surface.simulate_click(bounds.center(), Default::default());
         surface.run_until_parked();
-        let id = surface.read(|cx| cx.global::<Settings>().request.unwrap().id);
+        let id = surface.read(|cx| {
+            cx.global::<Settings>()
+                .request
+                .expect("pending explicit association action")
+                .id
+        });
         surface.update(|_, cx| {
             platform_notification(&reply(Uuid::new_v4(), true, data), cx);
             platform_notification(&reply(id, true, data), cx);
@@ -169,7 +188,11 @@ fn markdown_reader_settings_association_buttons_notify_once_and_keep_source(
             center.dismiss_window(source, cx);
         });
         surface.read(|cx| {
-            let observed = cx.global::<Settings>().association.as_ref().unwrap();
+            let observed = cx
+                .global::<Settings>()
+                .association
+                .as_ref()
+                .expect("association readback after explicit action");
             assert!(!observed.md.is_default && !observed.markdown.is_default);
         });
     }
@@ -188,10 +211,12 @@ fn begin(intent: Intent, source: AnyWindowHandle, cx: &mut App) -> Uuid {
 
 #[gpui_kit::test]
 fn markdown_reader_settings_publish_only_durable_preferences(cx: &mut TestAppContext) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create durable preferences fixture directory");
     let path = directory.path().join("config.json");
     let config = AppConfig::default();
-    config.save_to(&path).unwrap();
+    config
+        .save_to(&path)
+        .expect("save initial preferences fixture");
     cx.update(|cx| install_settings(&config, path.clone(), cx));
     let (center, surface) = open_settings(cx, None);
     let source = surface.update(|window, cx| {
@@ -205,7 +230,7 @@ fn markdown_reader_settings_publish_only_durable_preferences(cx: &mut TestAppCon
     surface.read(|cx| assert_eq!(preferences(cx).font_size, 22));
     assert_eq!(
         AppConfig::load_from(&path)
-            .unwrap()
+            .expect("load committed font preference")
             .markdown_reader
             .font_size,
         22
@@ -221,7 +246,7 @@ fn markdown_reader_settings_publish_only_durable_preferences(cx: &mut TestAppCon
         1,
         "no-op does not notify"
     );
-    std::fs::write(&path, b"broken").unwrap();
+    std::fs::write(&path, b"broken").expect("write corrupt preferences fixture");
     surface.update(|_, cx| save(Change::Font(24), source, cx));
     surface.run_until_parked();
     surface.read(|cx| assert_eq!(preferences(cx).font_size, 22));
@@ -233,15 +258,20 @@ fn markdown_reader_settings_publish_only_durable_preferences(cx: &mut TestAppCon
                 .any(|item| item.level == NotificationLevel::Error)
         )
     });
-    assert_eq!(std::fs::read(&path).unwrap(), b"broken");
+    assert_eq!(
+        std::fs::read(&path).expect("read preserved corrupt preferences"),
+        b"broken"
+    );
 }
 
 #[gpui_kit::test]
 fn markdown_reader_settings_refuse_disable_while_windows_uses_its_handler(cx: &mut TestAppContext) {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().expect("create disable settings fixture directory");
     let path = directory.path().join("config.json");
     let config = AppConfig::default();
-    config.save_to(&path).unwrap();
+    config
+        .save_to(&path)
+        .expect("save initial enabled settings");
     cx.update(|cx| install_settings(&config, path.clone(), cx));
     let (center, surface) = open_settings(cx, None);
     let source = surface.update(|window, cx| {
@@ -252,7 +282,12 @@ fn markdown_reader_settings_refuse_disable_while_windows_uses_its_handler(cx: &m
     });
     surface.run_until_parked();
     surface.read(|cx| assert!(enabled(cx)));
-    assert!(AppConfig::load_from(&path).unwrap().markdown_reader.enabled);
+    assert!(
+        AppConfig::load_from(&path)
+            .expect("load settings after refused disable")
+            .markdown_reader
+            .enabled
+    );
     center.update(surface, |center, cx| {
         assert_eq!(center.items().len(), 1);
         assert_eq!(center.items()[0].level, NotificationLevel::Error);
@@ -265,7 +300,12 @@ fn markdown_reader_settings_refuse_disable_while_windows_uses_its_handler(cx: &m
         id
     });
     surface.run_until_parked();
-    assert!(!AppConfig::load_from(&path).unwrap().markdown_reader.enabled);
+    assert!(
+        !AppConfig::load_from(&path)
+            .expect("load settings after accepted disable")
+            .markdown_reader
+            .enabled
+    );
     center.read_with(surface, |center, _| {
         assert_eq!(
             center.items().len(),
@@ -296,14 +336,18 @@ fn markdown_reader_default_settings_waits_for_per_extension_readback(cx: &mut Te
     surface.run_until_parked();
     surface.update(|_, cx| {
         let state = cx.global::<Settings>();
-        assert!(!state.association.as_ref().unwrap().md.is_default);
-        assert!(!state.association.as_ref().unwrap().markdown.is_default);
+        assert!(!state.association.as_ref().expect("registered association readback").md.is_default);
+        assert!(!state.association.as_ref().expect("registered association readback").markdown.is_default);
         let id = begin(Intent::Query, source, cx);
         platform_notification(&reply(id, true, r#"{"md":{"registered":true,"is_default":true},"markdown":{"registered":true,"is_default":false}}"#), cx);
     });
     surface.run_until_parked();
     surface.read(|cx| {
-        let observed = cx.global::<Settings>().association.as_ref().unwrap();
+        let observed = cx
+            .global::<Settings>()
+            .association
+            .as_ref()
+            .expect("per-extension association readback");
         assert!(observed.md.is_default);
         assert!(!observed.markdown.is_default);
     });
@@ -396,7 +440,13 @@ fn markdown_reader_settings_superseded_completion_is_silent(cx: &mut TestAppCont
     surface.run_until_parked();
     assert!(center.read_with(surface, |center, _| center.items().is_empty()));
     surface.update(|_, cx| {
-        assert_eq!(cx.global::<Settings>().request.unwrap().id, current);
+        assert_eq!(
+            cx.global::<Settings>()
+                .request
+                .expect("current refresh request")
+                .id,
+            current
+        );
         assert!(cx.global::<Settings>().association.is_none());
         platform_notification(&reply(current, true, UNREGISTERED), cx);
     });

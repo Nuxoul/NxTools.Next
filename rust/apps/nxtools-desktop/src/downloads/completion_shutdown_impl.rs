@@ -410,14 +410,14 @@ impl DownloadApplication {
             WindowOptions {
                 window_bounds: Some(window_bounds),
                 titlebar: None,
-                focus: true,
-                show: true,
+                focus: false,
+                show: false,
                 kind: WindowKind::Normal,
                 is_movable: true,
                 is_resizable: false,
                 is_minimizable: false,
                 display_id: None,
-                window_background: WindowBackgroundAppearance::Opaque,
+                window_background: WindowBackgroundAppearance::Transparent,
                 app_id: Some("NxTools.DownloadShutdown".into()),
                 window_min_size: Some(window_size),
                 window_decorations: Some(WindowDecorations::Client),
@@ -486,17 +486,54 @@ impl DownloadApplication {
             window: window.into(),
             view,
             correlation_id: countdown.correlation_id,
+            material_ready: false,
         });
         let native_handle = *native_handle.borrow();
-        if native_handle != 0 {
-            let _ = self.platform.send_command_correlated(
-                PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
-                    window_handle: native_handle,
-                    enabled: true,
-                }),
-                countdown.correlation_id,
-            );
-        }
+        let material_window: AnyWindowHandle = window.into();
+        self.after_download_material(
+            material_window,
+            nxtools_protocol::window_material::MaterialSurface::Backdrop,
+            DOWNLOAD_MATERIAL_TIMEOUT,
+            move |app, result, cx| {
+                if app.completion_actions.active_countdown() != Some(countdown)
+                    || !cx.windows().contains(&material_window)
+                    || app.shutdown_window.as_ref().is_none_or(|entry| {
+                        entry.window != material_window
+                            || entry.correlation_id != countdown.correlation_id
+                    })
+                {
+                    return;
+                }
+                if result.is_err() || Instant::now() >= countdown.deadline {
+                    app.cancel_shutdown_countdown(
+                        countdown.correlation_id,
+                        "material_not_ready",
+                        cx,
+                    );
+                    app.download_material_failed(
+                        "shutdown",
+                        result.err().unwrap_or("countdown_elapsed"),
+                        cx,
+                    );
+                    return;
+                }
+                app.shutdown_window
+                    .as_mut()
+                    .expect("current countdown")
+                    .material_ready = true;
+                let _ = material_window.update(cx, |_, window, _| window.activate_window());
+                if native_handle != 0 {
+                    let _ = app.platform.send_command_correlated(
+                        PlatformCommand::SetWindowTopmost(SetWindowTopmostCommand {
+                            window_handle: native_handle,
+                            enabled: true,
+                        }),
+                        countdown.correlation_id,
+                    );
+                }
+            },
+            cx,
+        );
         cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
@@ -525,6 +562,17 @@ impl DownloadApplication {
             return false;
         }
         let now = Instant::now();
+        if self
+            .shutdown_window
+            .as_ref()
+            .is_some_and(|entry| !entry.material_ready)
+        {
+            if now >= countdown.deadline {
+                self.cancel_shutdown_countdown(correlation_id, "material_not_ready", cx);
+                return false;
+            }
+            return true;
+        }
         let remaining = countdown
             .deadline
             .saturating_duration_since(now)

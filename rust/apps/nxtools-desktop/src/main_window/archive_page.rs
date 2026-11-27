@@ -1002,7 +1002,11 @@ impl ArchiveSettingsView {
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(status_alert("archive-shell-observed", tone, observed.clone()))
+                    .child(status_alert(
+                        "archive-shell-observed",
+                        tone,
+                        observed.clone(),
+                    ))
                     .child(
                         div()
                             .flex()
@@ -1345,7 +1349,7 @@ impl ArchiveSettingsView {
                                     });
                                 });
                             }),
-                    )
+                    ),
             )
             .into_any_element()
     }
@@ -1424,7 +1428,9 @@ fn status_alert(id: &'static str, tone: IntegrationTone, text: SharedString) -> 
 }
 fn integration_failure_label(failure: Option<&str>) -> String {
     match failure {
-        Some("desktop_identity_unavailable") => "未找到已安装的 NxTools 主程序，请使用安装版".into(),
+        Some("desktop_identity_unavailable") => {
+            "未找到已安装的 NxTools 主程序，请使用安装版".into()
+        }
         Some("selection_helper_identity_unavailable") => {
             "右键菜单组件未通过完整性校验，请重新安装".into()
         }

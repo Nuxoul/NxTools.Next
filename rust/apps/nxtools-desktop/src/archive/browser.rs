@@ -40,6 +40,7 @@ use gpui_kit::component::{
     button::{Button, ButtonVariants},
     empty::{Empty, EmptyDescription, EmptyHeader, EmptyTitle},
     input::{Input, InputEvent, InputState},
+    label::Label,
     list::ListItem,
     menu::{ContextMenuExt, DropdownMenu, PopupMenu, PopupMenuItem},
     resizable::{h_resizable, resizable_panel},
@@ -1341,7 +1342,10 @@ impl ArchiveBrowser {
                     move |result, cx| {
                         if result.is_err() {
                             cx.defer(move |cx| { let _ = source.update(cx, |_, window, cx| {
-                            window.open_dialog(cx, |dialog, _, _| dialog.title("无法清除历史记录").child("原记录文件已保留，请检查存储后重试；当前压缩包不受影响。"));
+                            window.open_dialog(cx, |dialog, _, cx| {
+                                let dialog = dialog.bg(crate::theme::overlay_background(cx));
+                                dialog.title("无法清除历史记录").child("原记录文件已保留，请检查存储后重试；当前压缩包不受影响。")
+                            });
                         }); });
                         }
                     },
@@ -1356,7 +1360,8 @@ impl ArchiveBrowser {
                         self.edit_reason()
                             .unwrap_or_else(|| refusal.message().into())
                     };
-                    window.open_dialog(cx, move |dialog, _, _| {
+                    window.open_dialog(cx, move |dialog, _, cx| {
+                        let dialog = dialog.bg(crate::theme::overlay_background(cx));
                         dialog.title("无法修改压缩包").child(
                             div()
                                 .id("archive-modification-reason")
@@ -3297,10 +3302,12 @@ impl Render for ArchiveBrowser {
                                     })
                                     .min_w_0()
                                     .flex_1()
-                                    .whitespace_nowrap()
-                                    .overflow_hidden()
-                                    .text_ellipsis()
-                                    .child(name.clone())
+                                    .child(
+                                        Label::new(name.clone())
+                                            .id("archive-tree-folder-name")
+                                            .w_full()
+                                            .truncate(),
+                                    )
                                     .tooltip(move |window, cx| {
                                         gpui_kit::component::tooltip::Tooltip::new(name.clone())
                                             .build(window, cx)

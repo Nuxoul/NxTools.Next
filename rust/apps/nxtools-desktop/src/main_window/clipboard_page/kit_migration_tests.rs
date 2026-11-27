@@ -455,11 +455,12 @@ fn queue06_minimum_scroll_reaches_storage_footer_and_keeps_notifications(cx: &mu
     search(&mut surface, "数据库维护");
     search(&mut surface, "");
     for _ in 0..12 {
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: point(px(750.0), px(320.0)),
             delta: gpui_kit::ScrollDelta::Pixels(point(px(0.0), px(-80.0))),
             modifiers: Modifiers::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         surface.run_until_parked();
         surface.refresh().expect("official page scroll");
@@ -598,11 +599,12 @@ fn queue06_long_registration_error_keeps_original_status_and_last_action(cx: &mu
     );
     search(&mut surface, "");
     for _ in 0..12 {
-        surface.simulate_event(gpui_kit::ScrollWheelEvent {
+        surface.simulate_event(gpui_kit::ScrollEvent {
             position: point(px(750.0), px(320.0)),
             delta: gpui_kit::ScrollDelta::Pixels(point(px(0.0), px(-80.0))),
             modifiers: Modifiers::default(),
             touch_phase: gpui_kit::TouchPhase::Moved,
+            source: Default::default(),
         });
         surface.run_until_parked();
         surface.refresh().expect("official error-page scroll");

@@ -50,8 +50,8 @@ button:disabled { opacity: .48; cursor: default; }
   color: var(--nx-text);
   .ss-stage { overflow: hidden; background: #657d97; color: var(--nx-secondary); font-family: var(--ss-font); font-size: 13px; font-synthesis: none; }
   .nx-desktop { position: absolute; inset: 0; isolation: isolate; --nx-shell: rgb(var(--nx-rgb)); --nx-pane: rgb(var(--nx-rgb)); --nx-popup: rgb(var(--nx-rgb)); --nx-edge: var(--ss-line); --nx-blur: none; }
-  .nx-desktop[data-material=acrylic] { --nx-shell: rgb(var(--nx-rgb) / .68); --nx-pane: rgb(var(--nx-rgb) / .72); --nx-popup: rgb(var(--nx-rgb) / .82); --nx-blur: blur(28px) saturate(.8); --nx-edge: rgb(222 230 255 / .19); }
-  &[data-light=true] .nx-desktop[data-material=acrylic] { --nx-shell: rgb(var(--nx-rgb) / .67); --nx-pane: rgb(var(--nx-rgb) / .78); --nx-popup: rgb(var(--nx-rgb) / .83); --nx-edge: rgb(56 67 88 / .18); }
+  .nx-desktop[data-material=acrylic] { --nx-shell: rgb(var(--nx-rgb) / .72); --nx-pane: rgb(var(--nx-rgb) / .43); --nx-popup: rgb(var(--nx-rgb) / .976); --nx-blur: blur(28px) saturate(.8); --nx-edge: rgb(222 230 255 / .19); }
+  &[data-light=true] .nx-desktop[data-material=acrylic] { --nx-shell: rgb(var(--nx-rgb) / .72); --nx-pane: rgb(var(--nx-rgb) / .43); --nx-popup: rgb(var(--nx-rgb) / .976); --nx-edge: rgb(56 67 88 / .18); }
   .nx-wallpaper { position: absolute; inset: -60px; z-index: -1; background: radial-gradient(ellipse at 13% 7%, #92b4d1 0, transparent 55%), radial-gradient(ellipse at 5% 100%, #bd778b 0, transparent 52%), radial-gradient(ellipse at 96% 45%, #899fc3 0, transparent 58%), linear-gradient(135deg, #7188ad, #39566a 65%, #50798c); filter: blur(16px); }
   .nx-window, .nx-search-panel, .nx-overview-detail, .nx-theme-sample, .nx-notice { background: var(--nx-shell); backdrop-filter: var(--nx-blur); border: 1px solid var(--nx-edge); box-shadow: 0 16px 42px #10132138, 0 2px 6px #0002; transition: background-color 160ms ease-out, border-color 160ms ease-out; }
   .nx-window { display: flex; flex-direction: column; border-radius: 10px; overflow: hidden; color: var(--nx-text); }

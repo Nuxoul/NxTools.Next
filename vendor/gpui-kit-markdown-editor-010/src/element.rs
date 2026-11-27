@@ -570,16 +570,9 @@ impl Element for EditorRoot {
                     .map(|(table, _)| super::frame::TableShape {
                         table: *table,
                         grid: super::table::grid(doc, *table),
-                        aligns: match doc.kind(*table) {
-                            Some(super::kind::BlockKindData::Table { aligns }) => aligns.clone(),
-                            _ => Vec::new(),
-                        },
                     })
                     .collect();
-                // gpui-kit's cell padding is `px_3`: 0.75rem.
-                let pad = window.rem_size() * 0.75;
-                let right = frame.content.map(|c| c.right());
-                frame.layout_tables(&shapes, pad, right);
+                frame.layout_tables(&shapes);
             }
             *self.state.read(cx).frame.borrow_mut() = frame;
             let mask = window.content_mask().bounds;
@@ -770,7 +763,7 @@ impl Element for EditorRoot {
             entity.update(cx, |state, cx| {
                 let focus = state.focus_handle.clone();
                 window.focus(&focus, cx);
-                if event.modifiers.secondary() && state.follow_link_at(event.position, cx) {
+                if event.modifiers.secondary(cx) && state.follow_link_at(event.position, cx) {
                     return;
                 }
                 state.dragging = true;
@@ -790,7 +783,7 @@ impl Element for EditorRoot {
             }
             if event.pressed_button.is_none() {
                 entity.update(cx, |state, cx| {
-                    state.hover_at(event.position, event.modifiers.secondary(), cx)
+                    state.hover_at(event.position, event.modifiers.secondary(cx), cx)
                 });
                 return;
             }

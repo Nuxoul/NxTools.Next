@@ -12,6 +12,8 @@ use std::collections::VecDeque;
 mod batch_jobs;
 #[path = "job_activation.rs"]
 mod job_activation;
+#[path = "ordinary_material.rs"]
+mod ordinary_material;
 use job_activation::{JobActivation, JobPresentation};
 
 pub(super) struct FormSlot {
@@ -151,6 +153,7 @@ pub(super) struct Jobs {
     defer_pump: bool,
     defer_presentation: bool,
     activations: HashMap<Uuid, JobActivation>,
+    material_pending: HashMap<Uuid, AnyWindowHandle>,
     #[cfg(test)]
     activation_test_hwnd: Option<i64>,
     pub(super) readmissions: HashMap<Uuid, super::readmission::Readmission>,
@@ -2323,6 +2326,9 @@ impl ArchiveApplication {
                     let _ = view.update(cx, |view, cx| view.show_detail(window, cx));
                 });
             });
+            if self.jobs.material_pending.get(&surface_id) == Some(&window) {
+                return;
+            }
             self.activate_job(id, JobPresentation::Reuse, cx);
             return;
         }
@@ -2335,6 +2341,8 @@ impl ArchiveApplication {
         let bounds = placement.centered(size(px(560.0), px(260.0)));
         let opened = cx.open_window(
             WindowOptions {
+                show: false,
+                focus: false,
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 display_id: placement.display_id,
                 window_min_size: Some(size(px(480.0), px(260.0))),
@@ -2365,7 +2373,7 @@ impl ArchiveApplication {
                 record.window = Some((window.into(), view));
             }
             self.refresh_job(id, cx);
-            self.activate_job(id, JobPresentation::Show, cx);
+            self.prepare_job_material(surface_id, window.into(), cx);
         }
     }
     pub(crate) fn background_job(&mut self, id: Uuid, cx: &mut Context<Self>) {
@@ -2400,6 +2408,7 @@ impl ArchiveApplication {
             .get_mut(&surface_id)
             .and_then(|record| record.window.take())
         {
+            self.jobs.material_pending.remove(&surface_id);
             self.retire_job_activation(surface_id, "retired");
             tracing::info!(event="archive.job.presentation_closed", job_id=%id, "archive progress closed without cancellation");
             let platform = self.platform.clone();
@@ -2652,6 +2661,8 @@ impl ArchiveApplication {
         let bounds = placement.centered(size(px(width), px(600.0)));
         let opened = cx.open_window(
             WindowOptions {
+                show: false,
+                focus: false,
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
                 display_id: placement.display_id,
                 window_min_size: Some(size(px(480.0), px(360.0))),
@@ -2727,7 +2738,7 @@ impl ArchiveApplication {
                     generation,
                 },
             );
-            let _ = window.update(cx, |_, window, _| window.activate_window());
+            self.prepare_form_material(id, generation, window.into(), cx);
             if let Some(origin) = modify_origin {
                 self.jobs.edit_forms.insert(id, origin);
             }
